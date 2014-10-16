@@ -9,9 +9,19 @@ using namespace std;
 
 namespace {
   cl::opt<bool>
-  InstAllMovs("inst-all-movs",
-	      cl::desc("Embed the array of HB relationships that the Hive came up with"),
-	      cl::init(false));
+  InstLoads("inst-loads",
+	    cl::desc("This will instrument all loads"),
+	    cl::init(false));
+
+  cl::opt<bool>
+  InstStores("inst-loads",
+	     cl::desc("This will instrument all loads"),
+	     cl::init(false));
+
+  cl::opt<bool>
+  InstFun("inst-func",
+	  cl::desc("This will limit the instrumentation to the given function"),
+	  cl::init(false));
 }
 
 bool Instrumenter::runOnModule(Module& m) {
