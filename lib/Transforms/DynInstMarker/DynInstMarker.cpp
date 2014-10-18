@@ -33,6 +33,7 @@ namespace llvm {
 bool DynInstMarker::runOnModule(Module& m) {
   errs() << "Hello: ";
   for(Module::const_iterator fi = m.begin(), fe = m.end(); fi != fe; ++fi){
+    errs() << "Size: " << fi->size();
     for(Function::const_iterator bi = fi->begin(), be = fi->end(); bi != be; ++bi){
       errs().write_escaped(bi->getName()) << "\n";
       for (BasicBlock::const_iterator ii = bi->begin(), ie = bi->end(); ii != ie; ++ii){
@@ -53,5 +54,5 @@ static void registerMyPass(const PassManagerBuilder &,
 }
 
 static RegisterStandardPasses
-    RegisterMyPass(PassManagerBuilder::EP_EarlyAsPossible,
+    RegisterMyPass(PassManagerBuilder::EP_EnabledOnOptLevel0,
                    registerMyPass);
