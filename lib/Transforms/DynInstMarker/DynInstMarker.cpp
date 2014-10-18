@@ -20,7 +20,7 @@ namespace llvm {
 	    cl::init(false));
 
   cl::opt<bool>
-  InstStores("inst-loads",
+  InstStores("inst-stores",
 	     cl::desc("This will instrument all loads"),
 	     cl::init(false));
 
@@ -30,24 +30,28 @@ namespace llvm {
 	  cl::init(false));
 }
 
-bool DynInsMarker::runOnModule(Module& m) {
-    for(Module::const_iterator fi = m.begin(), fe = m.end(); fi != fe; ++fi){
-        for(Function::const_iterator bi = fi->begin(), be = fi->end(); bi != be; ++bi){
-            errs().write_escaped(bi->getName());
-            for (BasicBlock::const_iterator ii = bi->begin(), ie = bi->end(); ii != ie; ++ii){
-
-            }
-        }
+bool DynInstMarker::runOnModule(Module& m) {
+  errs() << "Hello: ";
+  for(Module::const_iterator fi = m.begin(), fe = m.end(); fi != fe; ++fi){
+    for(Function::const_iterator bi = fi->begin(), be = fi->end(); bi != be; ++bi){
+      errs().write_escaped(bi->getName()) << "\n";
+      for (BasicBlock::const_iterator ii = bi->begin(), ie = bi->end(); ii != ie; ++ii){
+	
+      }
     }
-    return true;
+  }
+  return true;
 }
 
-char DynInsMarker::ID = 0;
+char DynInstMarker::ID = 0;
+
+//static RegisterPass<DynInstMarker> X("marker", "Marker pass", false, false);
 
 static void registerMyPass(const PassManagerBuilder &,
                            PassManagerBase &PM) {
-    PM.add(new DynInsMarker());
+    PM.add(new DynInstMarker());
 }
+
 static RegisterStandardPasses
-    RegisterMyPass(PassManagerBuilder::EP_OptimizerLast,
+    RegisterMyPass(PassManagerBuilder::EP_EarlyAsPossible,
                    registerMyPass);
