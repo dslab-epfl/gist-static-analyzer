@@ -1,0 +1,3 @@
+We use LLVM's C++ API code generation to find out the static instrumenation code:
+
+clang -c hbinstrumenter-c-code.c -emit-llvm -o hbinstrumenter-c-code.bc && llc -march=cpp hbinstrumenter-c-code.bc -o out.cpp
