@@ -6,6 +6,7 @@
 #include "llvm/PassManager.h"
 #include "llvm/IR/Instructions.h"
 #include <llvm/IR/Constants.h>
+#include <llvm/IR/InlineAsm.h>
 
 #include "DynInstMarker.h"
 
@@ -28,6 +29,7 @@ namespace llvm {
 }
 
 bool DynInstMarker::initInstrumentation(Module& m) {
+  /*
   // Instrumentation function declaration
   resMarkerFunc = m.getFunction("_Z13resMarkerFuncv");
   assert(!resMarkerFunc && "resMarkerFunc already exists in the module!");
@@ -81,28 +83,65 @@ bool DynInstMarker::initInstrumentation(Module& m) {
                                        resChar, true, label_entry);
   storeInst->setAlignment(1);
   ReturnInst::Create(m.getContext(), label_entry);
+  */
+  /*
+  // Global variable to disable the optimization of the instrumentation function
+  resChar = new GlobalVariable(*&m,
+                               IntegerType::get(m.getContext(), 8),
+                               false, GlobalValue::ExternalLinkage,
+                               0, "resChar");
+  resChar->setAlignment(1);
+  ConstantInt* resCharInitValue = ConstantInt::get(m.getContext(),
+                                                   APInt(8, StringRef("0"), 10));
+  resChar->setInitializer(resCharInitValue);
+  
+  // 
+  resCharNewValue = ConstantInt::get(m.getContext(),
+                                                   APInt(8, StringRef("9"), 10));
+  */
   return true;
 }
 
 void DynInstMarker::insertInstrumentation(BasicBlock::iterator& ii, 
-                                          Function::iterator& bi) {
-  // The function call instruction
-  CallInst* callInst = CallInst::Create(resMarkerFunc, "", &(*ii));
-  callInst->setCallingConv(CallingConv::C);
-  callInst->setTailCall(false);
-  AttributeSet callInstAS;
-  callInst->setAttributes(callInstAS);
+                                          Function::iterator& bi,
+                                            Module* mod) {
+  std::vector<Type*>FuncTy_4_args;
+  FunctionType* FuncTy_4 = FunctionType::get(
+   /*Result=*/Type::getVoidTy(mod->getContext()),
+   /*Params=*/FuncTy_4_args,
+   /*isVarArg=*/false);
+  
+  InlineAsm* ptr_10 = InlineAsm::get(FuncTy_4, "nop", "~{dirflag},~{fpsr},~{flags}",true);
+   CallInst* void_9 = CallInst::Create(ptr_10, "", (&(*ii)));
+   void_9->setCallingConv(CallingConv::C);
+   void_9->setTailCall(false);
+   AttributeSet void_9_PAL;
+   {
+    SmallVector<AttributeSet, 4> Attrs;
+    AttributeSet PAS;
+     {
+      AttrBuilder B;
+      B.addAttribute(Attribute::NoUnwind);
+      PAS = AttributeSet::get(mod->getContext(), ~0U, B);
+     }
+ 
+    Attrs.push_back(PAS);
+    void_9_PAL = AttributeSet::get(mod->getContext(), Attrs);
+ 
+   }
+   void_9->setAttributes(void_9_PAL);
 }
 
 bool DynInstMarker::runOnModule(Module& m) {
   bool retVal = initInstrumentation(m);
   errs() << retVal << "\n";
   for (Module::iterator fi = m.begin(), fe = m.end(); fi != fe; ++fi) {
+    errs().write_escaped(fi->getName()) << "\n";
     for (Function::iterator bi = fi->begin(), be = fi->end(); bi != be; ++bi) {
-      errs().write_escaped(bi->getName()) << "\n";
       for (BasicBlock::iterator ii = bi->begin(), ie = bi->end(); ii != ie; ++ii) {
-        if (isa<LoadInst>(*ii)) {
-          insertInstrumentation(ii, bi);
+        if (isa<LoadInst>(*ii) && 
+            !fi->getName().equals(StringRef("_Z13resMarkerFuncv"))) { // TODO: optimize this
+          insertInstrumentation(ii, bi, &m);
         }
       }
     }
