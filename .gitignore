@@ -19,7 +19,7 @@
 # .*.swp
 # .sw?
 # #OS X specific files.
-# .DS_store
+.DS_store
 
 # #==============================================================================#
 # # Explicit files to ignore (only matches one).
@@ -56,3 +56,8 @@
 .svn
 *.pyc
 *~
+*.bc
+
+# QT files 
+CMakeLists.txt.user
+
