@@ -15,18 +15,20 @@ using namespace llvm;
 using namespace std;
 
 static cl::opt<string> FileName("file-name",
-                                cl::desc("The file name that contains the target instruction"),
-                                cl::init(""));
+       cl::desc("The file name that contains the target instruction"),
+       cl::init(""));
 static cl::opt<string> FunctionName("function-name",
-                                    cl::desc("The function where the instruction lies"),
-                                    cl::init(""));
+       cl::desc("The function where the instruction lies"),
+       cl::init(""));
 static cl::opt<unsigned> LineNumber("line-number",
-                                cl::desc("The line number of the target instruction"),
-                                cl::init(0));
+       cl::desc("The line number of the target instruction"),
+       cl::init(0));
+static cl::opt<bool> Debug("debug-debug-info-manager",
+       cl::desc("Print debugging statements for debug info manager"),
+       cl::init(false));
 static cl::opt<bool> FindMultBBCode("find-mult-bb",
-                                      cl::desc("Find and count the lines of source code that have \
-                                                multi-basic-block LLVM implementations"),
-                                      cl::init(false));
+       cl::desc("Find and count the lines of source code that have multi-basic-block LLVM implementations"),
+       cl::init(false));
 
 DebugInfoManager::DebugInfoManager() : ModulePass(ID){
   if (FindMultBBCode)
@@ -41,7 +43,8 @@ DebugInfoManager::DebugInfoManager() : ModulePass(ID){
 // TODO: We should cache the results once they are computed for a given binary.
 bool DebugInfoManager::runOnModule(Module& m) {
   for (Module::iterator fi = m.begin(), fe = m.end(); fi != fe; ++fi) {
-    //errs().write_escaped(fi->getName()) << "\n";
+    if (Debug)
+      errs() << "Function: " << fi->getName() << "\n";
     for (Function::iterator bi = fi->begin(), be = fi->end(); bi != be; ++bi) {
       // TODO: Improve this comparison by getting mangled names from the elf debug information
       if(fi->getName().find(StringRef(FunctionName)) != StringRef::npos)
@@ -51,8 +54,13 @@ bool DebugInfoManager::runOnModule(Module& m) {
             unsigned lineNumber = Loc.getLineNumber();
             StringRef fileName = Loc.getFilename();
             if(lineNumber == LineNumber) {
-              StringRef directory = Loc.getDirectory();
-              errs() << directory << "/" << fileName<< " : " << lineNumber << *ii << "\n ";
+              // Instead of assuming the offending instruction is a load, we may filter for several
+              // other unlikely instructions like bitcasts and instrinsics
+              if (isa<LoadInst>(*ii)) {
+                StringRef directory = Loc.getDirectory();
+                errs() << "\n### Target LLVM instrcution:" << "\n";
+                errs() << "  " << directory << "/" << fileName<< " : " << lineNumber << *ii << "\n ";
+              }
             }
           }
         }
