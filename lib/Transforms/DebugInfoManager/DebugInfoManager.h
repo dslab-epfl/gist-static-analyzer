@@ -6,8 +6,12 @@ namespace llvm{
     DebugInfoManager();
 
     const char *getPassName() const override;
-    virtual bool runOnModule(Module& m);
     virtual void getAnalysisUsage(AnalysisUsage& au) const override;
+    void printDebugInfo(Instruction& instr);
+
+    void trackUseDefChain(Value& value);
+    virtual bool runOnModule(Module& m);
+
     static char ID;
   };
 }

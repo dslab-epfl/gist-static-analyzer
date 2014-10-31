@@ -40,6 +40,47 @@ DebugInfoManager::DebugInfoManager() : ModulePass(ID){
   }
 }
 
+const char* DebugInfoManager::getPassName() const {
+  return "DebugInfoLocator";
+}
+
+void DebugInfoManager::getAnalysisUsage(AnalysisUsage &au) const {
+  // We don't modify the program and preserve all the passes
+  au.setPreservesAll();
+}
+
+void DebugInfoManager::printDebugInfo(Instruction& instr) {
+  MDNode *N = instr.getMetadata("dbg");
+  DILocation Loc(N);
+  unsigned lineNumber = Loc.getLineNumber();
+  StringRef fileName = Loc.getFilename();
+  StringRef directory = Loc.getDirectory();
+  errs() << "  " << directory << "/" << fileName<< " : " << lineNumber << "\n ";
+}
+
+void DebugInfoManager::trackUseDefChain(Value& value){
+  string Str;
+  if(LoadInst* loadInst = dyn_cast<LoadInst>(&value)) {
+    Value *v = loadInst->getOperand(0);
+    raw_string_ostream oss(Str);
+    v->print(oss);
+    errs() << oss.str() << "\n";
+    printDebugInfo(*loadInst);
+    if(isa<Instruction>(v))
+      trackUseDefChain(*v);
+    else
+      assert(false && "Handle the non-instruction case");
+  } else if (BitCastInst* bitCastInst = dyn_cast<BitCastInst>(&value)) {
+    Value *v = bitCastInst->getOperand(0);
+    raw_string_ostream oss(Str);
+    v->print(oss);
+    printDebugInfo(*bitCastInst);
+    errs() << oss.str() << "\n";
+  } else if (GetElementPtrInst* gEPtr = dyn_cast<GetElementPtrInst>(&value)) {
+    printDebugInfo(*gEPtr);
+  }
+}
+
 // TODO: We should cache the results once they are computed for a given binary.
 bool DebugInfoManager::runOnModule(Module& m) {
   for (Module::iterator fi = m.begin(), fe = m.end(); fi != fe; ++fi) {
@@ -60,6 +101,7 @@ bool DebugInfoManager::runOnModule(Module& m) {
                 StringRef directory = Loc.getDirectory();
                 errs() << "\n### Target LLVM instrcution:" << "\n";
                 errs() << "  " << directory << "/" << fileName<< " : " << lineNumber << *ii << "\n ";
+                trackUseDefChain(*ii);
               }
             }
           }
@@ -67,15 +109,6 @@ bool DebugInfoManager::runOnModule(Module& m) {
      }
    }
   return true;
-}
-                                                                                                                          
-void DebugInfoManager::getAnalysisUsage(AnalysisUsage &au) const {
-  // We don't modify the program and preserve all the passes
-  au.setPreservesAll();
-}
-
-const char* DebugInfoManager::getPassName() const {
-  return "DebugInfoLocator"; 
 }
 
 char DebugInfoManager::ID = 0;
