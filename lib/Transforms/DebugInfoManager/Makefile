@@ -8,7 +8,7 @@
 ##===----------------------------------------------------------------------===##
 
 LEVEL = ../../..
-LIBRARYNAME = LLVMDebugInfoLocator
+LIBRARYNAME = LLVMDebugInfoManager
 LOADABLE_MODULE = 1
 USEDLIBS =
 

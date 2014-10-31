@@ -1,9 +1,9 @@
 #include <llvm/IR/Function.h>
 
 namespace llvm{
-  class DebugInfoLocator : public ModulePass {
+  class DebugInfoManager : public ModulePass {
   public:
-    DebugInfoLocator();
+    DebugInfoManager();
 
     const char *getPassName() const override;
     virtual bool runOnModule(Module& m);
