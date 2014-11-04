@@ -55,7 +55,7 @@ void DebugInfoManager::printDebugInfo(Instruction& instr) {
   unsigned lineNumber = Loc.getLineNumber();
   StringRef fileName = Loc.getFilename();
   StringRef directory = Loc.getDirectory();
-  errs() << "  " << directory << "/" << fileName<< " : " << lineNumber << "\n ";
+  errs() << "\t\t" << directory << "/" << fileName<< " : " << lineNumber << "\n ";
 }
 
 void DebugInfoManager::trackUseDefChain(Value& value){
@@ -74,10 +74,11 @@ void DebugInfoManager::trackUseDefChain(Value& value){
     Value *v = bitCastInst->getOperand(0);
     raw_string_ostream oss(Str);
     v->print(oss);
-    printDebugInfo(*bitCastInst);
     errs() << oss.str() << "\n";
-  } else if (GetElementPtrInst* gEPtr = dyn_cast<GetElementPtrInst>(&value)) {
-    printDebugInfo(*gEPtr);
+    printDebugInfo(*bitCastInst);
+  } else if (GetElementPtrInst* geptr = dyn_cast<GetElementPtrInst>(&value)) {
+    geptr->getPointerOperand();
+    //printDebugInfo(*geptr);
   }
 }
 
@@ -100,7 +101,7 @@ bool DebugInfoManager::runOnModule(Module& m) {
               if (isa<LoadInst>(*ii)) {
                 StringRef directory = Loc.getDirectory();
                 errs() << "\n### Target LLVM instrcution:" << "\n";
-                errs() << "  " << directory << "/" << fileName<< " : " << lineNumber << *ii << "\n ";
+                errs() << "  " << directory << "/" << fileName<< " : " << lineNumber << *ii << "\n\n";
                 trackUseDefChain(*ii);
               }
             }
