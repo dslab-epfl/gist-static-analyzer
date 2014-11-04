@@ -1,15 +1,15 @@
-// RUN: %clang_cc1 -fsyntax-only -Wno-objc-root-class -verify %s
+// RUN: %clang_cc1 -fsyntax-only -Wno-objc-root-class -Wreadonly-setter-attrs -verify %s
 
 @protocol P0
-@property(readonly,assign) id X;
+@property(readonly,assign) id X; // expected-warning {{property attributes 'readonly' and 'assign' are mutually exclusive}}
 @end
 
 @protocol P1
-@property(readonly,retain) id X;
+@property(readonly,retain) id X; // expected-warning {{property attributes 'readonly' and 'retain' are mutually exclusive}}
 @end
 
 @protocol P2
-@property(readonly,copy) id X;
+@property(readonly,copy) id X; // expected-warning {{property attributes 'readonly' and 'copy' are mutually exclusive}}
 @end
 
 @protocol P3

@@ -173,6 +173,7 @@ GCC is doing a couple of clever things here:
         mov r1, #1
         lsl r1, r1, #8
         tst r2, r1
+  
 
 //===---------------------------------------------------------------------===//
 
@@ -195,6 +196,7 @@ This is especially bad when dynamic alloca is used. The all fixed size stack
 objects are referenced off the frame pointer with negative offsets. See
 oggenc for an example.
 
+
 //===---------------------------------------------------------------------===//
 
 Poor codegen test/CodeGen/ARM/select.ll f7:
@@ -212,6 +214,10 @@ LPC0:
 
 Make register allocator / spiller smarter so we can re-materialize "mov r, imm",
 etc. Almost all Thumb instructions clobber condition code.
+
+//===---------------------------------------------------------------------===//
+
+Add ldmia, stmia support.
 
 //===---------------------------------------------------------------------===//
 

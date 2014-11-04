@@ -23,7 +23,7 @@ bb32:                                             ; preds = %bb6
 %3 = load double* %1, align 4
 %4 = load double* %0, align 4
 call void @Parse_Vector(double* %0) nounwind
-%5 = call i32 @llvm.objectsize.i32.p0i8(i8* undef, i1 false)
+%5 = call i32 @llvm.objectsize.i32(i8* undef, i1 false)
 %6 = icmp eq i32 %5, -1
 br i1 %6, label %bb34, label %bb33
 
@@ -36,7 +36,7 @@ unreachable
 }
 
 declare void @Parse_Vector(double*)
-declare i32 @llvm.objectsize.i32.p0i8(i8*, i1)
+declare i32 @llvm.objectsize.i32(i8*, i1)
 
 
 ; PR9578
@@ -51,7 +51,7 @@ for.body.i:                                       ; preds = %for.body.i, %entry
 
 func_74.exit.for.cond29.thread_crit_edge:         ; preds = %for.body.i
   %f13576.pre = getelementptr inbounds %struct.S0* undef, i64 0, i32 1
-  store i8 0, i8* %f13576.pre, align 4
+  store i8 0, i8* %f13576.pre, align 4, !tbaa !0
   br label %lbl_468
 
 lbl_468:                                          ; preds = %lbl_468, %func_74.exit.for.cond29.thread_crit_edge
@@ -63,3 +63,6 @@ lbl_468:                                          ; preds = %lbl_468, %func_74.e
 for.end74:                                        ; preds = %lbl_468
   ret void
 }
+
+!0 = metadata !{metadata !"omnipotent char", metadata !1}
+!1 = metadata !{metadata !"Simple C/C++ TBAA", null}

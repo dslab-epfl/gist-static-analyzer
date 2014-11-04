@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -fobjc-runtime=macosx-fragile-10.5 -emit-llvm -fobjc-exceptions -O2 -o - %s | FileCheck %s
+// RUN: %clang_cc1 -triple x86_64-apple-darwin10 -fobjc-runtime=macosx-fragile-10.5 -emit-llvm -fexceptions -fobjc-exceptions -O2 -o - %s | FileCheck %s
 //
 // <rdar://problem/7471679> [irgen] [eh] Exception code built with clang (x86_64) crashes
 
@@ -14,7 +14,7 @@ void f0() {
   }
 }
 
-// CHECK-LABEL: define void @f1()
+// CHECK: define void @f1()
 void f1() {
   extern void foo(void);
 
@@ -28,7 +28,7 @@ void f1() {
     // CHECK:      call void asm sideeffect "", "*m"
     // CHECK-NEXT: call void @foo()
       foo();
-    // CHECK:      call void @objc_exception_try_exit
+    // CHECK-NEXT: call void @objc_exception_try_exit
 
     // CHECK:      call void asm sideeffect "", "=*m"
     } @finally {
@@ -40,7 +40,7 @@ void f1() {
 // Test that modifications to local variables are respected under
 // optimization.  rdar://problem/8160285
 
-// CHECK-LABEL: define i32 @f2()
+// CHECK: define i32 @f2()
 int f2() {
   extern void foo(void);
 
@@ -77,7 +77,7 @@ int f2() {
 
 // Test that the cleanup destination is saved when entering a finally
 // block.  rdar://problem/8293901
-// CHECK-LABEL: define void @f3()
+// CHECK: define void @f3()
 void f3() {
   extern void f3_helper(int, int*);
 
@@ -130,7 +130,7 @@ void f3() {
 void f4() {
   extern void f4_help(int);
 
-  // CHECK-LABEL: define void @f4()
+  // CHECK: define void @f4()
   // CHECK:      [[EXNDATA:%.*]] = alloca [[EXNDATA_T:%.*]], align
   // CHECK:      call void @objc_exception_try_enter([[EXNDATA_T]]* [[EXNDATA]])
   // CHECK:      call i32 @_setjmp

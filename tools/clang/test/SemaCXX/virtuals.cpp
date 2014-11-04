@@ -45,9 +45,3 @@ namespace rdar9670557 {
     func *h = 0;
   };
 }
-
-namespace pr8264 {
-  struct Test {
-    virtual virtual void func();  // expected-warning {{duplicate 'virtual' declaration specifier}}
-  };
-}

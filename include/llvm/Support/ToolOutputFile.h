@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_SUPPORT_TOOLOUTPUTFILE_H
-#define LLVM_SUPPORT_TOOLOUTPUTFILE_H
+#ifndef LLVM_SUPPORT_TOOL_OUTPUT_FILE_H
+#define LLVM_SUPPORT_TOOL_OUTPUT_FILE_H
 
 #include "llvm/Support/raw_ostream.h"
 
@@ -29,13 +29,13 @@ class tool_output_file {
   /// destructed after the raw_fd_ostream is destructed. It installs
   /// cleanups in its constructor and uninstalls them in its destructor.
   class CleanupInstaller {
-    /// The name of the file.
+    /// Filename - The name of the file.
     std::string Filename;
   public:
-    /// The flag which indicates whether we should not delete the file.
+    /// Keep - The flag which indicates whether we should not delete the file.
     bool Keep;
 
-    explicit CleanupInstaller(StringRef ilename);
+    explicit CleanupInstaller(const char *filename);
     ~CleanupInstaller();
   } Installer;
 
@@ -44,12 +44,10 @@ class tool_output_file {
   raw_fd_ostream OS;
 
 public:
-  /// This constructor's arguments are passed to to raw_fd_ostream's
-  /// constructor.
-  tool_output_file(StringRef Filename, std::error_code &EC,
-                   sys::fs::OpenFlags Flags);
-
-  tool_output_file(StringRef Filename, int FD);
+  /// tool_output_file - This constructor's arguments are passed to
+  /// to raw_fd_ostream's constructor.
+  tool_output_file(const char *filename, std::string &ErrorInfo,
+                   unsigned Flags = 0);
 
   /// os - Return the contained raw_fd_ostream.
   raw_fd_ostream &os() { return OS; }

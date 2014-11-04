@@ -7,7 +7,3 @@ struct B : A {
   int foo();
 };
 
-enum E {
-  a = 0,
-  b = 1
-};

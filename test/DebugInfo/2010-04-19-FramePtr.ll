@@ -1,6 +1,6 @@
-; RUN: %llc_dwarf -asm-verbose -O1 -o %t < %s
+; RUN: llc -asm-verbose -O0 -o %t < %s 
 ; RUN: grep DW_AT_APPLE_omit_frame_ptr %t
-; RUN: %llc_dwarf -disable-fp-elim -asm-verbose -O1 -o %t < %s
+; RUN: llc -disable-fp-elim -asm-verbose -O0 -o %t < %s 
 ; RUN: grep -v DW_AT_APPLE_omit_frame_ptr %t
 
 
@@ -19,19 +19,12 @@ return:                                           ; preds = %entry
   ret i32 %retval1, !dbg !7
 }
 
-!llvm.dbg.cu = !{!3}
-!llvm.module.flags = !{!12}
-!9 = metadata !{metadata !1}
-
 !0 = metadata !{i32 2, i32 0, metadata !1, null}
-!1 = metadata !{metadata !"0x2e\00foo\00foo\00foo\002\000\001\000\006\000\000\002", metadata !10, null, metadata !4, null, i32 ()* @foo, null, null, null} ; [ DW_TAG_subprogram ]
-!2 = metadata !{metadata !"0x29", metadata !10} ; [ DW_TAG_file_type ]
-!3 = metadata !{metadata !"0x11\001\004.2.1 (Based on Apple Inc. build 5658) (LLVM build)\000\00\000\00\000", metadata !10, metadata !11, metadata !11, metadata !9, null,  null} ; [ DW_TAG_compile_unit ]
-!4 = metadata !{metadata !"0x15\00\000\000\000\000\000\000", metadata !10, metadata !2, null, metadata !5, null, null, null} ; [ DW_TAG_subroutine_type ] [line 0, size 0, align 0, offset 0] [from ]
+!1 = metadata !{i32 524334, i32 0, metadata !2, metadata !"foo", metadata !"foo", metadata !"foo", metadata !2, i32 2, metadata !4, i1 false, i1 true, i32 0, i32 0, null, i1 false} ; [ DW_TAG_subprogram ]
+!2 = metadata !{i32 524329, metadata !"a.c", metadata !"/tmp", metadata !3} ; [ DW_TAG_file_type ]
+!3 = metadata !{i32 524305, i32 0, i32 1, metadata !"a.c", metadata !"/tmp", metadata !"4.2.1 (Based on Apple Inc. build 5658) (LLVM build)", i1 true, i1 false, metadata !"", i32 0} ; [ DW_TAG_compile_unit ]
+!4 = metadata !{i32 524309, metadata !2, metadata !"", metadata !2, i32 0, i64 0, i64 0, i64 0, i32 0, null, metadata !5, i32 0, null} ; [ DW_TAG_subroutine_type ]
 !5 = metadata !{metadata !6}
-!6 = metadata !{metadata !"0x24\00int\000\0032\0032\000\000\005", metadata !10, metadata !2} ; [ DW_TAG_base_type ]
+!6 = metadata !{i32 524324, metadata !2, metadata !"int", metadata !2, i32 0, i64 32, i64 32, i64 0, i32 0, i32 5} ; [ DW_TAG_base_type ]
 !7 = metadata !{i32 2, i32 0, metadata !8, null}
-!8 = metadata !{metadata !"0xb\002\000\000", metadata !10, metadata !1} ; [ DW_TAG_lexical_block ]
-!10 = metadata !{metadata !"a.c", metadata !"/tmp"}
-!11 = metadata !{i32 0}
-!12 = metadata !{i32 1, metadata !"Debug Info Version", i32 2}
+!8 = metadata !{i32 524299, metadata !1, i32 2, i32 0} ; [ DW_TAG_lexical_block ]

@@ -7,10 +7,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <ostream>
+#include "gtest/gtest.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/SmallString.h"
-#include "gtest/gtest.h"
-#include <ostream>
 
 using namespace llvm;
 
@@ -56,14 +56,6 @@ TEST(APIntTest, i33_Count) {
 #endif
 
 TEST(APIntTest, i65_Count) {
-  APInt i65(65, 0, true);
-  EXPECT_EQ(65u, i65.countLeadingZeros());
-  EXPECT_EQ(0u, i65.countLeadingOnes());
-  EXPECT_EQ(0u, i65.getActiveBits());
-  EXPECT_EQ(1u, i65.getActiveWords());
-  EXPECT_EQ(65u, i65.countTrailingZeros());
-  EXPECT_EQ(0u, i65.countPopulation());
-
   APInt i65minus(65, 0, true);
   i65minus.setBit(64);
   EXPECT_EQ(0u, i65minus.countLeadingZeros());
@@ -520,179 +512,6 @@ TEST(APIntTest, Rotate) {
   APInt Big(256, "00004000800000000000000000003fff8000000000000000", 16);
   APInt Rot(256, "3fff80000000000000000000000000000000000040008000", 16);
   EXPECT_EQ(Rot, Big.rotr(144));
-}
-
-TEST(APIntTest, Splat) {
-  APInt ValA(8, 0x01);
-  EXPECT_EQ(ValA, APInt::getSplat(8, ValA));
-  EXPECT_EQ(APInt(64, 0x0101010101010101ULL), APInt::getSplat(64, ValA));
-
-  APInt ValB(3, 5);
-  EXPECT_EQ(APInt(4, 0xD), APInt::getSplat(4, ValB));
-  EXPECT_EQ(APInt(15, 0xDB6D), APInt::getSplat(15, ValB));
-}
-
-TEST(APIntTest, tcDecrement) {
-  // Test single word decrement.
-
-  // No out borrow.
-  {
-    integerPart singleWord = ~integerPart(0) << (integerPartWidth - 1);
-    integerPart carry = APInt::tcDecrement(&singleWord, 1);
-    EXPECT_EQ(carry, integerPart(0));
-    EXPECT_EQ(singleWord, ~integerPart(0) >> 1);
-  }
-
-  // With out borrow.
-  {
-    integerPart singleWord = 0;
-    integerPart carry = APInt::tcDecrement(&singleWord, 1);
-    EXPECT_EQ(carry, integerPart(1));
-    EXPECT_EQ(singleWord, ~integerPart(0));
-  }
-
-  // Test multiword decrement.
-
-  // No across word borrow, no out borrow.
-  {
-    integerPart test[4] = {0x1, 0x1, 0x1, 0x1};
-    integerPart expected[4] = {0x0, 0x1, 0x1, 0x1};
-    APInt::tcDecrement(test, 4);
-    EXPECT_EQ(APInt::tcCompare(test, expected, 4), 0);
-  }
-
-  // 1 across word borrow, no out borrow.
-  {
-    integerPart test[4] = {0x0, 0xF, 0x1, 0x1};
-    integerPart expected[4] = {~integerPart(0), 0xE, 0x1, 0x1};
-    integerPart carry = APInt::tcDecrement(test, 4);
-    EXPECT_EQ(carry, integerPart(0));
-    EXPECT_EQ(APInt::tcCompare(test, expected, 4), 0);
-  }
-
-  // 2 across word borrow, no out borrow.
-  {
-    integerPart test[4] = {0x0, 0x0, 0xC, 0x1};
-    integerPart expected[4] = {~integerPart(0), ~integerPart(0), 0xB, 0x1};
-    integerPart carry = APInt::tcDecrement(test, 4);
-    EXPECT_EQ(carry, integerPart(0));
-    EXPECT_EQ(APInt::tcCompare(test, expected, 4), 0);
-  }
-
-  // 3 across word borrow, no out borrow.
-  {
-    integerPart test[4] = {0x0, 0x0, 0x0, 0x1};
-    integerPart expected[4] = {~integerPart(0), ~integerPart(0), ~integerPart(0), 0x0};
-    integerPart carry = APInt::tcDecrement(test, 4);
-    EXPECT_EQ(carry, integerPart(0));
-    EXPECT_EQ(APInt::tcCompare(test, expected, 4), 0);
-  }
-
-  // 3 across word borrow, with out borrow.
-  {
-    integerPart test[4] = {0x0, 0x0, 0x0, 0x0};
-    integerPart expected[4] = {~integerPart(0), ~integerPart(0), ~integerPart(0), ~integerPart(0)};
-    integerPart carry = APInt::tcDecrement(test, 4);
-    EXPECT_EQ(carry, integerPart(1));
-    EXPECT_EQ(APInt::tcCompare(test, expected, 4), 0);
-  }
-}
-
-TEST(APIntTest, arrayAccess) {
-  // Single word check.
-  uint64_t E1 = 0x2CA7F46BF6569915ULL;
-  APInt A1(64, E1);
-  for (unsigned i = 0, e = 64; i < e; ++i) {
-    EXPECT_EQ(bool(E1 & (1ULL << i)),
-              A1[i]);
-  }
-
-  // Multiword check.
-  integerPart E2[4] = {
-    0xEB6EB136591CBA21ULL,
-    0x7B9358BD6A33F10AULL,
-    0x7E7FFA5EADD8846ULL,
-    0x305F341CA00B613DULL
-  };
-  APInt A2(integerPartWidth*4, E2);
-  for (unsigned i = 0; i < 4; ++i) {
-    for (unsigned j = 0; j < integerPartWidth; ++j) {
-      EXPECT_EQ(bool(E2[i] & (1ULL << j)),
-                A2[i*integerPartWidth + j]);
-    }
-  }
-}
-
-TEST(APIntTest, LargeAPIntConstruction) {
-  // Check that we can properly construct very large APInt. It is very
-  // unlikely that people will ever do this, but it is a legal input,
-  // so we should not crash on it.
-  APInt A9(UINT32_MAX, 0);
-  EXPECT_FALSE(A9.getBoolValue());
-}
-
-TEST(APIntTest, nearestLogBase2) {
-  // Single word check.
-
-  // Test round up.
-  uint64_t I1 = 0x1800001;
-  APInt A1(64, I1);
-  EXPECT_EQ(A1.nearestLogBase2(), A1.ceilLogBase2());
-
-  // Test round down.
-  uint64_t I2 = 0x1000011;
-  APInt A2(64, I2);
-  EXPECT_EQ(A2.nearestLogBase2(), A2.logBase2());
-
-  // Test ties round up.
-  uint64_t I3 = 0x1800000;
-  APInt A3(64, I3);
-  EXPECT_EQ(A3.nearestLogBase2(), A3.ceilLogBase2());
-
-  // Multiple word check.
-
-  // Test round up.
-  integerPart I4[4] = {0x0, 0xF, 0x18, 0x0};
-  APInt A4(integerPartWidth*4, I4);
-  EXPECT_EQ(A4.nearestLogBase2(), A4.ceilLogBase2());
-
-  // Test round down.
-  integerPart I5[4] = {0x0, 0xF, 0x10, 0x0};
-  APInt A5(integerPartWidth*4, I5);
-  EXPECT_EQ(A5.nearestLogBase2(), A5.logBase2());
-
-  // Test ties round up.
-  uint64_t I6[4] = {0x0, 0x0, 0x0, 0x18};
-  APInt A6(integerPartWidth*4, I6);
-  EXPECT_EQ(A6.nearestLogBase2(), A6.ceilLogBase2());
-
-  // Test BitWidth == 1 special cases.
-  APInt A7(1, 1);
-  EXPECT_EQ(A7.nearestLogBase2(), 0ULL);
-  APInt A8(1, 0);
-  EXPECT_EQ(A8.nearestLogBase2(), UINT32_MAX);
-
-  // Test the zero case when we have a bit width large enough such
-  // that the bit width is larger than UINT32_MAX-1.
-  APInt A9(UINT32_MAX, 0);
-  EXPECT_EQ(A9.nearestLogBase2(), UINT32_MAX);
-}
-
-TEST(APIntTest, SelfMoveAssignment) {
-  APInt X(32, 0xdeadbeef);
-  X = std::move(X);
-  EXPECT_EQ(32u, X.getBitWidth());
-  EXPECT_EQ(0xdeadbeefULL, X.getLimitedValue());
-
-  uint64_t Bits[] = {0xdeadbeefdeadbeefULL, 0xdeadbeefdeadbeefULL};
-  APInt Y(128, Bits);
-  Y = std::move(Y);
-  EXPECT_EQ(128u, Y.getBitWidth());
-  EXPECT_EQ(~0ULL, Y.getLimitedValue());
-  const uint64_t *Raw = Y.getRawData();
-  EXPECT_EQ(2u, Y.getNumWords());
-  EXPECT_EQ(0xdeadbeefdeadbeefULL, Raw[0]);
-  EXPECT_EQ(0xdeadbeefdeadbeefULL, Raw[1]);
 }
 
 }

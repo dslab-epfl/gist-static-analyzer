@@ -1,7 +1,7 @@
 ; RUN: opt < %s -globalopt -S | FileCheck %s
 
 define internal void @f() {
-; CHECK-NOT: @f(
+; CHECK-NOT: @f
 ; CHECK: define void @a
 	ret void
 }
@@ -13,7 +13,7 @@ define void @g() {
 	ret void
 }
 
-@b = internal alias  void ()* @g
+@b = alias internal void ()* @g
 ; CHECK-NOT: @b
 
 define void @h() {

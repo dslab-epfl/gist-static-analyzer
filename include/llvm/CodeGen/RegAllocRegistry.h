@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CODEGEN_REGALLOCREGISTRY_H
-#define LLVM_CODEGEN_REGALLOCREGISTRY_H
+#ifndef LLVM_CODEGENREGALLOCREGISTRY_H
+#define LLVM_CODEGENREGALLOCREGISTRY_H
 
 #include "llvm/CodeGen/MachinePassRegistry.h"
 

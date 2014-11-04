@@ -5,22 +5,15 @@ target datalayout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f3
 target triple = "x86_64-apple-macosx10.6.0"
 
 
-;;  for (long int i = 0; i < 50; i++) {
-;;    A[i][i] = i;
-;;    *B++ = A[i + 10][i + 9];
+;; for (long int i = 0; i < 50; i++)
+;;   A[i][i] = ...
+;;   ... = A[i + 10][i + 9]
 
 define void @couple0([100 x i32]* %A, i32* %B, i32 %n) nounwind uwtable ssp {
 entry:
   br label %for.body
 
-; CHECK: da analyze - none!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-
-for.body:                                         ; preds = %entry, %for.body
+for.body:                                         ; preds = %for.body, %entry
   %i.02 = phi i64 [ 0, %entry ], [ %inc, %for.body ]
   %B.addr.01 = phi i32* [ %B, %entry ], [ %incdec.ptr, %for.body ]
   %conv = trunc i64 %i.02 to i32
@@ -30,33 +23,27 @@ for.body:                                         ; preds = %entry, %for.body
   %add2 = add nsw i64 %i.02, 10
   %arrayidx4 = getelementptr inbounds [100 x i32]* %A, i64 %add2, i64 %add
   %0 = load i32* %arrayidx4, align 4
+; CHECK: da analyze - none!
   %incdec.ptr = getelementptr inbounds i32* %B.addr.01, i64 1
   store i32 %0, i32* %B.addr.01, align 4
   %inc = add nsw i64 %i.02, 1
-  %exitcond = icmp ne i64 %inc, 50
-  br i1 %exitcond, label %for.body, label %for.end
+  %cmp = icmp slt i64 %inc, 50
+  br i1 %cmp, label %for.body, label %for.end
 
 for.end:                                          ; preds = %for.body
   ret void
 }
 
 
-;;  for (long int i = 0; i < 50; i++) {
-;;    A[i][i] = i;
-;;    *B++ = A[i + 9][i + 9];
+;; for (long int i = 0; i < 50; i++)
+;;   A[i][i] = ...
+;;   ... = A[i + 9][i + 9]
 
 define void @couple1([100 x i32]* %A, i32* %B, i32 %n) nounwind uwtable ssp {
 entry:
   br label %for.body
 
-; CHECK: da analyze - none!
-; CHECK: da analyze - consistent flow [-9]!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-
-for.body:                                         ; preds = %entry, %for.body
+for.body:                                         ; preds = %for.body, %entry
   %i.02 = phi i64 [ 0, %entry ], [ %inc, %for.body ]
   %B.addr.01 = phi i32* [ %B, %entry ], [ %incdec.ptr, %for.body ]
   %conv = trunc i64 %i.02 to i32
@@ -66,33 +53,27 @@ for.body:                                         ; preds = %entry, %for.body
   %add2 = add nsw i64 %i.02, 9
   %arrayidx4 = getelementptr inbounds [100 x i32]* %A, i64 %add2, i64 %add
   %0 = load i32* %arrayidx4, align 4
+; CHECK: da analyze - consistent flow [-9]!
   %incdec.ptr = getelementptr inbounds i32* %B.addr.01, i64 1
   store i32 %0, i32* %B.addr.01, align 4
   %inc = add nsw i64 %i.02, 1
-  %exitcond = icmp ne i64 %inc, 50
-  br i1 %exitcond, label %for.body, label %for.end
+  %cmp = icmp slt i64 %inc, 50
+  br i1 %cmp, label %for.body, label %for.end
 
 for.end:                                          ; preds = %for.body
   ret void
 }
 
 
-;;  for (long int i = 0; i < 50; i++) {
-;;    A[3*i - 6][3*i - 6] = i;
-;;    *B++ = A[i][i];
+;; for (long int i = 0; i < 50; i++)
+;;   A[3*i - 6][3*i - 6] = ...
+;;   ... = A[i][i]
 
 define void @couple2([100 x i32]* %A, i32* %B, i32 %n) nounwind uwtable ssp {
 entry:
   br label %for.body
 
-; CHECK: da analyze - none!
-; CHECK: da analyze - flow [*|<]!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-
-for.body:                                         ; preds = %entry, %for.body
+for.body:                                         ; preds = %for.body, %entry
   %i.02 = phi i64 [ 0, %entry ], [ %inc, %for.body ]
   %B.addr.01 = phi i32* [ %B, %entry ], [ %incdec.ptr, %for.body ]
   %conv = trunc i64 %i.02 to i32
@@ -104,33 +85,27 @@ for.body:                                         ; preds = %entry, %for.body
   store i32 %conv, i32* %arrayidx3, align 4
   %arrayidx5 = getelementptr inbounds [100 x i32]* %A, i64 %i.02, i64 %i.02
   %0 = load i32* %arrayidx5, align 4
+; CHECK: da analyze - flow [*|<]!
   %incdec.ptr = getelementptr inbounds i32* %B.addr.01, i64 1
   store i32 %0, i32* %B.addr.01, align 4
   %inc = add nsw i64 %i.02, 1
-  %exitcond = icmp ne i64 %inc, 50
-  br i1 %exitcond, label %for.body, label %for.end
+  %cmp = icmp slt i64 %inc, 50
+  br i1 %cmp, label %for.body, label %for.end
 
 for.end:                                          ; preds = %for.body
   ret void
 }
 
 
-;;  for (long int i = 0; i < 50; i++) {
-;;    A[3*i - 6][3*i - 5] = i;
-;;    *B++ = A[i][i];
+;; for (long int i = 0; i < 50; i++)
+;;   A[3*i - 6][3*i - 5] = ...
+;;   ... = A[i][i]
 
 define void @couple3([100 x i32]* %A, i32* %B, i32 %n) nounwind uwtable ssp {
 entry:
   br label %for.body
 
-; CHECK: da analyze - none!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-
-for.body:                                         ; preds = %entry, %for.body
+for.body:                                         ; preds = %for.body, %entry
   %i.02 = phi i64 [ 0, %entry ], [ %inc, %for.body ]
   %B.addr.01 = phi i32* [ %B, %entry ], [ %incdec.ptr, %for.body ]
   %conv = trunc i64 %i.02 to i32
@@ -142,33 +117,27 @@ for.body:                                         ; preds = %entry, %for.body
   store i32 %conv, i32* %arrayidx3, align 4
   %arrayidx5 = getelementptr inbounds [100 x i32]* %A, i64 %i.02, i64 %i.02
   %0 = load i32* %arrayidx5, align 4
+; CHECK: da analyze - none!
   %incdec.ptr = getelementptr inbounds i32* %B.addr.01, i64 1
   store i32 %0, i32* %B.addr.01, align 4
   %inc = add nsw i64 %i.02, 1
-  %exitcond = icmp ne i64 %inc, 50
-  br i1 %exitcond, label %for.body, label %for.end
+  %cmp = icmp slt i64 %inc, 50
+  br i1 %cmp, label %for.body, label %for.end
 
 for.end:                                          ; preds = %for.body
   ret void
 }
 
 
-;;  for (long int i = 0; i < 50; i++) {
-;;    A[3*i - 6][3*i - n] = i;
-;;    *B++ = A[i][i];
+;; for (long int i = 0; i < 50; i++)
+;;   A[3*i - 6][3*i - n] = ...
+;;   ... = A[i][i]
 
 define void @couple4([100 x i32]* %A, i32* %B, i32 %n) nounwind uwtable ssp {
 entry:
   br label %for.body
 
-; CHECK: da analyze - none!
-; CHECK: da analyze - flow [*|<]!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-
-for.body:                                         ; preds = %entry, %for.body
+for.body:                                         ; preds = %for.body, %entry
   %i.02 = phi i64 [ 0, %entry ], [ %inc, %for.body ]
   %B.addr.01 = phi i32* [ %B, %entry ], [ %incdec.ptr, %for.body ]
   %conv = trunc i64 %i.02 to i32
@@ -181,33 +150,27 @@ for.body:                                         ; preds = %entry, %for.body
   store i32 %conv, i32* %arrayidx4, align 4
   %arrayidx6 = getelementptr inbounds [100 x i32]* %A, i64 %i.02, i64 %i.02
   %0 = load i32* %arrayidx6, align 4
+; CHECK: da analyze - flow [*|<]!
   %incdec.ptr = getelementptr inbounds i32* %B.addr.01, i64 1
   store i32 %0, i32* %B.addr.01, align 4
   %inc = add nsw i64 %i.02, 1
-  %exitcond = icmp ne i64 %inc, 50
-  br i1 %exitcond, label %for.body, label %for.end
+  %cmp = icmp slt i64 %inc, 50
+  br i1 %cmp, label %for.body, label %for.end
 
 for.end:                                          ; preds = %for.body
   ret void
 }
 
 
-;;  for (long int i = 0; i < 50; i++) {
-;;    A[3*i - n + 1][3*i - n] = i;
-;;    *B++ = A[i][i];
+;; for (long int i = 0; i < 50; i++)
+;;   A[3*i - n + 1][3*i - n] = ...
+;;   ... = A[i][i]
 
 define void @couple5([100 x i32]* %A, i32* %B, i32 %n) nounwind uwtable ssp {
 entry:
   br label %for.body
 
-; CHECK: da analyze - none!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-
-for.body:                                         ; preds = %entry, %for.body
+for.body:                                         ; preds = %for.body, %entry
   %i.02 = phi i64 [ 0, %entry ], [ %inc, %for.body ]
   %B.addr.01 = phi i32* [ %B, %entry ], [ %incdec.ptr, %for.body ]
   %conv = trunc i64 %i.02 to i32
@@ -222,33 +185,27 @@ for.body:                                         ; preds = %entry, %for.body
   store i32 %conv, i32* %arrayidx5, align 4
   %arrayidx7 = getelementptr inbounds [100 x i32]* %A, i64 %i.02, i64 %i.02
   %0 = load i32* %arrayidx7, align 4
+; CHECK: da analyze - none!
   %incdec.ptr = getelementptr inbounds i32* %B.addr.01, i64 1
   store i32 %0, i32* %B.addr.01, align 4
   %inc = add nsw i64 %i.02, 1
-  %exitcond = icmp ne i64 %inc, 50
-  br i1 %exitcond, label %for.body, label %for.end
+  %cmp = icmp slt i64 %inc, 50
+  br i1 %cmp, label %for.body, label %for.end
 
 for.end:                                          ; preds = %for.body
   ret void
 }
 
 
-;;  for (long int i = 0; i < 50; i++) {
-;;    A[i][3*i - 6] = i;
-;;    *B++ = A[i][i];
+;; for (long int i = 0; i < 50; i++)
+;;   A[i][3*i - 6] = ...
+;;   ... = A[i][i]
 
 define void @couple6([100 x i32]* %A, i32* %B, i32 %n) nounwind uwtable ssp {
 entry:
   br label %for.body
 
-; CHECK: da analyze - none!
-; CHECK: da analyze - flow [=|<]!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-
-for.body:                                         ; preds = %entry, %for.body
+for.body:                                         ; preds = %for.body, %entry
   %i.02 = phi i64 [ 0, %entry ], [ %inc, %for.body ]
   %B.addr.01 = phi i32* [ %B, %entry ], [ %incdec.ptr, %for.body ]
   %conv = trunc i64 %i.02 to i32
@@ -258,33 +215,27 @@ for.body:                                         ; preds = %entry, %for.body
   store i32 %conv, i32* %arrayidx1, align 4
   %arrayidx3 = getelementptr inbounds [100 x i32]* %A, i64 %i.02, i64 %i.02
   %0 = load i32* %arrayidx3, align 4
+; CHECK: da analyze - flow [=|<]!
   %incdec.ptr = getelementptr inbounds i32* %B.addr.01, i64 1
   store i32 %0, i32* %B.addr.01, align 4
   %inc = add nsw i64 %i.02, 1
-  %exitcond = icmp ne i64 %inc, 50
-  br i1 %exitcond, label %for.body, label %for.end
+  %cmp = icmp slt i64 %inc, 50
+  br i1 %cmp, label %for.body, label %for.end
 
 for.end:                                          ; preds = %for.body
   ret void
 }
 
 
-;;  for (long int i = 0; i < 50; i++) {
-;;    A[i][3*i - 5] = i;
-;;    *B++ = A[i][i];
+;; for (long int i = 0; i < 50; i++)
+;;   A[i][3*i - 5] = ...
+;;   ... = A[i][i]
 
 define void @couple7([100 x i32]* %A, i32* %B, i32 %n) nounwind uwtable ssp {
 entry:
   br label %for.body
 
-; CHECK: da analyze - none!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-
-for.body:                                         ; preds = %entry, %for.body
+for.body:                                         ; preds = %for.body, %entry
   %i.02 = phi i64 [ 0, %entry ], [ %inc, %for.body ]
   %B.addr.01 = phi i32* [ %B, %entry ], [ %incdec.ptr, %for.body ]
   %conv = trunc i64 %i.02 to i32
@@ -294,33 +245,27 @@ for.body:                                         ; preds = %entry, %for.body
   store i32 %conv, i32* %arrayidx1, align 4
   %arrayidx3 = getelementptr inbounds [100 x i32]* %A, i64 %i.02, i64 %i.02
   %0 = load i32* %arrayidx3, align 4
+; CHECK: da analyze - none!
   %incdec.ptr = getelementptr inbounds i32* %B.addr.01, i64 1
   store i32 %0, i32* %B.addr.01, align 4
   %inc = add nsw i64 %i.02, 1
-  %exitcond = icmp ne i64 %inc, 50
-  br i1 %exitcond, label %for.body, label %for.end
+  %cmp = icmp slt i64 %inc, 50
+  br i1 %cmp, label %for.body, label %for.end
 
 for.end:                                          ; preds = %for.body
   ret void
 }
 
 
-;;  for (long int i = 0; i <= 15; i++) {
-;;    A[3*i - 18][3 - i] = i;
-;;    *B++ = A[i][i];
+;; for (long int i = 0; i <= 15; i++)
+;;   A[3*i - 18][3 - i] = ...
+;;   ... = A[i][i]
 
 define void @couple8([100 x i32]* %A, i32* %B, i32 %n) nounwind uwtable ssp {
 entry:
   br label %for.body
 
-; CHECK: da analyze - none!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-
-for.body:                                         ; preds = %entry, %for.body
+for.body:                                         ; preds = %for.body, %entry
   %i.02 = phi i64 [ 0, %entry ], [ %inc, %for.body ]
   %B.addr.01 = phi i32* [ %B, %entry ], [ %incdec.ptr, %for.body ]
   %conv = trunc i64 %i.02 to i32
@@ -331,33 +276,27 @@ for.body:                                         ; preds = %entry, %for.body
   store i32 %conv, i32* %arrayidx2, align 4
   %arrayidx4 = getelementptr inbounds [100 x i32]* %A, i64 %i.02, i64 %i.02
   %0 = load i32* %arrayidx4, align 4
+; CHECK: da analyze - none!
   %incdec.ptr = getelementptr inbounds i32* %B.addr.01, i64 1
   store i32 %0, i32* %B.addr.01, align 4
   %inc = add nsw i64 %i.02, 1
-  %exitcond = icmp ne i64 %inc, 16
-  br i1 %exitcond, label %for.body, label %for.end
+  %cmp = icmp slt i64 %inc, 16
+  br i1 %cmp, label %for.body, label %for.end
 
 for.end:                                          ; preds = %for.body
   ret void
 }
 
 
-;;  for (long int i = 0; i <= 15; i++) {
-;;    A[3*i - 18][2 - i] = i;
-;;    *B++ = A[i][i];
+;; for (long int i = 0; i <= 15; i++)
+;;   A[3*i - 18][2 - i] = ...
+;;   ... = A[i][i]
 
 define void @couple9([100 x i32]* %A, i32* %B, i32 %n) nounwind uwtable ssp {
 entry:
   br label %for.body
 
-; CHECK: da analyze - none!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-
-for.body:                                         ; preds = %entry, %for.body
+for.body:                                         ; preds = %for.body, %entry
   %i.02 = phi i64 [ 0, %entry ], [ %inc, %for.body ]
   %B.addr.01 = phi i32* [ %B, %entry ], [ %incdec.ptr, %for.body ]
   %conv = trunc i64 %i.02 to i32
@@ -368,34 +307,27 @@ for.body:                                         ; preds = %entry, %for.body
   store i32 %conv, i32* %arrayidx2, align 4
   %arrayidx4 = getelementptr inbounds [100 x i32]* %A, i64 %i.02, i64 %i.02
   %0 = load i32* %arrayidx4, align 4
+; CHECK: da analyze - none!
   %incdec.ptr = getelementptr inbounds i32* %B.addr.01, i64 1
   store i32 %0, i32* %B.addr.01, align 4
   %inc = add nsw i64 %i.02, 1
-  %exitcond = icmp ne i64 %inc, 16
-  br i1 %exitcond, label %for.body, label %for.end
+  %cmp = icmp slt i64 %inc, 16
+  br i1 %cmp, label %for.body, label %for.end
 
 for.end:                                          ; preds = %for.body
   ret void
 }
 
 
-;;  for (long int i = 0; i <= 15; i++) {
-;;    A[3*i - 18][6 - i] = i;
-;;    *B++ = A[i][i];
+;; for (long int i = 0; i <= 15; i++)
+;;   A[3*i - 18][6 - i] = ...
+;;   ... = A[i][i]
 
 define void @couple10([100 x i32]* %A, i32* %B, i32 %n) nounwind uwtable ssp {
 entry:
   br label %for.body
 
-; CHECK: da analyze - none!
-; CHECK: da analyze - flow [>] splitable!
-; CHECK: da analyze - split level = 1, iteration = 3!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-
-for.body:                                         ; preds = %entry, %for.body
+for.body:                                         ; preds = %for.body, %entry
   %i.02 = phi i64 [ 0, %entry ], [ %inc, %for.body ]
   %B.addr.01 = phi i32* [ %B, %entry ], [ %incdec.ptr, %for.body ]
   %conv = trunc i64 %i.02 to i32
@@ -406,34 +338,28 @@ for.body:                                         ; preds = %entry, %for.body
   store i32 %conv, i32* %arrayidx2, align 4
   %arrayidx4 = getelementptr inbounds [100 x i32]* %A, i64 %i.02, i64 %i.02
   %0 = load i32* %arrayidx4, align 4
+; CHECK: da analyze - flow [>] splitable!
+; CHECK: da analyze - split level = 1, iteration = 3!
   %incdec.ptr = getelementptr inbounds i32* %B.addr.01, i64 1
   store i32 %0, i32* %B.addr.01, align 4
   %inc = add nsw i64 %i.02, 1
-  %exitcond = icmp ne i64 %inc, 16
-  br i1 %exitcond, label %for.body, label %for.end
+  %cmp = icmp slt i64 %inc, 16
+  br i1 %cmp, label %for.body, label %for.end
 
 for.end:                                          ; preds = %for.body
   ret void
 }
 
 
-;;  for (long int i = 0; i <= 15; i++) {
-;;    A[3*i - 18][18 - i] = i;
-;;    *B++ = A[i][i];
+;; for (long int i = 0; i <= 15; i++)
+;;   A[3*i - 18][18 - i] = ...
+;;   ... = A[i][i]
 
 define void @couple11([100 x i32]* %A, i32* %B, i32 %n) nounwind uwtable ssp {
 entry:
   br label %for.body
 
-; CHECK: da analyze - none!
-; CHECK: da analyze - flow [=|<] splitable!
-; CHECK: da analyze - split level = 1, iteration = 9!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-
-for.body:                                         ; preds = %entry, %for.body
+for.body:                                         ; preds = %for.body, %entry
   %i.02 = phi i64 [ 0, %entry ], [ %inc, %for.body ]
   %B.addr.01 = phi i32* [ %B, %entry ], [ %incdec.ptr, %for.body ]
   %conv = trunc i64 %i.02 to i32
@@ -444,34 +370,28 @@ for.body:                                         ; preds = %entry, %for.body
   store i32 %conv, i32* %arrayidx2, align 4
   %arrayidx4 = getelementptr inbounds [100 x i32]* %A, i64 %i.02, i64 %i.02
   %0 = load i32* %arrayidx4, align 4
+; CHECK: da analyze - flow [=|<] splitable!
+; CHECK: da analyze - split level = 1, iteration = 9!
   %incdec.ptr = getelementptr inbounds i32* %B.addr.01, i64 1
   store i32 %0, i32* %B.addr.01, align 4
   %inc = add nsw i64 %i.02, 1
-  %exitcond = icmp ne i64 %inc, 16
-  br i1 %exitcond, label %for.body, label %for.end
+  %cmp = icmp slt i64 %inc, 16
+  br i1 %cmp, label %for.body, label %for.end
 
 for.end:                                          ; preds = %for.body
   ret void
 }
 
 
-;;  for (long int i = 0; i <= 12; i++) {
-;;    A[3*i - 18][22 - i] = i;
-;;    *B++ = A[i][i];
+;; for (long int i = 0; i <= 12; i++)
+;;   A[3*i - 18][22 - i] = ...
+;;   ... = A[i][i]
 
 define void @couple12([100 x i32]* %A, i32* %B, i32 %n) nounwind uwtable ssp {
 entry:
   br label %for.body
 
-; CHECK: da analyze - none!
-; CHECK: da analyze - flow [<] splitable!
-; CHECK: da analyze - split level = 1, iteration = 11!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-
-for.body:                                         ; preds = %entry, %for.body
+for.body:                                         ; preds = %for.body, %entry
   %i.02 = phi i64 [ 0, %entry ], [ %inc, %for.body ]
   %B.addr.01 = phi i32* [ %B, %entry ], [ %incdec.ptr, %for.body ]
   %conv = trunc i64 %i.02 to i32
@@ -482,33 +402,28 @@ for.body:                                         ; preds = %entry, %for.body
   store i32 %conv, i32* %arrayidx2, align 4
   %arrayidx4 = getelementptr inbounds [100 x i32]* %A, i64 %i.02, i64 %i.02
   %0 = load i32* %arrayidx4, align 4
+; CHECK: da analyze - flow [<] splitable!
+; CHECK: da analyze - split level = 1, iteration = 11!
   %incdec.ptr = getelementptr inbounds i32* %B.addr.01, i64 1
   store i32 %0, i32* %B.addr.01, align 4
   %inc = add nsw i64 %i.02, 1
-  %exitcond = icmp ne i64 %inc, 13
-  br i1 %exitcond, label %for.body, label %for.end
+  %cmp = icmp slt i64 %inc, 13
+  br i1 %cmp, label %for.body, label %for.end
 
 for.end:                                          ; preds = %for.body
   ret void
 }
 
 
-;;  for (long int i = 0; i < 12; i++) {
-;;    A[3*i - 18][22 - i] = i;
-;;    *B++ = A[i][i];
+;; for (long int i = 0; i < 12; i++)
+;;   A[3*i - 18][22 - i] = ...
+;;   ... = A[i][i]
 
 define void @couple13([100 x i32]* %A, i32* %B, i32 %n) nounwind uwtable ssp {
 entry:
   br label %for.body
 
-; CHECK: da analyze - none!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-
-for.body:                                         ; preds = %entry, %for.body
+for.body:                                         ; preds = %for.body, %entry
   %i.02 = phi i64 [ 0, %entry ], [ %inc, %for.body ]
   %B.addr.01 = phi i32* [ %B, %entry ], [ %incdec.ptr, %for.body ]
   %conv = trunc i64 %i.02 to i32
@@ -519,33 +434,27 @@ for.body:                                         ; preds = %entry, %for.body
   store i32 %conv, i32* %arrayidx2, align 4
   %arrayidx4 = getelementptr inbounds [100 x i32]* %A, i64 %i.02, i64 %i.02
   %0 = load i32* %arrayidx4, align 4
+; CHECK: da analyze - none!
   %incdec.ptr = getelementptr inbounds i32* %B.addr.01, i64 1
   store i32 %0, i32* %B.addr.01, align 4
   %inc = add nsw i64 %i.02, 1
-  %exitcond = icmp ne i64 %inc, 12
-  br i1 %exitcond, label %for.body, label %for.end
+  %cmp = icmp slt i64 %inc, 12
+  br i1 %cmp, label %for.body, label %for.end
 
 for.end:                                          ; preds = %for.body
   ret void
 }
 
-;;  for (long int i = 0; i < 100; i++) {
-;;    A[3*i - 18][18 - i][i] = i;
-;;    *B++ = A[i][i][i];
+
+;; for (long int i = 0; i < 100; i++)
+;;   A[3*i - 18][18 - i][i] = ...
+;;   ... = A[i][i][i]
 
 define void @couple14([100 x [100 x i32]]* %A, i32* %B, i32 %n) nounwind uwtable ssp {
 entry:
   br label %for.body
 
-; CHECK: da analyze - none!
-; CHECK: da analyze - flow [=|<] splitable!
-; CHECK: da analyze - split level = 1, iteration = 9!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-
-for.body:                                         ; preds = %entry, %for.body
+for.body:                                         ; preds = %for.body, %entry
   %i.02 = phi i64 [ 0, %entry ], [ %inc, %for.body ]
   %B.addr.01 = phi i32* [ %B, %entry ], [ %incdec.ptr, %for.body ]
   %conv = trunc i64 %i.02 to i32
@@ -556,33 +465,28 @@ for.body:                                         ; preds = %entry, %for.body
   store i32 %conv, i32* %arrayidx3, align 4
   %arrayidx6 = getelementptr inbounds [100 x [100 x i32]]* %A, i64 %i.02, i64 %i.02, i64 %i.02
   %0 = load i32* %arrayidx6, align 4
+; CHECK: da analyze - flow [=|<] splitable!
+; CHECK: da analyze - split level = 1, iteration = 9!
   %incdec.ptr = getelementptr inbounds i32* %B.addr.01, i64 1
   store i32 %0, i32* %B.addr.01, align 4
   %inc = add nsw i64 %i.02, 1
-  %exitcond = icmp ne i64 %inc, 100
-  br i1 %exitcond, label %for.body, label %for.end
+  %cmp = icmp slt i64 %inc, 100
+  br i1 %cmp, label %for.body, label %for.end
 
 for.end:                                          ; preds = %for.body
   ret void
 }
 
 
-;;  for (long int i = 0; i < 100; i++) {
-;;    A[3*i - 18][22 - i][i] = i;
-;;    *B++ = A[i][i][i];
+;; for (long int i = 0; i < 100; i++)
+;;   A[3*i - 18][22 - i][i] = ...
+;;   ... = A[i][i][i]
 
 define void @couple15([100 x [100 x i32]]* %A, i32* %B, i32 %n) nounwind uwtable ssp {
 entry:
   br label %for.body
 
-; CHECK: da analyze - none!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-; CHECK: da analyze - confused!
-; CHECK: da analyze - none!
-
-for.body:                                         ; preds = %entry, %for.body
+for.body:                                         ; preds = %for.body, %entry
   %i.02 = phi i64 [ 0, %entry ], [ %inc, %for.body ]
   %B.addr.01 = phi i32* [ %B, %entry ], [ %incdec.ptr, %for.body ]
   %conv = trunc i64 %i.02 to i32
@@ -593,11 +497,12 @@ for.body:                                         ; preds = %entry, %for.body
   store i32 %conv, i32* %arrayidx3, align 4
   %arrayidx6 = getelementptr inbounds [100 x [100 x i32]]* %A, i64 %i.02, i64 %i.02, i64 %i.02
   %0 = load i32* %arrayidx6, align 4
+; CHECK: da analyze - none!
   %incdec.ptr = getelementptr inbounds i32* %B.addr.01, i64 1
   store i32 %0, i32* %B.addr.01, align 4
   %inc = add nsw i64 %i.02, 1
-  %exitcond = icmp ne i64 %inc, 100
-  br i1 %exitcond, label %for.body, label %for.end
+  %cmp = icmp slt i64 %inc, 100
+  br i1 %cmp, label %for.body, label %for.end
 
 for.end:                                          ; preds = %for.body
   ret void

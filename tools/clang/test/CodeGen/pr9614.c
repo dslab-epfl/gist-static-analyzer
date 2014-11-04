@@ -18,7 +18,7 @@ void f(void) {
   strrchr_foo("", '.');
 }
 
-// CHECK-LABEL: define void @f()
+// CHECK: define void @f()
 // CHECK: call void @foo()
 // CHECK-NEXT: call void @bar()
 // CHECK-NEXT: call i8* @strrchr(

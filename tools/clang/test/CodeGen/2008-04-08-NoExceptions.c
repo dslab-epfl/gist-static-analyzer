@@ -2,11 +2,9 @@
 
 void f(void);
 void g(void) {
-  // CHECK: define void @g() [[NUW:#[0-9]+]]
+  // CHECK: define void @g() nounwind
   // CHECK-NOT: call void @f() nounwind
   f();
 }
 
-// CHECK-NOT: declare void @f() [[NUW]]
-
-// CHECK: attributes [[NUW]] = { nounwind{{.*}} }
+// CHECK-NOT: declare void @f() nounwind

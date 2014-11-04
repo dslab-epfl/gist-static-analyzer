@@ -1,4 +1,3 @@
-; REQUIRES: asserts
 ; RUN: llc < %s -mtriple=x86_64-appel-darwin -disable-cgp-branch-opts -stats 2>&1 | grep "machine-sink"
 
 define fastcc void @t() nounwind ssp {

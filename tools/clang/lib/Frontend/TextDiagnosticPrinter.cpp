@@ -17,10 +17,10 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/Frontend/TextDiagnostic.h"
 #include "clang/Lex/Lexer.h"
-#include "llvm/ADT/SmallString.h"
-#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/ADT/SmallString.h"
 #include <algorithm>
 using namespace clang;
 
@@ -43,7 +43,7 @@ void TextDiagnosticPrinter::BeginSourceFile(const LangOptions &LO,
 }
 
 void TextDiagnosticPrinter::EndSourceFile() {
-  TextDiag.reset();
+  TextDiag.reset(0);
 }
 
 /// \brief Print any diagnostic option information to a raw_ostream.
@@ -81,11 +81,7 @@ static void printDiagnosticOptions(raw_ostream &OS,
 
     StringRef Opt = DiagnosticIDs::getWarningOptionForDiag(Info.getID());
     if (!Opt.empty()) {
-      OS << (Started ? "," : " [")
-         << (Level == DiagnosticsEngine::Remark ? "-R" : "-W") << Opt;
-      StringRef OptValue = Info.getDiags()->getFlagValue();
-      if (!OptValue.empty())
-        OS << "=" << OptValue;
+      OS << (Started ? "," : " [") << "-W" << Opt;
       Started = true;
     }
   }
@@ -136,8 +132,7 @@ void TextDiagnosticPrinter::HandleDiagnostic(DiagnosticsEngine::Level Level,
   // diagnostics in a context that lacks language options, a source manager, or
   // other infrastructure necessary when emitting more rich diagnostics.
   if (!Info.getLocation().isValid()) {
-    TextDiagnostic::printDiagnosticLevel(OS, Level, DiagOpts->ShowColors,
-                                         DiagOpts->CLFallbackMode);
+    TextDiagnostic::printDiagnosticLevel(OS, Level, DiagOpts->ShowColors);
     TextDiagnostic::printDiagnosticMessage(OS, Level, DiagMessageStream.str(),
                                            OS.tell() - StartOfLocationInfo,
                                            DiagOpts->MessageLength,
@@ -154,8 +149,14 @@ void TextDiagnosticPrinter::HandleDiagnostic(DiagnosticsEngine::Level Level,
 
   TextDiag->emitDiagnostic(Info.getLocation(), Level, DiagMessageStream.str(),
                            Info.getRanges(),
-                           Info.getFixItHints(),
+                           llvm::makeArrayRef(Info.getFixItHints(),
+                                              Info.getNumFixItHints()),
                            &Info.getSourceManager());
 
   OS.flush();
+}
+
+DiagnosticConsumer *
+TextDiagnosticPrinter::clone(DiagnosticsEngine &Diags) const {
+  return new TextDiagnosticPrinter(OS, &*DiagOpts, /*OwnsOutputStream=*/false);
 }

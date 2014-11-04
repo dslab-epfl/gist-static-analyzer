@@ -20,16 +20,15 @@
 #include "clang/Basic/TargetBuiltins.h"
 #include "clang/Basic/TargetOptions.h"
 #include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Triple.h"
-#include "llvm/IR/Type.h"
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Type.h"
 #include <algorithm>
-#include <memory>
 using namespace clang;
 
 //===----------------------------------------------------------------------===//
@@ -74,9 +73,9 @@ protected:
   virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
                             MacroBuilder &Builder) const=0;
 public:
-  OSTargetInfo(const llvm::Triple &Triple) : TgtInfo(Triple) {}
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
+  OSTargetInfo(const std::string& triple) : TgtInfo(triple) {}
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
     TgtInfo::getTargetDefines(Opts, Builder);
     getOSDefines(Opts, TgtInfo::getTriple(), Builder);
   }
@@ -89,12 +88,13 @@ static void getDarwinDefines(MacroBuilder &Builder, const LangOptions &Opts,
                              const llvm::Triple &Triple,
                              StringRef &PlatformName,
                              VersionTuple &PlatformMinVersion) {
-  Builder.defineMacro("__APPLE_CC__", "6000");
+  Builder.defineMacro("__APPLE_CC__", "5621");
   Builder.defineMacro("__APPLE__");
+  Builder.defineMacro("__MACH__");
   Builder.defineMacro("OBJC_NEW_PROPERTIES");
   // AddressSanitizer doesn't play well with source fortification, which is on
   // by default on Darwin.
-  if (Opts.Sanitize.Address) Builder.defineMacro("_FORTIFY_SOURCE", "0");
+  if (Opts.SanitizeAddress) Builder.defineMacro("_FORTIFY_SOURCE", "0");
 
   if (!Opts.ObjCAutoRefCount) {
     // __weak is always defined, for use in blocks and with objc pointers.
@@ -139,7 +139,7 @@ static void getDarwinDefines(MacroBuilder &Builder, const LangOptions &Opts,
   }
 
   // Set the appropriate OS version define.
-  if (Triple.isiOS()) {
+  if (Triple.getOS() == llvm::Triple::IOS) {
     assert(Maj < 10 && Min < 100 && Rev < 100 && "Invalid version!");
     char Str[6];
     Str[0] = '0' + Maj;
@@ -148,37 +148,22 @@ static void getDarwinDefines(MacroBuilder &Builder, const LangOptions &Opts,
     Str[3] = '0' + (Rev / 10);
     Str[4] = '0' + (Rev % 10);
     Str[5] = '\0';
-    Builder.defineMacro("__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__",
-                        Str);
-  } else if (Triple.isMacOSX()) {
+    Builder.defineMacro("__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__", Str);
+  } else {
     // Note that the Driver allows versions which aren't representable in the
     // define (because we only get a single digit for the minor and micro
     // revision numbers). So, we limit them to the maximum representable
     // version.
+    assert(Triple.getEnvironmentName().empty() && "Invalid environment!");
     assert(Maj < 100 && Min < 100 && Rev < 100 && "Invalid version!");
-    char Str[7];
-    if (Maj < 10 || (Maj == 10 && Min < 10)) {
-      Str[0] = '0' + (Maj / 10);
-      Str[1] = '0' + (Maj % 10);
-      Str[2] = '0' + std::min(Min, 9U);
-      Str[3] = '0' + std::min(Rev, 9U);
-      Str[4] = '\0';
-    } else {
-      // Handle versions > 10.9.
-      Str[0] = '0' + (Maj / 10);
-      Str[1] = '0' + (Maj % 10);
-      Str[2] = '0' + (Min / 10);
-      Str[3] = '0' + (Min % 10);
-      Str[4] = '0' + (Rev / 10);
-      Str[5] = '0' + (Rev % 10);
-      Str[6] = '\0';
-    }
+    char Str[5];
+    Str[0] = '0' + (Maj / 10);
+    Str[1] = '0' + (Maj % 10);
+    Str[2] = '0' + std::min(Min, 9U);
+    Str[3] = '0' + std::min(Rev, 9U);
+    Str[4] = '\0';
     Builder.defineMacro("__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__", Str);
   }
-
-  // Tell users about the kernel if there is one.
-  if (Triple.isOSDarwin())
-    Builder.defineMacro("__MACH__");
 
   PlatformMinVersion = VersionTuple(Maj, Min, Rev);
 }
@@ -187,19 +172,21 @@ namespace {
 template<typename Target>
 class DarwinTargetInfo : public OSTargetInfo<Target> {
 protected:
-  void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
-                    MacroBuilder &Builder) const override {
+  virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
+                            MacroBuilder &Builder) const {
     getDarwinDefines(Builder, Opts, Triple, this->PlatformName,
                      this->PlatformMinVersion);
   }
 
 public:
-  DarwinTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
-    this->TLSSupported = Triple.isMacOSX() && !Triple.isMacOSXVersionLT(10, 7);
-    this->MCountName = "\01mcount";
-  }
+  DarwinTargetInfo(const std::string& triple) :
+    OSTargetInfo<Target>(triple) {
+      llvm::Triple T = llvm::Triple(triple);
+      this->TLSSupported = T.isMacOSX() && !T.isMacOSXVersionLT(10,7);
+      this->MCountName = "\01mcount";
+    }
 
-  std::string isValidSectionSpecifier(StringRef SR) const override {
+  virtual std::string isValidSectionSpecifier(StringRef SR) const {
     // Let MCSectionMachO validate this.
     StringRef Segment, Section;
     unsigned TAA, StubSize;
@@ -208,7 +195,7 @@ public:
                                                        TAA, HasTAA, StubSize);
   }
 
-  const char *getStaticInitSectionSpecifier() const override {
+  virtual const char *getStaticInitSectionSpecifier() const {
     // FIXME: We should return 0 when building kexts.
     return "__TEXT,__StaticInit,regular,pure_instructions";
   }
@@ -216,7 +203,7 @@ public:
   /// Darwin does not support protected visibility.  Darwin's "default"
   /// is very similar to ELF's "protected";  Darwin requires a "weak"
   /// attribute on declarations that can be dynamically replaced.
-  bool hasProtectedVisibility() const override {
+  virtual bool hasProtectedVisibility() const {
     return false;
   }
 };
@@ -226,8 +213,8 @@ public:
 template<typename Target>
 class DragonFlyBSDTargetInfo : public OSTargetInfo<Target> {
 protected:
-  void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
-                    MacroBuilder &Builder) const override {
+  virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
+                            MacroBuilder &Builder) const {
     // DragonFly defines; list based off of gcc output
     Builder.defineMacro("__DragonFly__");
     Builder.defineMacro("__DragonFly_cc_version", "100001");
@@ -237,17 +224,18 @@ protected:
     DefineStd(Builder, "unix", Opts);
   }
 public:
-  DragonFlyBSDTargetInfo(const llvm::Triple &Triple)
-      : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
+  DragonFlyBSDTargetInfo(const std::string &triple)
+    : OSTargetInfo<Target>(triple) {
+      this->UserLabelPrefix = "";
 
-    switch (Triple.getArch()) {
-    default:
-    case llvm::Triple::x86:
-    case llvm::Triple::x86_64:
-      this->MCountName = ".mcount";
-      break;
-    }
+      llvm::Triple Triple(triple);
+      switch (Triple.getArch()) {
+        default:
+        case llvm::Triple::x86:
+        case llvm::Triple::x86_64:
+          this->MCountName = ".mcount";
+          break;
+      }
   }
 };
 
@@ -255,8 +243,8 @@ public:
 template<typename Target>
 class FreeBSDTargetInfo : public OSTargetInfo<Target> {
 protected:
-  void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
-                    MacroBuilder &Builder) const override {
+  virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
+                            MacroBuilder &Builder) const {
     // FreeBSD defines; list based off of gcc output
 
     unsigned Release = Triple.getOSMajorVersion();
@@ -268,65 +256,39 @@ protected:
     Builder.defineMacro("__KPRINTF_ATTRIBUTE__");
     DefineStd(Builder, "unix", Opts);
     Builder.defineMacro("__ELF__");
-
-    // On FreeBSD, wchar_t contains the number of the code point as
-    // used by the character set of the locale. These character sets are
-    // not necessarily a superset of ASCII.
-    Builder.defineMacro("__STDC_MB_MIGHT_NEQ_WC__", "1");
   }
 public:
-  FreeBSDTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
+  FreeBSDTargetInfo(const std::string &triple)
+    : OSTargetInfo<Target>(triple) {
+      this->UserLabelPrefix = "";
 
-    switch (Triple.getArch()) {
-    default:
-    case llvm::Triple::x86:
-    case llvm::Triple::x86_64:
-      this->MCountName = ".mcount";
-      break;
-    case llvm::Triple::mips:
-    case llvm::Triple::mipsel:
-    case llvm::Triple::ppc:
-    case llvm::Triple::ppc64:
-    case llvm::Triple::ppc64le:
-      this->MCountName = "_mcount";
-      break;
-    case llvm::Triple::arm:
-      this->MCountName = "__mcount";
-      break;
+      llvm::Triple Triple(triple);
+      switch (Triple.getArch()) {
+        default:
+        case llvm::Triple::x86:
+        case llvm::Triple::x86_64:
+          this->MCountName = ".mcount";
+          break;
+        case llvm::Triple::mips:
+        case llvm::Triple::mipsel:
+        case llvm::Triple::ppc:
+        case llvm::Triple::ppc64:
+          this->MCountName = "_mcount";
+          break;
+        case llvm::Triple::arm:
+          this->MCountName = "__mcount";
+          break;
+      }
+
     }
-  }
-};
-
-// GNU/kFreeBSD Target
-template<typename Target>
-class KFreeBSDTargetInfo : public OSTargetInfo<Target> {
-protected:
-  void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
-                    MacroBuilder &Builder) const override {
-    // GNU/kFreeBSD defines; list based off of gcc output
-
-    DefineStd(Builder, "unix", Opts);
-    Builder.defineMacro("__FreeBSD_kernel__");
-    Builder.defineMacro("__GLIBC__");
-    Builder.defineMacro("__ELF__");
-    if (Opts.POSIXThreads)
-      Builder.defineMacro("_REENTRANT");
-    if (Opts.CPlusPlus)
-      Builder.defineMacro("_GNU_SOURCE");
-  }
-public:
-  KFreeBSDTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
-  }
 };
 
 // Minix Target
 template<typename Target>
 class MinixTargetInfo : public OSTargetInfo<Target> {
 protected:
-  void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
-                    MacroBuilder &Builder) const override {
+  virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
+                            MacroBuilder &Builder) const {
     // Minix defines
 
     Builder.defineMacro("__minix", "3");
@@ -340,17 +302,18 @@ protected:
     DefineStd(Builder, "unix", Opts);
   }
 public:
-  MinixTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
-  }
+  MinixTargetInfo(const std::string &triple)
+    : OSTargetInfo<Target>(triple) {
+      this->UserLabelPrefix = "";
+    }
 };
 
 // Linux target
 template<typename Target>
 class LinuxTargetInfo : public OSTargetInfo<Target> {
 protected:
-  void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
-                    MacroBuilder &Builder) const override {
+  virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
+                            MacroBuilder &Builder) const {
     // Linux defines; list based off of gcc output
     DefineStd(Builder, "unix", Opts);
     DefineStd(Builder, "linux", Opts);
@@ -364,22 +327,13 @@ protected:
       Builder.defineMacro("_GNU_SOURCE");
   }
 public:
-  LinuxTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
+  LinuxTargetInfo(const std::string& triple)
+    : OSTargetInfo<Target>(triple) {
     this->UserLabelPrefix = "";
     this->WIntType = TargetInfo::UnsignedInt;
-
-    switch (Triple.getArch()) {
-    default:
-      break;
-    case llvm::Triple::ppc:
-    case llvm::Triple::ppc64:
-    case llvm::Triple::ppc64le:
-      this->MCountName = "_mcount";
-      break;
-    }
   }
 
-  const char *getStaticInitSectionSpecifier() const override {
+  virtual const char *getStaticInitSectionSpecifier() const {
     return ".text.startup";
   }
 };
@@ -388,38 +342,28 @@ public:
 template<typename Target>
 class NetBSDTargetInfo : public OSTargetInfo<Target> {
 protected:
-  void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
-                    MacroBuilder &Builder) const override {
+  virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
+                            MacroBuilder &Builder) const {
     // NetBSD defines; list based off of gcc output
     Builder.defineMacro("__NetBSD__");
     Builder.defineMacro("__unix__");
     Builder.defineMacro("__ELF__");
     if (Opts.POSIXThreads)
       Builder.defineMacro("_POSIX_THREADS");
-
-    switch (Triple.getArch()) {
-    default:
-      break;
-    case llvm::Triple::arm:
-    case llvm::Triple::armeb:
-    case llvm::Triple::thumb:
-    case llvm::Triple::thumbeb:
-      Builder.defineMacro("__ARM_DWARF_EH__");
-      break;
-    }
   }
 public:
-  NetBSDTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
-  }
+  NetBSDTargetInfo(const std::string &triple)
+    : OSTargetInfo<Target>(triple) {
+      this->UserLabelPrefix = "";
+    }
 };
 
 // OpenBSD Target
 template<typename Target>
 class OpenBSDTargetInfo : public OSTargetInfo<Target> {
 protected:
-  void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
-                    MacroBuilder &Builder) const override {
+  virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
+                            MacroBuilder &Builder) const {
     // OpenBSD defines; list based off of gcc output
 
     Builder.defineMacro("__OpenBSD__");
@@ -429,22 +373,24 @@ protected:
       Builder.defineMacro("_REENTRANT");
   }
 public:
-  OpenBSDTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
-    this->TLSSupported = false;
+  OpenBSDTargetInfo(const std::string &triple)
+    : OSTargetInfo<Target>(triple) {
+      this->UserLabelPrefix = "";
+      this->TLSSupported = false;
 
+      llvm::Triple Triple(triple);
       switch (Triple.getArch()) {
         default:
         case llvm::Triple::x86:
         case llvm::Triple::x86_64:
         case llvm::Triple::arm:
-        case llvm::Triple::sparc:
+	case llvm::Triple::sparc:
           this->MCountName = "__mcount";
           break;
         case llvm::Triple::mips64:
         case llvm::Triple::mips64el:
         case llvm::Triple::ppc:
-        case llvm::Triple::sparcv9:
+	case llvm::Triple::sparcv9:
           this->MCountName = "_mcount";
           break;
       }
@@ -455,8 +401,8 @@ public:
 template<typename Target>
 class BitrigTargetInfo : public OSTargetInfo<Target> {
 protected:
-  void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
-                    MacroBuilder &Builder) const override {
+  virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
+                            MacroBuilder &Builder) const {
     // Bitrig defines; list based off of gcc output
 
     Builder.defineMacro("__Bitrig__");
@@ -466,9 +412,11 @@ protected:
       Builder.defineMacro("_REENTRANT");
   }
 public:
-  BitrigTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
-    this->MCountName = "__mcount";
+  BitrigTargetInfo(const std::string &triple)
+    : OSTargetInfo<Target>(triple) {
+      this->UserLabelPrefix = "";
+      this->TLSSupported = false;
+      this->MCountName = "__mcount";
   }
 };
 
@@ -476,8 +424,8 @@ public:
 template<typename Target>
 class PSPTargetInfo : public OSTargetInfo<Target> {
 protected:
-  void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
-                    MacroBuilder &Builder) const override {
+  virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
+                            MacroBuilder &Builder) const {
     // PSP defines; list based on the output of the pspdev gcc toolchain.
     Builder.defineMacro("PSP");
     Builder.defineMacro("_PSP");
@@ -485,7 +433,8 @@ protected:
     Builder.defineMacro("__ELF__");
   }
 public:
-  PSPTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
+  PSPTargetInfo(const std::string& triple)
+    : OSTargetInfo<Target>(triple) {
     this->UserLabelPrefix = "";
   }
 };
@@ -494,8 +443,8 @@ public:
 template<typename Target>
 class PS3PPUTargetInfo : public OSTargetInfo<Target> {
 protected:
-  void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
-                    MacroBuilder &Builder) const override {
+  virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
+                            MacroBuilder &Builder) const {
     // PS3 PPU defines.
     Builder.defineMacro("__PPC__");
     Builder.defineMacro("__PPU__");
@@ -506,14 +455,56 @@ protected:
     Builder.defineMacro("__powerpc64__");
   }
 public:
-  PS3PPUTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
+  PS3PPUTargetInfo(const std::string& triple)
+    : OSTargetInfo<Target>(triple) {
     this->UserLabelPrefix = "";
     this->LongWidth = this->LongAlign = 32;
     this->PointerWidth = this->PointerAlign = 32;
     this->IntMaxType = TargetInfo::SignedLongLong;
+    this->UIntMaxType = TargetInfo::UnsignedLongLong;
     this->Int64Type = TargetInfo::SignedLongLong;
     this->SizeType = TargetInfo::UnsignedInt;
-    this->DescriptionString = "E-m:e-p:32:32-i64:64-n32:64";
+    this->DescriptionString = "E-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
+                              "i64:64:64-f32:32:32-f64:64:64-v128:128:128-n32";
+  }
+};
+
+// FIXME: Need a real SPU target.
+// PS3 SPU Target
+template<typename Target>
+class PS3SPUTargetInfo : public OSTargetInfo<Target> {
+protected:
+  virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
+                            MacroBuilder &Builder) const {
+    // PS3 PPU defines.
+    Builder.defineMacro("__SPU__");
+    Builder.defineMacro("__ELF__");
+  }
+public:
+  PS3SPUTargetInfo(const std::string& triple)
+    : OSTargetInfo<Target>(triple) {
+    this->UserLabelPrefix = "";
+  }
+};
+
+// AuroraUX target
+template<typename Target>
+class AuroraUXTargetInfo : public OSTargetInfo<Target> {
+protected:
+  virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
+                            MacroBuilder &Builder) const {
+    DefineStd(Builder, "sun", Opts);
+    DefineStd(Builder, "unix", Opts);
+    Builder.defineMacro("__ELF__");
+    Builder.defineMacro("__svr4__");
+    Builder.defineMacro("__SVR4");
+  }
+public:
+  AuroraUXTargetInfo(const std::string& triple)
+    : OSTargetInfo<Target>(triple) {
+    this->UserLabelPrefix = "";
+    this->WCharType = this->SignedLong;
+    // FIXME: WIntType should be SignedLong
   }
 };
 
@@ -521,8 +512,8 @@ public:
 template<typename Target>
 class SolarisTargetInfo : public OSTargetInfo<Target> {
 protected:
-  void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
-                    MacroBuilder &Builder) const override {
+  virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
+                            MacroBuilder &Builder) const {
     DefineStd(Builder, "sun", Opts);
     DefineStd(Builder, "unix", Opts);
     Builder.defineMacro("__ELF__");
@@ -544,7 +535,8 @@ protected:
     Builder.defineMacro("_REENTRANT");
   }
 public:
-  SolarisTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
+  SolarisTargetInfo(const std::string& triple)
+    : OSTargetInfo<Target>(triple) {
     this->UserLabelPrefix = "";
     this->WCharType = this->SignedInt;
     // FIXME: WIntType should be SignedLong
@@ -555,14 +547,14 @@ public:
 template<typename Target>
 class WindowsTargetInfo : public OSTargetInfo<Target> {
 protected:
-  void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
-                    MacroBuilder &Builder) const override {
+  virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
+                            MacroBuilder &Builder) const {
     Builder.defineMacro("_WIN32");
   }
   void getVisualStudioDefines(const LangOptions &Opts,
                               MacroBuilder &Builder) const {
     if (Opts.CPlusPlus) {
-      if (Opts.RTTIData)
+      if (Opts.RTTI)
         Builder.defineMacro("_CPPRTTI");
 
       if (Opts.Exceptions)
@@ -577,18 +569,13 @@ protected:
     if (Opts.POSIXThreads)
       Builder.defineMacro("_MT");
 
-    if (Opts.MSCompatibilityVersion) {
-      Builder.defineMacro("_MSC_VER",
-                          Twine(Opts.MSCompatibilityVersion / 100000));
-      Builder.defineMacro("_MSC_FULL_VER", Twine(Opts.MSCompatibilityVersion));
-      // FIXME We cannot encode the revision information into 32-bits
-      Builder.defineMacro("_MSC_BUILD", Twine(1));
-    }
+    if (Opts.MSCVersion != 0)
+      Builder.defineMacro("_MSC_VER", Twine(Opts.MSCVersion));
 
     if (Opts.MicrosoftExt) {
       Builder.defineMacro("_MSC_EXTENSIONS");
 
-      if (Opts.CPlusPlus11) {
+      if (Opts.CPlusPlus0x) {
         Builder.defineMacro("_RVALUE_REFERENCES_V2_SUPPORTED");
         Builder.defineMacro("_RVALUE_REFERENCES_SUPPORTED");
         Builder.defineMacro("_NATIVE_NULLPTR_SUPPORTED");
@@ -599,15 +586,15 @@ protected:
   }
 
 public:
-  WindowsTargetInfo(const llvm::Triple &Triple)
-      : OSTargetInfo<Target>(Triple) {}
+  WindowsTargetInfo(const std::string &triple)
+    : OSTargetInfo<Target>(triple) {}
 };
 
 template <typename Target>
 class NaClTargetInfo : public OSTargetInfo<Target> {
-protected:
-  void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
-                    MacroBuilder &Builder) const override {
+ protected:
+  virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
+                            MacroBuilder &Builder) const {
     if (Opts.POSIXThreads)
       Builder.defineMacro("_REENTRANT");
     if (Opts.CPlusPlus)
@@ -617,41 +604,30 @@ protected:
     Builder.defineMacro("__ELF__");
     Builder.defineMacro("__native_client__");
   }
-
-public:
-  NaClTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
+ public:
+  NaClTargetInfo(const std::string &triple)
+    : OSTargetInfo<Target>(triple) {
     this->UserLabelPrefix = "";
     this->LongAlign = 32;
     this->LongWidth = 32;
     this->PointerAlign = 32;
     this->PointerWidth = 32;
     this->IntMaxType = TargetInfo::SignedLongLong;
+    this->UIntMaxType = TargetInfo::UnsignedLongLong;
     this->Int64Type = TargetInfo::SignedLongLong;
     this->DoubleAlign = 64;
     this->LongDoubleWidth = 64;
     this->LongDoubleAlign = 64;
-    this->LongLongWidth = 64;
-    this->LongLongAlign = 64;
     this->SizeType = TargetInfo::UnsignedInt;
     this->PtrDiffType = TargetInfo::SignedInt;
     this->IntPtrType = TargetInfo::SignedInt;
-    // RegParmMax is inherited from the underlying architecture
+    this->RegParmMax = 2;
     this->LongDoubleFormat = &llvm::APFloat::IEEEdouble;
-    if (Triple.getArch() == llvm::Triple::arm) {
-      this->DescriptionString = "e-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S128";
-    } else if (Triple.getArch() == llvm::Triple::x86) {
-      this->DescriptionString = "e-m:e-p:32:32-i64:64-n8:16:32-S128";
-    } else if (Triple.getArch() == llvm::Triple::x86_64) {
-      this->DescriptionString = "e-m:e-p:32:32-i64:64-n8:16:32:64-S128";
-    } else if (Triple.getArch() == llvm::Triple::mipsel) {
-      // Handled on mips' setDescriptionString.
-    } else {
-      assert(Triple.getArch() == llvm::Triple::le32);
-      this->DescriptionString = "e-p:32:32-i64:64";
-    }
+    this->DescriptionString = "e-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-"
+                              "f32:32:32-f64:64:64-p:32:32:32-v128:32:32";
   }
-  typename Target::CallingConvCheckResult checkCallingConvention(
-      CallingConv CC) const override {
+  virtual typename Target::CallingConvCheckResult checkCallingConvention(
+      CallingConv CC) const {
     return CC == CC_PnaclCall ? Target::CCCR_OK :
         Target::checkCallingConvention(CC);
   }
@@ -669,18 +645,8 @@ class PPCTargetInfo : public TargetInfo {
   static const char * const GCCRegNames[];
   static const TargetInfo::GCCRegAlias GCCRegAliases[];
   std::string CPU;
-
-  // Target cpu features.
-  bool HasVSX;
-  bool HasP8Vector;
-
-protected:
-  std::string ABI;
-
 public:
-  PPCTargetInfo(const llvm::Triple &Triple)
-    : TargetInfo(Triple), HasVSX(false), HasP8Vector(false) {
-    BigEndian = (Triple.getArch() != llvm::Triple::ppc64le);
+  PPCTargetInfo(const std::string& triple) : TargetInfo(triple) {
     LongDoubleWidth = LongDoubleAlign = 128;
     LongDoubleFormat = &llvm::APFloat::PPCDoubleDouble;
   }
@@ -695,21 +661,10 @@ public:
     ArchDefine603   = 1 << 4,
     ArchDefine604   = 1 << 5,
     ArchDefinePwr4  = 1 << 6,
-    ArchDefinePwr5  = 1 << 7,
-    ArchDefinePwr5x = 1 << 8,
-    ArchDefinePwr6  = 1 << 9,
-    ArchDefinePwr6x = 1 << 10,
-    ArchDefinePwr7  = 1 << 11,
-    ArchDefinePwr8  = 1 << 12,
-    ArchDefineA2    = 1 << 13,
-    ArchDefineA2q   = 1 << 14
+    ArchDefinePwr6  = 1 << 7
   } ArchDefineTypes;
 
-  // Note: GCC recognizes the following additional cpus:
-  //  401, 403, 405, 405fp, 440fp, 464, 464fp, 476, 476fp, 505, 740, 801,
-  //  821, 823, 8540, 8548, e300c2, e300c3, e500mc64, e6500, 860, cell,
-  //  titan, rs64.
-  bool setCPU(const std::string &Name) override {
+  virtual bool setCPU(const std::string &Name) {
     bool CPUKnown = llvm::StringSwitch<bool>(Name)
       .Case("generic", true)
       .Case("440", true)
@@ -722,7 +677,6 @@ public:
       .Case("604", true)
       .Case("604e", true)
       .Case("620", true)
-      .Case("630", true)
       .Case("g3", true)
       .Case("7400", true)
       .Case("g4", true)
@@ -732,31 +686,12 @@ public:
       .Case("970", true)
       .Case("g5", true)
       .Case("a2", true)
-      .Case("a2q", true)
       .Case("e500mc", true)
       .Case("e5500", true)
-      .Case("power3", true)
-      .Case("pwr3", true)
-      .Case("power4", true)
-      .Case("pwr4", true)
-      .Case("power5", true)
-      .Case("pwr5", true)
-      .Case("power5x", true)
-      .Case("pwr5x", true)
-      .Case("power6", true)
       .Case("pwr6", true)
-      .Case("power6x", true)
-      .Case("pwr6x", true)
-      .Case("power7", true)
       .Case("pwr7", true)
-      .Case("power8", true)
-      .Case("pwr8", true)
-      .Case("powerpc", true)
       .Case("ppc", true)
-      .Case("powerpc64", true)
       .Case("ppc64", true)
-      .Case("powerpc64le", true)
-      .Case("ppc64le", true)
       .Default(false);
 
     if (CPUKnown)
@@ -765,32 +700,25 @@ public:
     return CPUKnown;
   }
 
-
-  StringRef getABI() const override { return ABI; }
-
-  void getTargetBuiltins(const Builtin::Info *&Records,
-                         unsigned &NumRecords) const override {
+  virtual void getTargetBuiltins(const Builtin::Info *&Records,
+                                 unsigned &NumRecords) const {
     Records = BuiltinInfo;
     NumRecords = clang::PPC::LastTSBuiltin-Builtin::FirstTSBuiltin;
   }
 
-  bool isCLZForZeroUndef() const override { return false; }
+  virtual bool isCLZForZeroUndef() const { return false; }
 
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override;
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const;
 
-  void getDefaultFeatures(llvm::StringMap<bool> &Features) const override;
-
-  bool handleTargetFeatures(std::vector<std::string> &Features,
-                            DiagnosticsEngine &Diags) override;
-  bool hasFeature(StringRef Feature) const override;
-
-  void getGCCRegNames(const char * const *&Names,
-                      unsigned &NumNames) const override;
-  void getGCCRegAliases(const GCCRegAlias *&Aliases,
-                        unsigned &NumAliases) const override;
-  bool validateAsmConstraint(const char *&Name,
-                             TargetInfo::ConstraintInfo &Info) const override {
+  virtual bool hasFeature(StringRef Feature) const;
+  
+  virtual void getGCCRegNames(const char * const *&Names,
+                              unsigned &NumNames) const;
+  virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                unsigned &NumAliases) const;
+  virtual bool validateAsmConstraint(const char *&Name,
+                                     TargetInfo::ConstraintInfo &Info) const {
     switch (*Name) {
     default: return false;
     case 'O': // Zero
@@ -812,7 +740,6 @@ public:
         case 'f':// VSX vector register to hold vector float data
         case 's':// VSX vector register to hold scalar float data
         case 'a':// Any VSX register
-        case 'c':// An individual CR bit
           break;
         default:
           return false;
@@ -888,27 +815,8 @@ public:
     }
     return true;
   }
-  std::string convertConstraint(const char *&Constraint) const override {
-    std::string R;
-    switch (*Constraint) {
-    case 'e':
-    case 'w':
-      // Two-character constraint; add "^" hint for later parsing.
-      R = std::string("^") + std::string(Constraint, 2);
-      Constraint++;
-      break;
-    default:
-      return TargetInfo::convertConstraint(Constraint);
-    }
-    return R;
-  }
-  const char *getClobbers() const override {
+  virtual const char *getClobbers() const {
     return "";
-  }
-  int getEHDataRegisterNumber(unsigned RegNo) const override {
-    if (RegNo == 0) return 3;
-    if (RegNo == 1) return 4;
-    return -1;
   }
 };
 
@@ -919,33 +827,6 @@ const Builtin::Info PPCTargetInfo::BuiltinInfo[] = {
 #include "clang/Basic/BuiltinsPPC.def"
 };
 
-  /// handleTargetFeatures - Perform initialization based on the user
-/// configured set of features.
-bool PPCTargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
-                                         DiagnosticsEngine &Diags) {
-  for (unsigned i = 0, e = Features.size(); i !=e; ++i) {
-    // Ignore disabled features.
-    if (Features[i][0] == '-')
-      continue;
-
-    StringRef Feature = StringRef(Features[i]).substr(1);
-
-    if (Feature == "vsx") {
-      HasVSX = true;
-      continue;
-    }
-
-    if (Feature == "power8-vector") {
-      HasP8Vector = true;
-      continue;
-    }
-
-    // TODO: Finish this list and add an assert that we've handled them
-    // all.
-  }
-
-  return true;
-}
 
 /// PPCTargetInfo::getTargetDefines - Return a set of the PowerPC-specific
 /// #defines that are not tied to a specific subtarget.
@@ -953,7 +834,6 @@ void PPCTargetInfo::getTargetDefines(const LangOptions &Opts,
                                      MacroBuilder &Builder) const {
   // Target identification.
   Builder.defineMacro("__ppc__");
-  Builder.defineMacro("__PPC__");
   Builder.defineMacro("_ARCH_PPC");
   Builder.defineMacro("__powerpc__");
   Builder.defineMacro("__POWERPC__");
@@ -961,31 +841,22 @@ void PPCTargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("_ARCH_PPC64");
     Builder.defineMacro("__powerpc64__");
     Builder.defineMacro("__ppc64__");
-    Builder.defineMacro("__PPC64__");
+  } else {
+    Builder.defineMacro("__ppc__");
   }
 
   // Target properties.
-  if (getTriple().getArch() == llvm::Triple::ppc64le) {
-    Builder.defineMacro("_LITTLE_ENDIAN");
-  } else {
-    if (getTriple().getOS() != llvm::Triple::NetBSD &&
-        getTriple().getOS() != llvm::Triple::OpenBSD)
-      Builder.defineMacro("_BIG_ENDIAN");
-  }
-
-  // ABI options.
-  if (ABI == "elfv1")
-    Builder.defineMacro("_CALL_ELF", "1");
-  if (ABI == "elfv2")
-    Builder.defineMacro("_CALL_ELF", "2");
+  if (getTriple().getOS() != llvm::Triple::NetBSD &&
+      getTriple().getOS() != llvm::Triple::OpenBSD)
+    Builder.defineMacro("_BIG_ENDIAN");
+  Builder.defineMacro("__BIG_ENDIAN__");
 
   // Subtarget options.
   Builder.defineMacro("__NATURAL_ALIGNMENT__");
   Builder.defineMacro("__REGISTER_PREFIX__", "");
 
   // FIXME: Should be controlled by command line option.
-  if (LongDoubleWidth == 128)
-    Builder.defineMacro("__LONG_DOUBLE_128__");
+  Builder.defineMacro("__LONG_DOUBLE_128__");
 
   if (Opts.AltiVec) {
     Builder.defineMacro("__VEC__", "10206");
@@ -1004,48 +875,14 @@ void PPCTargetInfo::getTargetDefines(const LangOptions &Opts,
     .Case("604",   ArchDefineName | ArchDefinePpcgr)
     .Case("604e",  ArchDefineName | ArchDefine604 | ArchDefinePpcgr)
     .Case("620",   ArchDefineName | ArchDefinePpcgr)
-    .Case("630",   ArchDefineName | ArchDefinePpcgr)
     .Case("7400",  ArchDefineName | ArchDefinePpcgr)
     .Case("7450",  ArchDefineName | ArchDefinePpcgr)
     .Case("750",   ArchDefineName | ArchDefinePpcgr)
     .Case("970",   ArchDefineName | ArchDefinePwr4 | ArchDefinePpcgr
                      | ArchDefinePpcsq)
-    .Case("a2",    ArchDefineA2)
-    .Case("a2q",   ArchDefineName | ArchDefineA2 | ArchDefineA2q)
-    .Case("pwr3",  ArchDefinePpcgr)
-    .Case("pwr4",  ArchDefineName | ArchDefinePpcgr | ArchDefinePpcsq)
-    .Case("pwr5",  ArchDefineName | ArchDefinePwr4 | ArchDefinePpcgr
+    .Case("pwr6",  ArchDefinePwr6 | ArchDefinePpcgr | ArchDefinePpcsq)
+    .Case("pwr7",  ArchDefineName | ArchDefinePwr6 | ArchDefinePpcgr
                      | ArchDefinePpcsq)
-    .Case("pwr5x", ArchDefineName | ArchDefinePwr5 | ArchDefinePwr4
-                     | ArchDefinePpcgr | ArchDefinePpcsq)
-    .Case("pwr6",  ArchDefineName | ArchDefinePwr5x | ArchDefinePwr5
-                     | ArchDefinePwr4 | ArchDefinePpcgr | ArchDefinePpcsq)
-    .Case("pwr6x", ArchDefineName | ArchDefinePwr6 | ArchDefinePwr5x
-                     | ArchDefinePwr5 | ArchDefinePwr4 | ArchDefinePpcgr
-                     | ArchDefinePpcsq)
-    .Case("pwr7",  ArchDefineName | ArchDefinePwr6x | ArchDefinePwr6
-                     | ArchDefinePwr5x | ArchDefinePwr5 | ArchDefinePwr4
-                     | ArchDefinePpcgr | ArchDefinePpcsq)
-    .Case("pwr8",  ArchDefineName | ArchDefinePwr7 | ArchDefinePwr6x
-                     | ArchDefinePwr6 | ArchDefinePwr5x | ArchDefinePwr5
-                     | ArchDefinePwr4 | ArchDefinePpcgr | ArchDefinePpcsq)
-    .Case("power3",  ArchDefinePpcgr)
-    .Case("power4",  ArchDefinePwr4 | ArchDefinePpcgr | ArchDefinePpcsq)
-    .Case("power5",  ArchDefinePwr5 | ArchDefinePwr4 | ArchDefinePpcgr
-                       | ArchDefinePpcsq)
-    .Case("power5x", ArchDefinePwr5x | ArchDefinePwr5 | ArchDefinePwr4
-                       | ArchDefinePpcgr | ArchDefinePpcsq)
-    .Case("power6",  ArchDefinePwr6 | ArchDefinePwr5x | ArchDefinePwr5
-                       | ArchDefinePwr4 | ArchDefinePpcgr | ArchDefinePpcsq)
-    .Case("power6x", ArchDefinePwr6x | ArchDefinePwr6 | ArchDefinePwr5x
-                       | ArchDefinePwr5 | ArchDefinePwr4 | ArchDefinePpcgr
-                       | ArchDefinePpcsq)
-    .Case("power7",  ArchDefinePwr7 | ArchDefinePwr6x | ArchDefinePwr6
-                       | ArchDefinePwr5x | ArchDefinePwr5 | ArchDefinePwr4
-                       | ArchDefinePpcgr | ArchDefinePpcsq)
-    .Case("power8",  ArchDefinePwr8 | ArchDefinePwr7 | ArchDefinePwr6x
-                       | ArchDefinePwr6 | ArchDefinePwr5x | ArchDefinePwr5
-                       | ArchDefinePwr4 | ArchDefinePpcgr | ArchDefinePpcsq)
     .Default(ArchDefineNone);
 
   if (defs & ArchDefineName)
@@ -1060,79 +897,12 @@ void PPCTargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("_ARCH_603");
   if (defs & ArchDefine604)
     Builder.defineMacro("_ARCH_604");
-  if (defs & ArchDefinePwr4)
+  if (defs & (ArchDefinePwr4 | ArchDefinePwr6))
     Builder.defineMacro("_ARCH_PWR4");
-  if (defs & ArchDefinePwr5)
+  if (defs & ArchDefinePwr6) {
     Builder.defineMacro("_ARCH_PWR5");
-  if (defs & ArchDefinePwr5x)
-    Builder.defineMacro("_ARCH_PWR5X");
-  if (defs & ArchDefinePwr6)
     Builder.defineMacro("_ARCH_PWR6");
-  if (defs & ArchDefinePwr6x)
-    Builder.defineMacro("_ARCH_PWR6X");
-  if (defs & ArchDefinePwr7)
-    Builder.defineMacro("_ARCH_PWR7");
-  if (defs & ArchDefinePwr8)
-    Builder.defineMacro("_ARCH_PWR8");
-  if (defs & ArchDefineA2)
-    Builder.defineMacro("_ARCH_A2");
-  if (defs & ArchDefineA2q) {
-    Builder.defineMacro("_ARCH_A2Q");
-    Builder.defineMacro("_ARCH_QP");
   }
-
-  if (getTriple().getVendor() == llvm::Triple::BGQ) {
-    Builder.defineMacro("__bg__");
-    Builder.defineMacro("__THW_BLUEGENE__");
-    Builder.defineMacro("__bgq__");
-    Builder.defineMacro("__TOS_BGQ__");
-  }
-
-  if (HasVSX)
-    Builder.defineMacro("__VSX__");
-  if (HasP8Vector)
-    Builder.defineMacro("__POWER8_VECTOR__");
-
-  // FIXME: The following are not yet generated here by Clang, but are
-  //        generated by GCC:
-  //
-  //   _SOFT_FLOAT_
-  //   __RECIP_PRECISION__
-  //   __APPLE_ALTIVEC__
-  //   __RECIP__
-  //   __RECIPF__
-  //   __RSQRTE__
-  //   __RSQRTEF__
-  //   _SOFT_DOUBLE_
-  //   __NO_LWSYNC__
-  //   __HAVE_BSWAP__
-  //   __LONGDOUBLE128
-  //   __CMODEL_MEDIUM__
-  //   __CMODEL_LARGE__
-  //   _CALL_SYSV
-  //   _CALL_DARWIN
-  //   __NO_FPRS__
-}
-
-void PPCTargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
-  Features["altivec"] = llvm::StringSwitch<bool>(CPU)
-    .Case("7400", true)
-    .Case("g4", true)
-    .Case("7450", true)
-    .Case("g4+", true)
-    .Case("970", true)
-    .Case("g5", true)
-    .Case("pwr6", true)
-    .Case("pwr7", true)
-    .Case("pwr8", true)
-    .Case("ppc64", true)
-    .Case("ppc64le", true)
-    .Default(false);
-
-  Features["qpx"] = (CPU == "a2q");
-
-  if (!ABI.empty())
-    Features[ABI] = true;
 }
 
 bool PPCTargetInfo::hasFeature(StringRef Feature) const {
@@ -1247,8 +1017,9 @@ void PPCTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
 namespace {
 class PPC32TargetInfo : public PPCTargetInfo {
 public:
-  PPC32TargetInfo(const llvm::Triple &Triple) : PPCTargetInfo(Triple) {
-    DescriptionString = "E-m:e-p:32:32-i64:64-n32";
+  PPC32TargetInfo(const std::string &triple) : PPCTargetInfo(triple) {
+    DescriptionString = "E-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
+                        "i64:64:64-f32:32:32-f64:64:64-v128:128:128-n32";
 
     switch (getTriple().getOS()) {
     case llvm::Triple::Linux:
@@ -1271,50 +1042,38 @@ public:
     MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 32;
   }
 
-  BuiltinVaListKind getBuiltinVaListKind() const override {
+  virtual BuiltinVaListKind getBuiltinVaListKind() const {
     // This is the ELF definition, and is overridden by the Darwin sub-target
     return TargetInfo::PowerABIBuiltinVaList;
   }
 };
 } // end anonymous namespace.
 
-// Note: ABI differences may eventually require us to have a separate
-// TargetInfo for little endian.
 namespace {
 class PPC64TargetInfo : public PPCTargetInfo {
 public:
-  PPC64TargetInfo(const llvm::Triple &Triple) : PPCTargetInfo(Triple) {
+  PPC64TargetInfo(const std::string& triple) : PPCTargetInfo(triple) {
     LongWidth = LongAlign = PointerWidth = PointerAlign = 64;
     IntMaxType = SignedLong;
+    UIntMaxType = UnsignedLong;
     Int64Type = SignedLong;
 
     if (getTriple().getOS() == llvm::Triple::FreeBSD) {
       LongDoubleWidth = LongDoubleAlign = 64;
       LongDoubleFormat = &llvm::APFloat::IEEEdouble;
-      DescriptionString = "E-m:e-i64:64-n32:64";
-    } else {
-      if ((Triple.getArch() == llvm::Triple::ppc64le)) {
-        DescriptionString = "e-m:e-i64:64-n32:64";
-        ABI = "elfv2";
-      } else {
-        DescriptionString = "E-m:e-i64:64-n32:64";
-        ABI = "elfv1";
-      }
-    }
+      DescriptionString = "E-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
+                          "i64:64:64-f32:32:32-f64:64:64-f128:64:64-"
+                          "v128:128:128-n32:64";
+    } else
+      DescriptionString = "E-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
+                          "i64:64:64-f32:32:32-f64:64:64-f128:128:128-"
+                          "v128:128:128-n32:64";
 
     // PPC64 supports atomics up to 8 bytes.
     MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
   }
-  BuiltinVaListKind getBuiltinVaListKind() const override {
+  virtual BuiltinVaListKind getBuiltinVaListKind() const {
     return TargetInfo::CharPtrBuiltinVaList;
-  }
-  // PPC64 Linux-specifc ABI options.
-  bool setABI(const std::string &Name) override {
-    if (Name == "elfv1" || Name == "elfv2") {
-      ABI = Name;
-      return true;
-    }
-    return false;
   }
 };
 } // end anonymous namespace.
@@ -1324,16 +1083,16 @@ namespace {
 class DarwinPPC32TargetInfo :
   public DarwinTargetInfo<PPC32TargetInfo> {
 public:
-  DarwinPPC32TargetInfo(const llvm::Triple &Triple)
-      : DarwinTargetInfo<PPC32TargetInfo>(Triple) {
+  DarwinPPC32TargetInfo(const std::string& triple)
+    : DarwinTargetInfo<PPC32TargetInfo>(triple) {
     HasAlignMac68kSupport = true;
     BoolWidth = BoolAlign = 32; //XXX support -mone-byte-bool?
-    PtrDiffType = SignedInt;    // for http://llvm.org/bugs/show_bug.cgi?id=15726
     LongLongAlign = 32;
     SuitableAlign = 128;
-    DescriptionString = "E-m:o-p:32:32-f64:32:64-n32";
+    DescriptionString = "E-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
+                        "i64:32:64-f32:32:32-f64:64:64-v128:128:128-n32";
   }
-  BuiltinVaListKind getBuiltinVaListKind() const override {
+  virtual BuiltinVaListKind getBuiltinVaListKind() const {
     return TargetInfo::CharPtrBuiltinVaList;
   }
 };
@@ -1341,11 +1100,12 @@ public:
 class DarwinPPC64TargetInfo :
   public DarwinTargetInfo<PPC64TargetInfo> {
 public:
-  DarwinPPC64TargetInfo(const llvm::Triple &Triple)
-      : DarwinTargetInfo<PPC64TargetInfo>(Triple) {
+  DarwinPPC64TargetInfo(const std::string& triple)
+    : DarwinTargetInfo<PPC64TargetInfo>(triple) {
     HasAlignMac68kSupport = true;
     SuitableAlign = 128;
-    DescriptionString = "E-m:o-i64:64-n32:64";
+    DescriptionString = "E-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
+                        "i64:64:64-f32:32:32-f64:64:64-v128:128:128-n32:64";
   }
 };
 } // end anonymous namespace.
@@ -1362,71 +1122,58 @@ namespace {
   class NVPTXTargetInfo : public TargetInfo {
     static const char * const GCCRegNames[];
     static const Builtin::Info BuiltinInfo[];
+    std::vector<llvm::StringRef> AvailableFeatures;
   public:
-    NVPTXTargetInfo(const llvm::Triple &Triple) : TargetInfo(Triple) {
+    NVPTXTargetInfo(const std::string& triple) : TargetInfo(triple) {
       BigEndian = false;
       TLSSupported = false;
       LongWidth = LongAlign = 64;
       AddrSpaceMap = &NVPTXAddrSpaceMap;
-      UseAddrSpaceMapMangling = true;
       // Define available target features
       // These must be defined in sorted order!
       NoAsmVariants = true;
     }
-    void getTargetDefines(const LangOptions &Opts,
-                          MacroBuilder &Builder) const override {
+    virtual void getTargetDefines(const LangOptions &Opts,
+                                  MacroBuilder &Builder) const {
       Builder.defineMacro("__PTX__");
       Builder.defineMacro("__NVPTX__");
     }
-    void getTargetBuiltins(const Builtin::Info *&Records,
-                           unsigned &NumRecords) const override {
+    virtual void getTargetBuiltins(const Builtin::Info *&Records,
+                                   unsigned &NumRecords) const {
       Records = BuiltinInfo;
       NumRecords = clang::NVPTX::LastTSBuiltin-Builtin::FirstTSBuiltin;
     }
-    bool hasFeature(StringRef Feature) const override {
+    virtual bool hasFeature(StringRef Feature) const {
       return Feature == "ptx" || Feature == "nvptx";
     }
-
-    void getGCCRegNames(const char * const *&Names,
-                        unsigned &NumNames) const override;
-    void getGCCRegAliases(const GCCRegAlias *&Aliases,
-                                  unsigned &NumAliases) const override {
+    
+    virtual void getGCCRegNames(const char * const *&Names,
+                                unsigned &NumNames) const;
+    virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                  unsigned &NumAliases) const {
       // No aliases.
-      Aliases = nullptr;
+      Aliases = 0;
       NumAliases = 0;
     }
-    bool validateAsmConstraint(const char *&Name,
-                               TargetInfo::ConstraintInfo &Info) const override {
-      switch (*Name) {
-      default: return false;
-      case 'c':
-      case 'h':
-      case 'r':
-      case 'l':
-      case 'f':
-      case 'd':
-        Info.setAllowsRegister();
-        return true;
-      }
+    virtual bool validateAsmConstraint(const char *&Name,
+                                       TargetInfo::ConstraintInfo &info) const {
+      // FIXME: implement
+      return true;
     }
-    const char *getClobbers() const override {
+    virtual const char *getClobbers() const {
       // FIXME: Is this really right?
       return "";
     }
-    BuiltinVaListKind getBuiltinVaListKind() const override {
+    virtual BuiltinVaListKind getBuiltinVaListKind() const {
       // FIXME: implement
       return TargetInfo::CharPtrBuiltinVaList;
     }
-    bool setCPU(const std::string &Name) override {
-      bool Valid = llvm::StringSwitch<bool>(Name)
-        .Case("sm_20", true)
-        .Case("sm_21", true)
-        .Case("sm_30", true)
-        .Case("sm_35", true)
-        .Default(false);
-
-      return Valid;
+    virtual bool setCPU(const std::string &Name) {
+      return Name == "sm_10" || Name == "sm_13" || Name == "sm_20";
     }
+    virtual bool setFeatureEnabled(llvm::StringMap<bool> &Features,
+                                   StringRef Name,
+                                   bool Enabled) const;
   };
 
   const Builtin::Info NVPTXTargetInfo::BuiltinInfo[] = {
@@ -1446,23 +1193,39 @@ namespace {
     NumNames = llvm::array_lengthof(GCCRegNames);
   }
 
+  bool NVPTXTargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
+                                          StringRef Name,
+                                          bool Enabled) const {
+    if(std::binary_search(AvailableFeatures.begin(), AvailableFeatures.end(),
+                          Name)) {
+      Features[Name] = Enabled;
+      return true;
+    } else {
+      return false;
+    }
+  }
+
   class NVPTX32TargetInfo : public NVPTXTargetInfo {
   public:
-    NVPTX32TargetInfo(const llvm::Triple &Triple) : NVPTXTargetInfo(Triple) {
+    NVPTX32TargetInfo(const std::string& triple) : NVPTXTargetInfo(triple) {
       PointerWidth = PointerAlign = 32;
-      SizeType     = PtrDiffType = TargetInfo::UnsignedInt;
-      IntPtrType = TargetInfo::SignedInt;
-      DescriptionString = "e-p:32:32-i64:64-v16:16-v32:32-n16:32:64";
+      SizeType     = PtrDiffType = IntPtrType = TargetInfo::UnsignedInt;
+      DescriptionString
+        = "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-"
+          "f32:32:32-f64:64:64-v16:16:16-v32:32:32-v64:64:64-v128:128:128-"
+          "n16:32:64";
   }
   };
 
   class NVPTX64TargetInfo : public NVPTXTargetInfo {
   public:
-    NVPTX64TargetInfo(const llvm::Triple &Triple) : NVPTXTargetInfo(Triple) {
+    NVPTX64TargetInfo(const std::string& triple) : NVPTXTargetInfo(triple) {
       PointerWidth = PointerAlign = 64;
-      SizeType     = PtrDiffType = TargetInfo::UnsignedLongLong;
-      IntPtrType = TargetInfo::SignedLongLong;
-      DescriptionString = "e-i64:64-v16:16-v32:32-n16:32:64";
+      SizeType     = PtrDiffType = IntPtrType = TargetInfo::UnsignedLongLong;
+      DescriptionString
+        = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-"
+          "f32:32:32-f64:64:64-v16:16:16-v32:32:32-v64:64:64-v128:128:128-"
+          "n16:32:64";
   }
   };
 }
@@ -1478,173 +1241,190 @@ static const unsigned R600AddrSpaceMap[] = {
   3     // cuda_shared
 };
 
-// If you edit the description strings, make sure you update
-// getPointerWidthV().
-
-static const char *DescriptionStringR600 =
-  "e-p:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128"
-  "-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64";
-
-static const char *DescriptionStringR600DoubleOps =
-  "e-p:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128"
-  "-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64";
-
-static const char *DescriptionStringSI =
-  "e-p:32:32-p1:64:64-p2:64:64-p3:32:32-p4:64:64-p5:32:32-p24:64:64"
-  "-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128"
-  "-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64";
-
 class R600TargetInfo : public TargetInfo {
-  static const Builtin::Info BuiltinInfo[];
-
-  /// \brief The GPU profiles supported by the R600 target.
-  enum GPUKind {
-    GK_NONE,
-    GK_R600,
-    GK_R600_DOUBLE_OPS,
-    GK_R700,
-    GK_R700_DOUBLE_OPS,
-    GK_EVERGREEN,
-    GK_EVERGREEN_DOUBLE_OPS,
-    GK_NORTHERN_ISLANDS,
-    GK_CAYMAN,
-    GK_SOUTHERN_ISLANDS,
-    GK_SEA_ISLANDS
-  } GPU;
-
 public:
-  R600TargetInfo(const llvm::Triple &Triple)
-      : TargetInfo(Triple), GPU(GK_R600) {
-    DescriptionString = DescriptionStringR600;
+  R600TargetInfo(const std::string& triple) : TargetInfo(triple) {
+    DescriptionString =
+          "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16"
+          "-i32:32:32-i64:64:64-f32:32:32-f64:64:64-f80:32:32"
+          "-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64"
+          "-v96:128:128-v128:128:128-v192:256:256-v256:256:256"
+          "-v512:512:512-v1024:1024:1024-v2048:2048:2048"
+          "-n8:16:32:64";
     AddrSpaceMap = &R600AddrSpaceMap;
-    UseAddrSpaceMapMangling = true;
   }
 
-  uint64_t getPointerWidthV(unsigned AddrSpace) const override {
-    if (GPU <= GK_CAYMAN)
-      return 32;
-
-    switch(AddrSpace) {
-      default:
-        return 64;
-      case 0:
-      case 3:
-      case 5:
-        return 32;
-    }
-  }
-
-  const char * getClobbers() const override {
+  virtual const char * getClobbers() const {
     return "";
   }
 
-  void getGCCRegNames(const char * const *&Names,
-                      unsigned &numNames) const override {
-    Names = nullptr;
+  virtual void getGCCRegNames(const char * const *&Names,
+                              unsigned &numNames) const  {
+    Names = NULL;
     numNames = 0;
   }
 
-  void getGCCRegAliases(const GCCRegAlias *&Aliases,
-                        unsigned &NumAliases) const override {
-    Aliases = nullptr;
+  virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                unsigned &NumAliases) const {
+    Aliases = NULL;
     NumAliases = 0;
   }
 
-  bool validateAsmConstraint(const char *&Name,
-                             TargetInfo::ConstraintInfo &info) const override {
+  virtual bool validateAsmConstraint(const char *&Name,
+                                     TargetInfo::ConstraintInfo &info) const {
     return true;
   }
 
-  void getTargetBuiltins(const Builtin::Info *&Records,
-                         unsigned &NumRecords) const override {
-    Records = BuiltinInfo;
-    NumRecords = clang::R600::LastTSBuiltin - Builtin::FirstTSBuiltin;
+  virtual void getTargetBuiltins(const Builtin::Info *&Records,
+                                 unsigned &NumRecords) const {
+    Records = NULL;
+    NumRecords = 0;
   }
 
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
+
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
     Builder.defineMacro("__R600__");
   }
 
-  BuiltinVaListKind getBuiltinVaListKind() const override {
+  virtual BuiltinVaListKind getBuiltinVaListKind() const {
     return TargetInfo::CharPtrBuiltinVaList;
   }
 
-  bool setCPU(const std::string &Name) override {
-    GPU = llvm::StringSwitch<GPUKind>(Name)
-      .Case("r600" ,    GK_R600)
-      .Case("rv610",    GK_R600)
-      .Case("rv620",    GK_R600)
-      .Case("rv630",    GK_R600)
-      .Case("rv635",    GK_R600)
-      .Case("rs780",    GK_R600)
-      .Case("rs880",    GK_R600)
-      .Case("rv670",    GK_R600_DOUBLE_OPS)
-      .Case("rv710",    GK_R700)
-      .Case("rv730",    GK_R700)
-      .Case("rv740",    GK_R700_DOUBLE_OPS)
-      .Case("rv770",    GK_R700_DOUBLE_OPS)
-      .Case("palm",     GK_EVERGREEN)
-      .Case("cedar",    GK_EVERGREEN)
-      .Case("sumo",     GK_EVERGREEN)
-      .Case("sumo2",    GK_EVERGREEN)
-      .Case("redwood",  GK_EVERGREEN)
-      .Case("juniper",  GK_EVERGREEN)
-      .Case("hemlock",  GK_EVERGREEN_DOUBLE_OPS)
-      .Case("cypress",  GK_EVERGREEN_DOUBLE_OPS)
-      .Case("barts",    GK_NORTHERN_ISLANDS)
-      .Case("turks",    GK_NORTHERN_ISLANDS)
-      .Case("caicos",   GK_NORTHERN_ISLANDS)
-      .Case("cayman",   GK_CAYMAN)
-      .Case("aruba",    GK_CAYMAN)
-      .Case("tahiti",   GK_SOUTHERN_ISLANDS)
-      .Case("pitcairn", GK_SOUTHERN_ISLANDS)
-      .Case("verde",    GK_SOUTHERN_ISLANDS)
-      .Case("oland",    GK_SOUTHERN_ISLANDS)
-      .Case("hainan",   GK_SOUTHERN_ISLANDS)
-      .Case("bonaire",  GK_SEA_ISLANDS)
-      .Case("kabini",   GK_SEA_ISLANDS)
-      .Case("kaveri",   GK_SEA_ISLANDS)
-      .Case("hawaii",   GK_SEA_ISLANDS)
-      .Case("mullins",  GK_SEA_ISLANDS)
-      .Default(GK_NONE);
-
-    if (GPU == GK_NONE) {
-      return false;
-    }
-
-    // Set the correct data layout
-    switch (GPU) {
-    case GK_NONE:
-    case GK_R600:
-    case GK_R700:
-    case GK_EVERGREEN:
-    case GK_NORTHERN_ISLANDS:
-      DescriptionString = DescriptionStringR600;
-      break;
-    case GK_R600_DOUBLE_OPS:
-    case GK_R700_DOUBLE_OPS:
-    case GK_EVERGREEN_DOUBLE_OPS:
-    case GK_CAYMAN:
-      DescriptionString = DescriptionStringR600DoubleOps;
-      break;
-    case GK_SOUTHERN_ISLANDS:
-    case GK_SEA_ISLANDS:
-      DescriptionString = DescriptionStringSI;
-      break;
-    }
-
-    return true;
-  }
-};
-
-const Builtin::Info R600TargetInfo::BuiltinInfo[] = {
-#define BUILTIN(ID, TYPE, ATTRS)                \
-  { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
-#include "clang/Basic/BuiltinsR600.def"
 };
 
 } // end anonymous namespace
+
+namespace {
+// MBlaze abstract base class
+class MBlazeTargetInfo : public TargetInfo {
+  static const char * const GCCRegNames[];
+  static const TargetInfo::GCCRegAlias GCCRegAliases[];
+
+public:
+  MBlazeTargetInfo(const std::string& triple) : TargetInfo(triple) {
+    DescriptionString = "E-p:32:32:32-i8:8:8-i16:16:16";
+  }
+
+  virtual void getTargetBuiltins(const Builtin::Info *&Records,
+                                 unsigned &NumRecords) const {
+    // FIXME: Implement.
+    Records = 0;
+    NumRecords = 0;
+  }
+
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const;
+
+  virtual bool hasFeature(StringRef Feature) const {
+    return Feature == "mblaze";
+  }
+  
+  virtual BuiltinVaListKind getBuiltinVaListKind() const {
+    return TargetInfo::CharPtrBuiltinVaList;
+  }
+  virtual const char *getTargetPrefix() const {
+    return "mblaze";
+  }
+  virtual void getGCCRegNames(const char * const *&Names,
+                              unsigned &NumNames) const;
+  virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                unsigned &NumAliases) const;
+  virtual bool validateAsmConstraint(const char *&Name,
+                                     TargetInfo::ConstraintInfo &Info) const {
+    switch (*Name) {
+    default: return false;
+    case 'O': // Zero
+      return true;
+    case 'b': // Base register
+    case 'f': // Floating point register
+      Info.setAllowsRegister();
+      return true;
+    }
+  }
+  virtual const char *getClobbers() const {
+    return "";
+  }
+};
+
+/// MBlazeTargetInfo::getTargetDefines - Return a set of the MBlaze-specific
+/// #defines that are not tied to a specific subtarget.
+void MBlazeTargetInfo::getTargetDefines(const LangOptions &Opts,
+                                     MacroBuilder &Builder) const {
+  // Target identification.
+  Builder.defineMacro("__microblaze__");
+  Builder.defineMacro("_ARCH_MICROBLAZE");
+  Builder.defineMacro("__MICROBLAZE__");
+
+  // Target properties.
+  Builder.defineMacro("_BIG_ENDIAN");
+  Builder.defineMacro("__BIG_ENDIAN__");
+
+  // Subtarget options.
+  Builder.defineMacro("__REGISTER_PREFIX__", "");
+}
+
+
+const char * const MBlazeTargetInfo::GCCRegNames[] = {
+  "r0",   "r1",   "r2",   "r3",   "r4",   "r5",   "r6",   "r7",
+  "r8",   "r9",   "r10",  "r11",  "r12",  "r13",  "r14",  "r15",
+  "r16",  "r17",  "r18",  "r19",  "r20",  "r21",  "r22",  "r23",
+  "r24",  "r25",  "r26",  "r27",  "r28",  "r29",  "r30",  "r31",
+  "$f0",  "$f1",  "$f2",  "$f3",  "$f4",  "$f5",  "$f6",  "$f7",
+  "$f8",  "$f9",  "$f10", "$f11", "$f12", "$f13", "$f14", "$f15",
+  "$f16", "$f17", "$f18", "$f19", "$f20", "$f21", "$f22", "$f23",
+  "$f24", "$f25", "$f26", "$f27", "$f28", "$f29", "$f30", "$f31",
+  "hi",   "lo",   "accum","rmsr", "$fcc1","$fcc2","$fcc3","$fcc4",
+  "$fcc5","$fcc6","$fcc7","$ap",  "$rap", "$frp"
+};
+
+void MBlazeTargetInfo::getGCCRegNames(const char * const *&Names,
+                                   unsigned &NumNames) const {
+  Names = GCCRegNames;
+  NumNames = llvm::array_lengthof(GCCRegNames);
+}
+
+const TargetInfo::GCCRegAlias MBlazeTargetInfo::GCCRegAliases[] = {
+  { {"f0"},  "r0" },
+  { {"f1"},  "r1" },
+  { {"f2"},  "r2" },
+  { {"f3"},  "r3" },
+  { {"f4"},  "r4" },
+  { {"f5"},  "r5" },
+  { {"f6"},  "r6" },
+  { {"f7"},  "r7" },
+  { {"f8"},  "r8" },
+  { {"f9"},  "r9" },
+  { {"f10"}, "r10" },
+  { {"f11"}, "r11" },
+  { {"f12"}, "r12" },
+  { {"f13"}, "r13" },
+  { {"f14"}, "r14" },
+  { {"f15"}, "r15" },
+  { {"f16"}, "r16" },
+  { {"f17"}, "r17" },
+  { {"f18"}, "r18" },
+  { {"f19"}, "r19" },
+  { {"f20"}, "r20" },
+  { {"f21"}, "r21" },
+  { {"f22"}, "r22" },
+  { {"f23"}, "r23" },
+  { {"f24"}, "r24" },
+  { {"f25"}, "r25" },
+  { {"f26"}, "r26" },
+  { {"f27"}, "r27" },
+  { {"f28"}, "r28" },
+  { {"f29"}, "r29" },
+  { {"f30"}, "r30" },
+  { {"f31"}, "r31" },
+};
+
+void MBlazeTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                     unsigned &NumAliases) const {
+  Aliases = GCCRegAliases;
+  NumAliases = llvm::array_lengthof(GCCRegAliases);
+}
+} // end anonymous namespace.
 
 namespace {
 // Namespace for x86 abstract base class
@@ -1682,17 +1462,11 @@ const TargetInfo::AddlRegName AddlRegNames[] = {
 // most of the implementation can be shared.
 class X86TargetInfo : public TargetInfo {
   enum X86SSEEnum {
-    NoSSE, SSE1, SSE2, SSE3, SSSE3, SSE41, SSE42, AVX, AVX2, AVX512F
+    NoSSE, SSE1, SSE2, SSE3, SSSE3, SSE41, SSE42, AVX, AVX2
   } SSELevel;
   enum MMX3DNowEnum {
     NoMMX3DNow, MMX, AMD3DNow, AMD3DNowAthlon
   } MMX3DNowLevel;
-  enum XOPEnum {
-    NoXOP,
-    SSE4A,
-    FMA4,
-    XOP
-  } XOPLevel;
 
   bool HasAES;
   bool HasPCLMUL;
@@ -1702,15 +1476,11 @@ class X86TargetInfo : public TargetInfo {
   bool HasBMI2;
   bool HasPOPCNT;
   bool HasRTM;
-  bool HasPRFCHW;
-  bool HasRDSEED;
-  bool HasADX;
-  bool HasTBM;
+  bool HasSSE4a;
+  bool HasFMA4;
   bool HasFMA;
+  bool HasXOP;
   bool HasF16C;
-  bool HasAVX512CD, HasAVX512ER, HasAVX512PF, HasAVX512DQ, HasAVX512BW, HasAVX512VL;
-  bool HasSHA;
-  bool HasCX16;
 
   /// \brief Enumeration of all of the X86 CPUs supported by Clang.
   ///
@@ -1784,7 +1554,6 @@ class X86TargetInfo : public TargetInfo {
     /// Atom processors
     //@{
     CK_Atom,
-    CK_Silvermont,
     //@}
 
     /// \name Nehalem
@@ -1794,16 +1563,7 @@ class X86TargetInfo : public TargetInfo {
     CK_Corei7AVX,
     CK_CoreAVXi,
     CK_CoreAVX2,
-    CK_Broadwell,
     //@}
-
-    /// \name Knights Landing
-    /// Knights Landing processor.
-    CK_KNL,
-
-    /// \name Skylake Server
-    /// Skylake server processor.
-    CK_SKX,
 
     /// \name K6
     /// K6 architecture processors.
@@ -1840,7 +1600,6 @@ class X86TargetInfo : public TargetInfo {
     /// Bobcat architecture processors.
     //@{
     CK_BTVER1,
-    CK_BTVER2,
     //@}
 
     /// \name Bulldozer
@@ -1848,8 +1607,6 @@ class X86TargetInfo : public TargetInfo {
     //@{
     CK_BDVER1,
     CK_BDVER2,
-    CK_BDVER3,
-    CK_BDVER4,
     //@}
 
     /// This specification is deprecated and will be removed in the future.
@@ -1865,83 +1622,55 @@ class X86TargetInfo : public TargetInfo {
     //@}
   } CPU;
 
-  enum FPMathKind {
-    FP_Default,
-    FP_SSE,
-    FP_387
-  } FPMath;
-
 public:
-  X86TargetInfo(const llvm::Triple &Triple)
-      : TargetInfo(Triple), SSELevel(NoSSE), MMX3DNowLevel(NoMMX3DNow),
-        XOPLevel(NoXOP), HasAES(false), HasPCLMUL(false), HasLZCNT(false),
-        HasRDRND(false), HasBMI(false), HasBMI2(false), HasPOPCNT(false),
-        HasRTM(false), HasPRFCHW(false), HasRDSEED(false), HasADX(false),
-        HasTBM(false), HasFMA(false), HasF16C(false), HasAVX512CD(false),
-        HasAVX512ER(false), HasAVX512PF(false), HasAVX512DQ(false),
-        HasAVX512BW(false), HasAVX512VL(false), HasSHA(false), HasCX16(false),
-        CPU(CK_Generic), FPMath(FP_Default) {
+  X86TargetInfo(const std::string& triple)
+    : TargetInfo(triple), SSELevel(NoSSE), MMX3DNowLevel(NoMMX3DNow),
+      HasAES(false), HasPCLMUL(false), HasLZCNT(false), HasRDRND(false),
+      HasBMI(false), HasBMI2(false), HasPOPCNT(false), HasRTM(false),
+      HasSSE4a(false), HasFMA4(false), HasFMA(false), HasXOP(false),
+      HasF16C(false), CPU(CK_Generic) {
     BigEndian = false;
     LongDoubleFormat = &llvm::APFloat::x87DoubleExtended;
   }
-  unsigned getFloatEvalMethod() const override {
+  virtual unsigned getFloatEvalMethod() const {
     // X87 evaluates with 80 bits "long double" precision.
     return SSELevel == NoSSE ? 2 : 0;
   }
-  void getTargetBuiltins(const Builtin::Info *&Records,
-                                 unsigned &NumRecords) const override {
+  virtual void getTargetBuiltins(const Builtin::Info *&Records,
+                                 unsigned &NumRecords) const {
     Records = BuiltinInfo;
     NumRecords = clang::X86::LastTSBuiltin-Builtin::FirstTSBuiltin;
   }
-  void getGCCRegNames(const char * const *&Names,
-                      unsigned &NumNames) const override {
+  virtual void getGCCRegNames(const char * const *&Names,
+                              unsigned &NumNames) const {
     Names = GCCRegNames;
     NumNames = llvm::array_lengthof(GCCRegNames);
   }
-  void getGCCRegAliases(const GCCRegAlias *&Aliases,
-                        unsigned &NumAliases) const override {
-    Aliases = nullptr;
+  virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                unsigned &NumAliases) const {
+    Aliases = 0;
     NumAliases = 0;
   }
-  void getGCCAddlRegNames(const AddlRegName *&Names,
-                          unsigned &NumNames) const override {
+  virtual void getGCCAddlRegNames(const AddlRegName *&Names,
+				  unsigned &NumNames) const {
     Names = AddlRegNames;
     NumNames = llvm::array_lengthof(AddlRegNames);
   }
-  bool validateAsmConstraint(const char *&Name,
-                                     TargetInfo::ConstraintInfo &info) const override;
-
-  bool validateOutputSize(StringRef Constraint, unsigned Size) const override;
-
-  bool validateInputSize(StringRef Constraint, unsigned Size) const override;
-
-  virtual bool validateOperandSize(StringRef Constraint, unsigned Size) const;
-
-  std::string convertConstraint(const char *&Constraint) const override;
-  const char *getClobbers() const override {
+  virtual bool validateAsmConstraint(const char *&Name,
+                                     TargetInfo::ConstraintInfo &info) const;
+  virtual std::string convertConstraint(const char *&Constraint) const;
+  virtual const char *getClobbers() const {
     return "~{dirflag},~{fpsr},~{flags}";
   }
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override;
-  static void setSSELevel(llvm::StringMap<bool> &Features, X86SSEEnum Level,
-                          bool Enabled);
-  static void setMMXLevel(llvm::StringMap<bool> &Features, MMX3DNowEnum Level,
-                          bool Enabled);
-  static void setXOPLevel(llvm::StringMap<bool> &Features, XOPEnum Level,
-                          bool Enabled);
-  void setFeatureEnabled(llvm::StringMap<bool> &Features,
-                         StringRef Name, bool Enabled) const override {
-    setFeatureEnabledImpl(Features, Name, Enabled);
-  }
-  // This exists purely to cut down on the number of virtual calls in
-  // getDefaultFeatures which calls this repeatedly.
-  static void setFeatureEnabledImpl(llvm::StringMap<bool> &Features,
-                                    StringRef Name, bool Enabled);
-  void getDefaultFeatures(llvm::StringMap<bool> &Features) const override;
-  bool hasFeature(StringRef Feature) const override;
-  bool handleTargetFeatures(std::vector<std::string> &Features,
-                            DiagnosticsEngine &Diags) override;
-  StringRef getABI() const override {
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const;
+  virtual bool setFeatureEnabled(llvm::StringMap<bool> &Features,
+                                 StringRef Name,
+                                 bool Enabled) const;
+  virtual void getDefaultFeatures(llvm::StringMap<bool> &Features) const;
+  virtual bool hasFeature(StringRef Feature) const;
+  virtual void HandleTargetFeatures(std::vector<std::string> &Features);
+  virtual const char* getABI() const {
     if (getTriple().getArch() == llvm::Triple::x86_64 && SSELevel >= AVX)
       return "avx";
     else if (getTriple().getArch() == llvm::Triple::x86 &&
@@ -1949,7 +1678,7 @@ public:
       return "no-mmx";
     return "";
   }
-  bool setCPU(const std::string &Name) override {
+  virtual bool setCPU(const std::string &Name) {
     CPU = llvm::StringSwitch<CPUKind>(Name)
       .Case("i386", CK_i386)
       .Case("i486", CK_i486)
@@ -1974,14 +1703,10 @@ public:
       .Case("core2", CK_Core2)
       .Case("penryn", CK_Penryn)
       .Case("atom", CK_Atom)
-      .Case("slm", CK_Silvermont)
       .Case("corei7", CK_Corei7)
       .Case("corei7-avx", CK_Corei7AVX)
       .Case("core-avx-i", CK_CoreAVXi)
       .Case("core-avx2", CK_CoreAVX2)
-      .Case("broadwell", CK_Broadwell)
-      .Case("knl", CK_KNL)
-      .Case("skx", CK_SKX)
       .Case("k6", CK_K6)
       .Case("k6-2", CK_K6_2)
       .Case("k6-3", CK_K6_3)
@@ -1999,11 +1724,8 @@ public:
       .Case("opteron-sse3", CK_OpteronSSE3)
       .Case("amdfam10", CK_AMDFAM10)
       .Case("btver1", CK_BTVER1)
-      .Case("btver2", CK_BTVER2)
       .Case("bdver1", CK_BDVER1)
       .Case("bdver2", CK_BDVER2)
-      .Case("bdver3", CK_BDVER3)
-      .Case("bdver4", CK_BDVER4)
       .Case("x86-64", CK_x86_64)
       .Case("geode", CK_Geode)
       .Default(CK_Generic);
@@ -2054,14 +1776,10 @@ public:
     case CK_Core2:
     case CK_Penryn:
     case CK_Atom:
-    case CK_Silvermont:
     case CK_Corei7:
     case CK_Corei7AVX:
     case CK_CoreAVXi:
     case CK_CoreAVX2:
-    case CK_Broadwell:
-    case CK_KNL:
-    case CK_SKX:
     case CK_Athlon64:
     case CK_Athlon64SSE3:
     case CK_AthlonFX:
@@ -2071,52 +1789,60 @@ public:
     case CK_OpteronSSE3:
     case CK_AMDFAM10:
     case CK_BTVER1:
-    case CK_BTVER2:
     case CK_BDVER1:
     case CK_BDVER2:
-    case CK_BDVER3:
-    case CK_BDVER4:
     case CK_x86_64:
       return true;
     }
     llvm_unreachable("Unhandled CPU kind");
   }
 
-  bool setFPMath(StringRef Name) override;
-
-  CallingConvCheckResult checkCallingConvention(CallingConv CC) const override {
+  virtual CallingConvCheckResult checkCallingConvention(CallingConv CC) const {
     // We accept all non-ARM calling conventions
     return (CC == CC_X86ThisCall ||
             CC == CC_X86FastCall ||
             CC == CC_X86StdCall || 
             CC == CC_C || 
-            CC == CC_X86Pascal ||
-            CC == CC_IntelOclBicc) ? CCCR_OK : CCCR_Warning;
+            CC == CC_X86Pascal) ? CCCR_OK : CCCR_Warning;
   }
 
-  CallingConv getDefaultCallingConv(CallingConvMethodType MT) const override {
-    return MT == CCMT_Member ? CC_X86ThisCall : CC_C;
+  virtual CallingConv getDefaultCallingConv() const {
+    return CC_C;
   }
 };
 
-bool X86TargetInfo::setFPMath(StringRef Name) {
-  if (Name == "387") {
-    FPMath = FP_387;
-    return true;
-  }
-  if (Name == "sse") {
-    FPMath = FP_SSE;
-    return true;
-  }
-  return false;
-}
-
 void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
+  // FIXME: This should not be here.
+  Features["3dnow"] = false;
+  Features["3dnowa"] = false;
+  Features["mmx"] = false;
+  Features["sse"] = false;
+  Features["sse2"] = false;
+  Features["sse3"] = false;
+  Features["ssse3"] = false;
+  Features["sse41"] = false;
+  Features["sse42"] = false;
+  Features["sse4a"] = false;
+  Features["aes"] = false;
+  Features["pclmul"] = false;
+  Features["avx"] = false;
+  Features["avx2"] = false;
+  Features["lzcnt"] = false;
+  Features["rdrand"] = false;
+  Features["bmi"] = false;
+  Features["bmi2"] = false;
+  Features["popcnt"] = false;
+  Features["rtm"] = false;
+  Features["fma4"] = false;
+  Features["fma"] = false;
+  Features["xop"] = false;
+  Features["f16c"] = false;
+
   // FIXME: This *really* should not be here.
 
   // X86_64 always has SSE2.
   if (getTriple().getArch() == llvm::Triple::x86_64)
-    setFeatureEnabledImpl(Features, "sse2", true);
+    Features["sse2"] = Features["sse"] = Features["mmx"] = true;
 
   switch (CPU) {
   case CK_Generic:
@@ -2129,389 +1855,275 @@ void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
     break;
   case CK_PentiumMMX:
   case CK_Pentium2:
-    setFeatureEnabledImpl(Features, "mmx", true);
+    setFeatureEnabled(Features, "mmx", true);
     break;
   case CK_Pentium3:
   case CK_Pentium3M:
-    setFeatureEnabledImpl(Features, "sse", true);
+    setFeatureEnabled(Features, "mmx", true);
+    setFeatureEnabled(Features, "sse", true);
     break;
   case CK_PentiumM:
   case CK_Pentium4:
   case CK_Pentium4M:
   case CK_x86_64:
-    setFeatureEnabledImpl(Features, "sse2", true);
+    setFeatureEnabled(Features, "mmx", true);
+    setFeatureEnabled(Features, "sse2", true);
     break;
   case CK_Yonah:
   case CK_Prescott:
   case CK_Nocona:
-    setFeatureEnabledImpl(Features, "sse3", true);
-    setFeatureEnabledImpl(Features, "cx16", true);
+    setFeatureEnabled(Features, "mmx", true);
+    setFeatureEnabled(Features, "sse3", true);
     break;
   case CK_Core2:
-    setFeatureEnabledImpl(Features, "ssse3", true);
-    setFeatureEnabledImpl(Features, "cx16", true);
+    setFeatureEnabled(Features, "mmx", true);
+    setFeatureEnabled(Features, "ssse3", true);
     break;
   case CK_Penryn:
-    setFeatureEnabledImpl(Features, "sse4.1", true);
-    setFeatureEnabledImpl(Features, "cx16", true);
+    setFeatureEnabled(Features, "mmx", true);
+    setFeatureEnabled(Features, "sse4.1", true);
     break;
   case CK_Atom:
-    setFeatureEnabledImpl(Features, "ssse3", true);
-    setFeatureEnabledImpl(Features, "cx16", true);
-    break;
-  case CK_Silvermont:
-    setFeatureEnabledImpl(Features, "sse4.2", true);
-    setFeatureEnabledImpl(Features, "aes", true);
-    setFeatureEnabledImpl(Features, "cx16", true);
-    setFeatureEnabledImpl(Features, "pclmul", true);
+    setFeatureEnabled(Features, "mmx", true);
+    setFeatureEnabled(Features, "ssse3", true);
     break;
   case CK_Corei7:
-    setFeatureEnabledImpl(Features, "sse4.2", true);
-    setFeatureEnabledImpl(Features, "cx16", true);
+    setFeatureEnabled(Features, "mmx", true);
+    setFeatureEnabled(Features, "sse4", true);
     break;
   case CK_Corei7AVX:
-    setFeatureEnabledImpl(Features, "avx", true);
-    setFeatureEnabledImpl(Features, "aes", true);
-    setFeatureEnabledImpl(Features, "cx16", true);
-    setFeatureEnabledImpl(Features, "pclmul", true);
+    setFeatureEnabled(Features, "mmx", true);
+    setFeatureEnabled(Features, "avx", true);
+    setFeatureEnabled(Features, "aes", true);
+    setFeatureEnabled(Features, "pclmul", true);
     break;
   case CK_CoreAVXi:
-    setFeatureEnabledImpl(Features, "avx", true);
-    setFeatureEnabledImpl(Features, "aes", true);
-    setFeatureEnabledImpl(Features, "pclmul", true);
-    setFeatureEnabledImpl(Features, "rdrnd", true);
-    setFeatureEnabledImpl(Features, "f16c", true);
+    setFeatureEnabled(Features, "mmx", true);
+    setFeatureEnabled(Features, "avx", true);
+    setFeatureEnabled(Features, "aes", true);
+    setFeatureEnabled(Features, "pclmul", true);
+    setFeatureEnabled(Features, "rdrnd", true);
     break;
   case CK_CoreAVX2:
-    setFeatureEnabledImpl(Features, "avx2", true);
-    setFeatureEnabledImpl(Features, "aes", true);
-    setFeatureEnabledImpl(Features, "pclmul", true);
-    setFeatureEnabledImpl(Features, "lzcnt", true);
-    setFeatureEnabledImpl(Features, "rdrnd", true);
-    setFeatureEnabledImpl(Features, "f16c", true);
-    setFeatureEnabledImpl(Features, "bmi", true);
-    setFeatureEnabledImpl(Features, "bmi2", true);
-    setFeatureEnabledImpl(Features, "rtm", true);
-    setFeatureEnabledImpl(Features, "fma", true);
-    setFeatureEnabledImpl(Features, "cx16", true);
-    break;
-  case CK_Broadwell:
-    setFeatureEnabledImpl(Features, "avx2", true);
-    setFeatureEnabledImpl(Features, "aes", true);
-    setFeatureEnabledImpl(Features, "pclmul", true);
-    setFeatureEnabledImpl(Features, "lzcnt", true);
-    setFeatureEnabledImpl(Features, "rdrnd", true);
-    setFeatureEnabledImpl(Features, "f16c", true);
-    setFeatureEnabledImpl(Features, "bmi", true);
-    setFeatureEnabledImpl(Features, "bmi2", true);
-    setFeatureEnabledImpl(Features, "rtm", true);
-    setFeatureEnabledImpl(Features, "fma", true);
-    setFeatureEnabledImpl(Features, "cx16", true);
-    setFeatureEnabledImpl(Features, "rdseed", true);
-    setFeatureEnabledImpl(Features, "adx", true);
-    break;
-  case CK_KNL:
-    setFeatureEnabledImpl(Features, "avx512f", true);
-    setFeatureEnabledImpl(Features, "avx512cd", true);
-    setFeatureEnabledImpl(Features, "avx512er", true);
-    setFeatureEnabledImpl(Features, "avx512pf", true);
-    setFeatureEnabledImpl(Features, "aes", true);
-    setFeatureEnabledImpl(Features, "pclmul", true);
-    setFeatureEnabledImpl(Features, "lzcnt", true);
-    setFeatureEnabledImpl(Features, "rdrnd", true);
-    setFeatureEnabledImpl(Features, "f16c", true);
-    setFeatureEnabledImpl(Features, "bmi", true);
-    setFeatureEnabledImpl(Features, "bmi2", true);
-    setFeatureEnabledImpl(Features, "rtm", true);
-    setFeatureEnabledImpl(Features, "fma", true);
-    setFeatureEnabledImpl(Features, "rdseed", true);
-    setFeatureEnabledImpl(Features, "adx", true);
-    break;
-  case CK_SKX:
-    setFeatureEnabledImpl(Features, "avx512f", true);
-    setFeatureEnabledImpl(Features, "avx512cd", true);
-    setFeatureEnabledImpl(Features, "avx512dq", true);
-    setFeatureEnabledImpl(Features, "avx512bw", true);
-    setFeatureEnabledImpl(Features, "avx512vl", true);
-    setFeatureEnabledImpl(Features, "aes", true);
-    setFeatureEnabledImpl(Features, "pclmul", true);
-    setFeatureEnabledImpl(Features, "lzcnt", true);
-    setFeatureEnabledImpl(Features, "rdrnd", true);
-    setFeatureEnabledImpl(Features, "f16c", true);
-    setFeatureEnabledImpl(Features, "bmi", true);
-    setFeatureEnabledImpl(Features, "bmi2", true);
-    setFeatureEnabledImpl(Features, "rtm", true);
-    setFeatureEnabledImpl(Features, "fma", true);
-    setFeatureEnabledImpl(Features, "rdseed", true);
-    setFeatureEnabledImpl(Features, "adx", true);
+    setFeatureEnabled(Features, "mmx", true);
+    setFeatureEnabled(Features, "avx2", true);
+    setFeatureEnabled(Features, "aes", true);
+    setFeatureEnabled(Features, "pclmul", true);
+    setFeatureEnabled(Features, "lzcnt", true);
+    setFeatureEnabled(Features, "rdrnd", true);
+    setFeatureEnabled(Features, "bmi", true);
+    setFeatureEnabled(Features, "bmi2", true);
+    setFeatureEnabled(Features, "rtm", true);
+    setFeatureEnabled(Features, "fma", true);
     break;
   case CK_K6:
   case CK_WinChipC6:
-    setFeatureEnabledImpl(Features, "mmx", true);
+    setFeatureEnabled(Features, "mmx", true);
     break;
   case CK_K6_2:
   case CK_K6_3:
   case CK_WinChip2:
   case CK_C3:
-    setFeatureEnabledImpl(Features, "3dnow", true);
+    setFeatureEnabled(Features, "3dnow", true);
     break;
   case CK_Athlon:
   case CK_AthlonThunderbird:
   case CK_Geode:
-    setFeatureEnabledImpl(Features, "3dnowa", true);
+    setFeatureEnabled(Features, "3dnowa", true);
     break;
   case CK_Athlon4:
   case CK_AthlonXP:
   case CK_AthlonMP:
-    setFeatureEnabledImpl(Features, "sse", true);
-    setFeatureEnabledImpl(Features, "3dnowa", true);
+    setFeatureEnabled(Features, "sse", true);
+    setFeatureEnabled(Features, "3dnowa", true);
     break;
   case CK_K8:
   case CK_Opteron:
   case CK_Athlon64:
   case CK_AthlonFX:
-    setFeatureEnabledImpl(Features, "sse2", true);
-    setFeatureEnabledImpl(Features, "3dnowa", true);
+    setFeatureEnabled(Features, "sse2", true);
+    setFeatureEnabled(Features, "3dnowa", true);
     break;
   case CK_K8SSE3:
   case CK_OpteronSSE3:
   case CK_Athlon64SSE3:
-    setFeatureEnabledImpl(Features, "sse3", true);
-    setFeatureEnabledImpl(Features, "3dnowa", true);
+    setFeatureEnabled(Features, "sse3", true);
+    setFeatureEnabled(Features, "3dnowa", true);
     break;
   case CK_AMDFAM10:
-    setFeatureEnabledImpl(Features, "sse3", true);
-    setFeatureEnabledImpl(Features, "sse4a", true);
-    setFeatureEnabledImpl(Features, "3dnowa", true);
-    setFeatureEnabledImpl(Features, "lzcnt", true);
-    setFeatureEnabledImpl(Features, "popcnt", true);
+    setFeatureEnabled(Features, "sse3", true);
+    setFeatureEnabled(Features, "sse4a", true);
+    setFeatureEnabled(Features, "3dnowa", true);
     break;
   case CK_BTVER1:
-    setFeatureEnabledImpl(Features, "ssse3", true);
-    setFeatureEnabledImpl(Features, "sse4a", true);
-    setFeatureEnabledImpl(Features, "cx16", true);
-    setFeatureEnabledImpl(Features, "lzcnt", true);
-    setFeatureEnabledImpl(Features, "popcnt", true);
-    setFeatureEnabledImpl(Features, "prfchw", true);
-    break;
-  case CK_BTVER2:
-    setFeatureEnabledImpl(Features, "avx", true);
-    setFeatureEnabledImpl(Features, "sse4a", true);
-    setFeatureEnabledImpl(Features, "lzcnt", true);
-    setFeatureEnabledImpl(Features, "aes", true);
-    setFeatureEnabledImpl(Features, "pclmul", true);
-    setFeatureEnabledImpl(Features, "prfchw", true);
-    setFeatureEnabledImpl(Features, "bmi", true);
-    setFeatureEnabledImpl(Features, "f16c", true);
-    setFeatureEnabledImpl(Features, "cx16", true);
+    setFeatureEnabled(Features, "ssse3", true);
+    setFeatureEnabled(Features, "sse4a", true);
     break;
   case CK_BDVER1:
-    setFeatureEnabledImpl(Features, "xop", true);
-    setFeatureEnabledImpl(Features, "lzcnt", true);
-    setFeatureEnabledImpl(Features, "aes", true);
-    setFeatureEnabledImpl(Features, "pclmul", true);
-    setFeatureEnabledImpl(Features, "prfchw", true);
-    setFeatureEnabledImpl(Features, "cx16", true);
-    break;
-  case CK_BDVER4:
-    setFeatureEnabledImpl(Features, "avx2", true);
-    setFeatureEnabledImpl(Features, "bmi2", true);
-    // FALLTHROUGH
   case CK_BDVER2:
-  case CK_BDVER3:
-    setFeatureEnabledImpl(Features, "xop", true);
-    setFeatureEnabledImpl(Features, "lzcnt", true);
-    setFeatureEnabledImpl(Features, "aes", true);
-    setFeatureEnabledImpl(Features, "pclmul", true);
-    setFeatureEnabledImpl(Features, "prfchw", true);
-    setFeatureEnabledImpl(Features, "bmi", true);
-    setFeatureEnabledImpl(Features, "fma", true);
-    setFeatureEnabledImpl(Features, "f16c", true);
-    setFeatureEnabledImpl(Features, "tbm", true);
-    setFeatureEnabledImpl(Features, "cx16", true);
+    setFeatureEnabled(Features, "avx", true);
+    setFeatureEnabled(Features, "xop", true);
+    setFeatureEnabled(Features, "aes", true);
+    setFeatureEnabled(Features, "pclmul", true);
     break;
   case CK_C3_2:
-    setFeatureEnabledImpl(Features, "sse", true);
+    setFeatureEnabled(Features, "mmx", true);
+    setFeatureEnabled(Features, "sse", true);
     break;
   }
 }
 
-void X86TargetInfo::setSSELevel(llvm::StringMap<bool> &Features,
-                                X86SSEEnum Level, bool Enabled) {
-  if (Enabled) {
-    switch (Level) {
-    case AVX512F:
-      Features["avx512f"] = true;
-    case AVX2:
-      Features["avx2"] = true;
-    case AVX:
-      Features["avx"] = true;
-    case SSE42:
-      Features["sse4.2"] = true;
-    case SSE41:
-      Features["sse4.1"] = true;
-    case SSSE3:
-      Features["ssse3"] = true;
-    case SSE3:
-      Features["sse3"] = true;
-    case SSE2:
-      Features["sse2"] = true;
-    case SSE1:
-      Features["sse"] = true;
-    case NoSSE:
-      break;
-    }
-    return;
-  }
-
-  switch (Level) {
-  case NoSSE:
-  case SSE1:
-    Features["sse"] = false;
-  case SSE2:
-    Features["sse2"] = Features["pclmul"] = Features["aes"] =
-      Features["sha"] = false;
-  case SSE3:
-    Features["sse3"] = false;
-    setXOPLevel(Features, NoXOP, false);
-  case SSSE3:
-    Features["ssse3"] = false;
-  case SSE41:
-    Features["sse4.1"] = false;
-  case SSE42:
-    Features["sse4.2"] = false;
-  case AVX:
-    Features["fma"] = Features["avx"] = Features["f16c"] = false;
-    setXOPLevel(Features, FMA4, false);
-  case AVX2:
-    Features["avx2"] = false;
-  case AVX512F:
-    Features["avx512f"] = Features["avx512cd"] = Features["avx512er"] = Features["avx512pf"] =
-    Features["avx512dq"] = Features["avx512bw"] = Features["avx512vl"] = false;
-  }
-}
-
-void X86TargetInfo::setMMXLevel(llvm::StringMap<bool> &Features,
-                                MMX3DNowEnum Level, bool Enabled) {
-  if (Enabled) {
-    switch (Level) {
-    case AMD3DNowAthlon:
-      Features["3dnowa"] = true;
-    case AMD3DNow:
-      Features["3dnow"] = true;
-    case MMX:
-      Features["mmx"] = true;
-    case NoMMX3DNow:
-      break;
-    }
-    return;
-  }
-
-  switch (Level) {
-  case NoMMX3DNow:
-  case MMX:
-    Features["mmx"] = false;
-  case AMD3DNow:
-    Features["3dnow"] = false;
-  case AMD3DNowAthlon:
-    Features["3dnowa"] = false;
-  }
-}
-
-void X86TargetInfo::setXOPLevel(llvm::StringMap<bool> &Features, XOPEnum Level,
-                                bool Enabled) {
-  if (Enabled) {
-    switch (Level) {
-    case XOP:
-      Features["xop"] = true;
-    case FMA4:
-      Features["fma4"] = true;
-      setSSELevel(Features, AVX, true);
-    case SSE4A:
-      Features["sse4a"] = true;
-      setSSELevel(Features, SSE3, true);
-    case NoXOP:
-      break;
-    }
-    return;
-  }
-
-  switch (Level) {
-  case NoXOP:
-  case SSE4A:
-    Features["sse4a"] = false;
-  case FMA4:
-    Features["fma4"] = false;
-  case XOP:
-    Features["xop"] = false;
-  }
-}
-
-void X86TargetInfo::setFeatureEnabledImpl(llvm::StringMap<bool> &Features,
-                                          StringRef Name, bool Enabled) {
+bool X86TargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
+                                      StringRef Name,
+                                      bool Enabled) const {
   // FIXME: This *really* should not be here.  We need some way of translating
   // options into llvm subtarget features.
-  if (Name == "sse4")
-    Name = "sse4.2";
+  if (!Features.count(Name) &&
+      (Name != "sse4" && Name != "sse4.2" && Name != "sse4.1" &&
+       Name != "rdrnd"))
+    return false;
 
-  Features[Name] = Enabled;
+  // FIXME: this should probably use a switch with fall through.
 
-  if (Name == "mmx") {
-    setMMXLevel(Features, MMX, Enabled);
-  } else if (Name == "sse") {
-    setSSELevel(Features, SSE1, Enabled);
-  } else if (Name == "sse2") {
-    setSSELevel(Features, SSE2, Enabled);
-  } else if (Name == "sse3") {
-    setSSELevel(Features, SSE3, Enabled);
-  } else if (Name == "ssse3") {
-    setSSELevel(Features, SSSE3, Enabled);
-  } else if (Name == "sse4.2") {
-    setSSELevel(Features, SSE42, Enabled);
-  } else if (Name == "sse4.1") {
-    setSSELevel(Features, SSE41, Enabled);
-  } else if (Name == "3dnow") {
-    setMMXLevel(Features, AMD3DNow, Enabled);
-  } else if (Name == "3dnowa") {
-    setMMXLevel(Features, AMD3DNowAthlon, Enabled);
-  } else if (Name == "aes") {
-    if (Enabled)
-      setSSELevel(Features, SSE2, Enabled);
-  } else if (Name == "pclmul") {
-    if (Enabled)
-      setSSELevel(Features, SSE2, Enabled);
-  } else if (Name == "avx") {
-    setSSELevel(Features, AVX, Enabled);
-  } else if (Name == "avx2") {
-    setSSELevel(Features, AVX2, Enabled);
-  } else if (Name == "avx512f") {
-    setSSELevel(Features, AVX512F, Enabled);
-  } else if (Name == "avx512cd" || Name == "avx512er" || Name == "avx512pf"
-          || Name == "avx512dq" || Name == "avx512bw" || Name == "avx512vl") {
-    if (Enabled)
-      setSSELevel(Features, AVX512F, Enabled);
-  } else if (Name == "fma") {
-    if (Enabled)
-      setSSELevel(Features, AVX, Enabled);
-  } else if (Name == "fma4") {
-    setXOPLevel(Features, FMA4, Enabled);
-  } else if (Name == "xop") {
-    setXOPLevel(Features, XOP, Enabled);
-  } else if (Name == "sse4a") {
-    setXOPLevel(Features, SSE4A, Enabled);
-  } else if (Name == "f16c") {
-    if (Enabled)
-      setSSELevel(Features, AVX, Enabled);
-  } else if (Name == "sha") {
-    if (Enabled)
-      setSSELevel(Features, SSE2, Enabled);
+  if (Enabled) {
+    if (Name == "mmx")
+      Features["mmx"] = true;
+    else if (Name == "sse")
+      Features["mmx"] = Features["sse"] = true;
+    else if (Name == "sse2")
+      Features["mmx"] = Features["sse"] = Features["sse2"] = true;
+    else if (Name == "sse3")
+      Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
+        true;
+    else if (Name == "ssse3")
+      Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
+        Features["ssse3"] = true;
+    else if (Name == "sse4" || Name == "sse4.2")
+      Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
+        Features["ssse3"] = Features["sse41"] = Features["sse42"] =
+        Features["popcnt"] = true;
+    else if (Name == "sse4.1")
+      Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
+        Features["ssse3"] = Features["sse41"] = true;
+    else if (Name == "3dnow")
+      Features["mmx"] = Features["3dnow"] = true;
+    else if (Name == "3dnowa")
+      Features["mmx"] = Features["3dnow"] = Features["3dnowa"] = true;
+    else if (Name == "aes")
+      Features["sse"] = Features["sse2"] = Features["aes"] = true;
+    else if (Name == "pclmul")
+      Features["sse"] = Features["sse2"] = Features["pclmul"] = true;
+    else if (Name == "avx")
+      Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
+        Features["ssse3"] = Features["sse41"] = Features["sse42"] =
+        Features["popcnt"] = Features["avx"] = true;
+    else if (Name == "avx2")
+      Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
+        Features["ssse3"] = Features["sse41"] = Features["sse42"] =
+        Features["popcnt"] = Features["avx"] = Features["avx2"] = true;
+    else if (Name == "fma")
+      Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
+        Features["ssse3"] = Features["sse41"] = Features["sse42"] =
+        Features["popcnt"] = Features["avx"] = Features["fma"] = true;
+    else if (Name == "fma4")
+        Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
+        Features["ssse3"] = Features["sse41"] = Features["sse42"] =
+        Features["popcnt"] = Features["avx"] = Features["sse4a"] =
+        Features["fma4"] = true;
+    else if (Name == "xop")
+        Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
+        Features["ssse3"] = Features["sse41"] = Features["sse42"] =
+        Features["popcnt"] = Features["avx"] = Features["sse4a"] =
+        Features["fma4"] = Features["xop"] = true;
+    else if (Name == "sse4a")
+      Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
+        Features["sse4a"] = true;
+    else if (Name == "lzcnt")
+      Features["lzcnt"] = true;
+    else if (Name == "rdrnd")
+      Features["rdrand"] = true;
+    else if (Name == "bmi")
+      Features["bmi"] = true;
+    else if (Name == "bmi2")
+      Features["bmi2"] = true;
+    else if (Name == "popcnt")
+      Features["popcnt"] = true;
+    else if (Name == "f16c")
+      Features["f16c"] = true;
+    else if (Name == "rtm")
+      Features["rtm"] = true;
+  } else {
+    if (Name == "mmx")
+      Features["mmx"] = Features["3dnow"] = Features["3dnowa"] = false;
+    else if (Name == "sse")
+      Features["sse"] = Features["sse2"] = Features["sse3"] =
+        Features["ssse3"] = Features["sse41"] = Features["sse42"] =
+        Features["sse4a"] = Features["avx"] = Features["avx2"] =
+        Features["fma"] = Features["fma4"] = Features["aes"] =
+        Features["pclmul"] = Features["xop"] = false;
+    else if (Name == "sse2")
+      Features["sse2"] = Features["sse3"] = Features["ssse3"] =
+        Features["sse41"] = Features["sse42"] = Features["sse4a"] =
+        Features["avx"] = Features["avx2"] = Features["fma"] =
+        Features["fma4"] = Features["aes"] = Features["pclmul"] =
+        Features["xop"] = false;
+    else if (Name == "sse3")
+      Features["sse3"] = Features["ssse3"] = Features["sse41"] =
+        Features["sse42"] = Features["sse4a"] = Features["avx"] =
+        Features["avx2"] = Features["fma"] = Features["fma4"] =
+        Features["xop"] = false;
+    else if (Name == "ssse3")
+      Features["ssse3"] = Features["sse41"] = Features["sse42"] =
+        Features["avx"] = Features["avx2"] = Features["fma"] = false;
+    else if (Name == "sse4" || Name == "sse4.1")
+      Features["sse41"] = Features["sse42"] = Features["avx"] =
+        Features["avx2"] = Features["fma"] = false;
+    else if (Name == "sse4.2")
+      Features["sse42"] = Features["avx"] = Features["avx2"] =
+        Features["fma"] = false;
+    else if (Name == "3dnow")
+      Features["3dnow"] = Features["3dnowa"] = false;
+    else if (Name == "3dnowa")
+      Features["3dnowa"] = false;
+    else if (Name == "aes")
+      Features["aes"] = false;
+    else if (Name == "pclmul")
+      Features["pclmul"] = false;
+    else if (Name == "avx")
+      Features["avx"] = Features["avx2"] = Features["fma"] =
+        Features["fma4"] = Features["xop"] = false;
+    else if (Name == "avx2")
+      Features["avx2"] = false;
+    else if (Name == "fma")
+      Features["fma"] = false;
+    else if (Name == "sse4a")
+      Features["sse4a"] = Features["fma4"] = Features["xop"] = false;
+    else if (Name == "lzcnt")
+      Features["lzcnt"] = false;
+    else if (Name == "rdrnd")
+      Features["rdrand"] = false;
+    else if (Name == "bmi")
+      Features["bmi"] = false;
+    else if (Name == "bmi2")
+      Features["bmi2"] = false;
+    else if (Name == "popcnt")
+      Features["popcnt"] = false;
+    else if (Name == "fma4")
+      Features["fma4"] = Features["xop"] = false;
+    else if (Name == "xop")
+      Features["xop"] = false;
+    else if (Name == "f16c")
+      Features["f16c"] = false;
+    else if (Name == "rtm")
+      Features["rtm"] = false;
   }
+
+  return true;
 }
 
-/// handleTargetFeatures - Perform initialization based on the user
+/// HandleTargetOptions - Perform initialization based on the user
 /// configured set of features.
-bool X86TargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
-                                         DiagnosticsEngine &Diags) {
+void X86TargetInfo::HandleTargetFeatures(std::vector<std::string> &Features) {
   // Remember the maximum enabled sselevel.
   for (unsigned i = 0, e = Features.size(); i !=e; ++i) {
     // Ignore disabled features.
@@ -2535,7 +2147,7 @@ bool X86TargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
       continue;
     }
 
-    if (Feature == "rdrnd") {
+    if (Feature == "rdrand") {
       HasRDRND = true;
       continue;
     }
@@ -2560,23 +2172,13 @@ bool X86TargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
       continue;
     }
 
-    if (Feature == "prfchw") {
-      HasPRFCHW = true;
+    if (Feature == "sse4a") {
+      HasSSE4a = true;
       continue;
     }
 
-    if (Feature == "rdseed") {
-      HasRDSEED = true;
-      continue;
-    }
-
-    if (Feature == "adx") {
-      HasADX = true;
-      continue;
-    }
-
-    if (Feature == "tbm") {
-      HasTBM = true;
+    if (Feature == "fma4") {
+      HasFMA4 = true;
       continue;
     }
 
@@ -2585,58 +2187,22 @@ bool X86TargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
       continue;
     }
 
+    if (Feature == "xop") {
+      HasXOP = true;
+      continue;
+    }
+
     if (Feature == "f16c") {
       HasF16C = true;
       continue;
     }
 
-    if (Feature == "avx512cd") {
-      HasAVX512CD = true;
-      continue;
-    }
-
-    if (Feature == "avx512er") {
-      HasAVX512ER = true;
-      continue;
-    }
-
-    if (Feature == "avx512pf") {
-      HasAVX512PF = true;
-      continue;
-    }
-
-    if (Feature == "avx512dq") {
-      HasAVX512DQ = true;
-      continue;
-    }
-
-    if (Feature == "avx512bw") {
-      HasAVX512BW = true;
-      continue;
-    }
-
-    if (Feature == "avx512vl") {
-      HasAVX512VL = true;
-      continue;
-    }
-
-    if (Feature == "sha") {
-      HasSHA = true;
-      continue;
-    }
-
-    if (Feature == "cx16") {
-      HasCX16 = true;
-      continue;
-    }
-
     assert(Features[i][0] == '+' && "Invalid target feature!");
     X86SSEEnum Level = llvm::StringSwitch<X86SSEEnum>(Feature)
-      .Case("avx512f", AVX512F)
       .Case("avx2", AVX2)
       .Case("avx", AVX)
-      .Case("sse4.2", SSE42)
-      .Case("sse4.1", SSE41)
+      .Case("sse42", SSE42)
+      .Case("sse41", SSE41)
       .Case("ssse3", SSSE3)
       .Case("sse3", SSE3)
       .Case("sse2", SSE2)
@@ -2650,53 +2216,16 @@ bool X86TargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
         .Case("3dnow", AMD3DNow)
         .Case("mmx", MMX)
         .Default(NoMMX3DNow);
+
     MMX3DNowLevel = std::max(MMX3DNowLevel, ThreeDNowLevel);
-
-    XOPEnum XLevel = llvm::StringSwitch<XOPEnum>(Feature)
-        .Case("xop", XOP)
-        .Case("fma4", FMA4)
-        .Case("sse4a", SSE4A)
-        .Default(NoXOP);
-    XOPLevel = std::max(XOPLevel, XLevel);
-  }
-
-  // Enable popcnt if sse4.2 is enabled and popcnt is not explicitly disabled.
-  // Can't do this earlier because we need to be able to explicitly enable
-  // popcnt and still disable sse4.2.
-  if (!HasPOPCNT && SSELevel >= SSE42 &&
-      std::find(Features.begin(), Features.end(), "-popcnt") == Features.end()){
-    HasPOPCNT = true;
-    Features.push_back("+popcnt");
-  }
-
-  // Enable prfchw if 3DNow! is enabled and prfchw is not explicitly disabled.
-  if (!HasPRFCHW && MMX3DNowLevel >= AMD3DNow &&
-      std::find(Features.begin(), Features.end(), "-prfchw") == Features.end()){
-    HasPRFCHW = true;
-    Features.push_back("+prfchw");
-  }
-
-  // LLVM doesn't have a separate switch for fpmath, so only accept it if it
-  // matches the selected sse level.
-  if (FPMath == FP_SSE && SSELevel < SSE1) {
-    Diags.Report(diag::err_target_unsupported_fpmath) << "sse";
-    return false;
-  } else if (FPMath == FP_387 && SSELevel >= SSE1) {
-    Diags.Report(diag::err_target_unsupported_fpmath) << "387";
-    return false;
   }
 
   // Don't tell the backend if we're turning off mmx; it will end up disabling
   // SSE, which we don't want.
-  // Additionally, if SSE is enabled and mmx is not explicitly disabled,
-  // then enable MMX.
   std::vector<std::string>::iterator it;
   it = std::find(Features.begin(), Features.end(), "-mmx");
   if (it != Features.end())
     Features.erase(it);
-  else if (SSELevel > NoSSE)
-    MMX3DNowLevel = std::max(MMX3DNowLevel, MMX);
-  return true;
 }
 
 /// X86TargetInfo::getTargetDefines - Return the set of the X86-specific macro
@@ -2709,10 +2238,6 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__amd64");
     Builder.defineMacro("__x86_64");
     Builder.defineMacro("__x86_64__");
-    if (getTriple().getArchName() == "x86_64h") {
-      Builder.defineMacro("__x86_64h");
-      Builder.defineMacro("__x86_64h__");
-    }
   } else {
     DefineStd(Builder, "i386", Opts);
   }
@@ -2778,21 +2303,11 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   case CK_Atom:
     defineCPUMacros(Builder, "atom");
     break;
-  case CK_Silvermont:
-    defineCPUMacros(Builder, "slm");
-    break;
   case CK_Corei7:
   case CK_Corei7AVX:
   case CK_CoreAVXi:
   case CK_CoreAVX2:
-  case CK_Broadwell:
     defineCPUMacros(Builder, "corei7");
-    break;
-  case CK_KNL:
-    defineCPUMacros(Builder, "knl");
-    break;
-  case CK_SKX:
-    defineCPUMacros(Builder, "skx");
     break;
   case CK_K6_2:
     Builder.defineMacro("__k6_2__");
@@ -2837,20 +2352,11 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   case CK_BTVER1:
     defineCPUMacros(Builder, "btver1");
     break;
-  case CK_BTVER2:
-    defineCPUMacros(Builder, "btver2");
-    break;
   case CK_BDVER1:
     defineCPUMacros(Builder, "bdver1");
     break;
   case CK_BDVER2:
     defineCPUMacros(Builder, "bdver2");
-    break;
-  case CK_BDVER3:
-    defineCPUMacros(Builder, "bdver3");
-    break;
-  case CK_BDVER4:
-    defineCPUMacros(Builder, "bdver4");
     break;
   case CK_Geode:
     defineCPUMacros(Builder, "geode");
@@ -2858,6 +2364,7 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   }
 
   // Target properties.
+  Builder.defineMacro("__LITTLE_ENDIAN__");
   Builder.defineMacro("__REGISTER_PREFIX__", "");
 
   // Define __NO_MATH_INLINES on linux/x86 so that we don't get inline
@@ -2889,58 +2396,23 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   if (HasRTM)
     Builder.defineMacro("__RTM__");
 
-  if (HasPRFCHW)
-    Builder.defineMacro("__PRFCHW__");
-
-  if (HasRDSEED)
-    Builder.defineMacro("__RDSEED__");
-
-  if (HasADX)
-    Builder.defineMacro("__ADX__");
-
-  if (HasTBM)
-    Builder.defineMacro("__TBM__");
-
-  switch (XOPLevel) {
-  case XOP:
-    Builder.defineMacro("__XOP__");
-  case FMA4:
-    Builder.defineMacro("__FMA4__");
-  case SSE4A:
+  if (HasSSE4a)
     Builder.defineMacro("__SSE4A__");
-  case NoXOP:
-    break;
-  }
+
+  if (HasFMA4)
+    Builder.defineMacro("__FMA4__");
 
   if (HasFMA)
     Builder.defineMacro("__FMA__");
 
+  if (HasXOP)
+    Builder.defineMacro("__XOP__");
+
   if (HasF16C)
     Builder.defineMacro("__F16C__");
 
-  if (HasAVX512CD)
-    Builder.defineMacro("__AVX512CD__");
-  if (HasAVX512ER)
-    Builder.defineMacro("__AVX512ER__");
-  if (HasAVX512PF)
-    Builder.defineMacro("__AVX512PF__");
-  if (HasAVX512DQ)
-    Builder.defineMacro("__AVX512DQ__");
-  if (HasAVX512BW)
-    Builder.defineMacro("__AVX512BW__");
-  if (HasAVX512VL)
-    Builder.defineMacro("__AVX512VL__");
-
-  if (HasSHA)
-    Builder.defineMacro("__SHA__");
-
-  if (HasCX16)
-    Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_16");
-
   // Each case falls through to the previous one here.
   switch (SSELevel) {
-  case AVX512F:
-    Builder.defineMacro("__AVX512F__");
   case AVX2:
     Builder.defineMacro("__AVX2__");
   case AVX:
@@ -2965,7 +2437,6 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
 
   if (Opts.MicrosoftExt && getTriple().getArch() == llvm::Triple::x86) {
     switch (SSELevel) {
-    case AVX512F:
     case AVX2:
     case AVX:
     case SSE42:
@@ -2994,14 +2465,6 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   case NoMMX3DNow:
     break;
   }
-
-  if (CPU >= CK_i486) {
-    Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_1");
-    Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_2");
-    Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_4");
-  }
-  if (CPU >= CK_i586)
-    Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8");
 }
 
 bool X86TargetInfo::hasFeature(StringRef Feature) const {
@@ -3009,20 +2472,10 @@ bool X86TargetInfo::hasFeature(StringRef Feature) const {
       .Case("aes", HasAES)
       .Case("avx", SSELevel >= AVX)
       .Case("avx2", SSELevel >= AVX2)
-      .Case("avx512f", SSELevel >= AVX512F)
-      .Case("avx512cd", HasAVX512CD)
-      .Case("avx512er", HasAVX512ER)
-      .Case("avx512pf", HasAVX512PF)
-      .Case("avx512dq", HasAVX512DQ)
-      .Case("avx512bw", HasAVX512BW)
-      .Case("avx512vl", HasAVX512VL)
       .Case("bmi", HasBMI)
       .Case("bmi2", HasBMI2)
-      .Case("cx16", HasCX16)
-      .Case("f16c", HasF16C)
       .Case("fma", HasFMA)
-      .Case("fma4", XOPLevel >= FMA4)
-      .Case("tbm", HasTBM)
+      .Case("fma4", HasFMA4)
       .Case("lzcnt", HasLZCNT)
       .Case("rdrnd", HasRDRND)
       .Case("mm3dnow", MMX3DNowLevel >= AMD3DNow)
@@ -3031,20 +2484,18 @@ bool X86TargetInfo::hasFeature(StringRef Feature) const {
       .Case("pclmul", HasPCLMUL)
       .Case("popcnt", HasPOPCNT)
       .Case("rtm", HasRTM)
-      .Case("prfchw", HasPRFCHW)
-      .Case("rdseed", HasRDSEED)
-      .Case("sha", HasSHA)
       .Case("sse", SSELevel >= SSE1)
       .Case("sse2", SSELevel >= SSE2)
       .Case("sse3", SSELevel >= SSE3)
       .Case("ssse3", SSELevel >= SSSE3)
-      .Case("sse4.1", SSELevel >= SSE41)
-      .Case("sse4.2", SSELevel >= SSE42)
-      .Case("sse4a", XOPLevel >= SSE4A)
+      .Case("sse41", SSELevel >= SSE41)
+      .Case("sse42", SSELevel >= SSE42)
+      .Case("sse4a", HasSSE4a)
       .Case("x86", true)
       .Case("x86_32", getTriple().getArch() == llvm::Triple::x86)
       .Case("x86_64", getTriple().getArch() == llvm::Triple::x86_64)
-      .Case("xop", XOPLevel >= XOP)
+      .Case("xop", HasXOP)
+      .Case("f16c", HasF16C)
       .Default(false);
 }
 
@@ -3062,13 +2513,6 @@ X86TargetInfo::validateAsmConstraint(const char *&Name,
     case 'm':  // any MMX register, when inter-unit moves enabled.
       break;   // falls through to setAllowsRegister.
   }
-  case 'f': // any x87 floating point stack register.
-    // Constraint 'f' cannot be used for output operands.
-    if (Info.ConstraintStr[0] == '=')
-      return false;
-
-    Info.setAllowsRegister();
-    return true;
   case 'a': // eax.
   case 'b': // ebx.
   case 'c': // ecx.
@@ -3076,6 +2520,7 @@ X86TargetInfo::validateAsmConstraint(const char *&Name,
   case 'S': // esi.
   case 'D': // edi.
   case 'A': // edx:eax.
+  case 'f': // any x87 floating point stack register.
   case 't': // top of floating point stack.
   case 'u': // second from top of floating point stack.
   case 'q': // Any register accessible as [r]l: a, b, c, and d.
@@ -3097,39 +2542,6 @@ X86TargetInfo::validateAsmConstraint(const char *&Name,
   }
 }
 
-bool X86TargetInfo::validateOutputSize(StringRef Constraint,
-                                       unsigned Size) const {
-  // Strip off constraint modifiers.
-  while (Constraint[0] == '=' ||
-         Constraint[0] == '+' ||
-         Constraint[0] == '&')
-    Constraint = Constraint.substr(1);
-
-  return validateOperandSize(Constraint, Size);
-}
-
-bool X86TargetInfo::validateInputSize(StringRef Constraint,
-                                      unsigned Size) const {
-  return validateOperandSize(Constraint, Size);
-}
-
-bool X86TargetInfo::validateOperandSize(StringRef Constraint,
-                                        unsigned Size) const {
-  switch (Constraint[0]) {
-  default: break;
-  case 'y':
-    return Size <= 64;
-  case 'f':
-  case 't':
-  case 'u':
-    return Size <= 128;
-  case 'x':
-    // 256-bit ymm registers can be used if target supports AVX.
-    return Size <= (SSELevel >= AVX ? 256U : 128U);
-  }
-
-  return true;
-}
 
 std::string
 X86TargetInfo::convertConstraint(const char *&Constraint) const {
@@ -3156,12 +2568,14 @@ namespace {
 // X86-32 generic target
 class X86_32TargetInfo : public X86TargetInfo {
 public:
-  X86_32TargetInfo(const llvm::Triple &Triple) : X86TargetInfo(Triple) {
+  X86_32TargetInfo(const std::string& triple) : X86TargetInfo(triple) {
     DoubleAlign = LongLongAlign = 32;
     LongDoubleWidth = 96;
     LongDoubleAlign = 32;
     SuitableAlign = 128;
-    DescriptionString = "e-m:e-p:32:32-f64:32:64-f80:32-n8:16:32-S128";
+    DescriptionString = "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
+                        "i64:32:64-f32:32:32-f64:32:64-v64:64:64-v128:128:128-"
+                        "a0:0:64-f80:32:32-n8:16:32-S128";
     SizeType = UnsignedInt;
     PtrDiffType = SignedInt;
     IntPtrType = SignedInt;
@@ -3177,34 +2591,14 @@ public:
     // MaxAtomicInlineWidth. (cmpxchg8b is an i586 instruction.)
     MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
   }
-  BuiltinVaListKind getBuiltinVaListKind() const override {
+  virtual BuiltinVaListKind getBuiltinVaListKind() const {
     return TargetInfo::CharPtrBuiltinVaList;
   }
 
-  int getEHDataRegisterNumber(unsigned RegNo) const override {
+  int getEHDataRegisterNumber(unsigned RegNo) const {
     if (RegNo == 0) return 0;
     if (RegNo == 1) return 2;
     return -1;
-  }
-  bool validateOperandSize(StringRef Constraint,
-                           unsigned Size) const override {
-    switch (Constraint[0]) {
-    default: break;
-    case 'R':
-    case 'q':
-    case 'Q':
-    case 'a':
-    case 'b':
-    case 'c':
-    case 'd':
-    case 'S':
-    case 'D':
-      return Size <= 32;
-    case 'A':
-      return Size <= 64;
-    }
-
-    return X86TargetInfo::validateOperandSize(Constraint, Size);
   }
 };
 } // end anonymous namespace
@@ -3212,16 +2606,12 @@ public:
 namespace {
 class NetBSDI386TargetInfo : public NetBSDTargetInfo<X86_32TargetInfo> {
 public:
-  NetBSDI386TargetInfo(const llvm::Triple &Triple)
-      : NetBSDTargetInfo<X86_32TargetInfo>(Triple) {}
+  NetBSDI386TargetInfo(const std::string &triple) :
+    NetBSDTargetInfo<X86_32TargetInfo>(triple) {
+  }
 
-  unsigned getFloatEvalMethod() const override {
-    unsigned Major, Minor, Micro;
-    getTriple().getOSVersion(Major, Minor, Micro);
-    // New NetBSD uses the default rounding mode.
-    if (Major >= 7 || (Major == 6 && Minor == 99 && Micro >= 26) || Major == 0)
-      return X86_32TargetInfo::getFloatEvalMethod();
-    // NetBSD before 6.99.26 defaults to "double" rounding.
+  virtual unsigned getFloatEvalMethod() const {
+    // NetBSD defaults to "double" rounding
     return 1;
   }
 };
@@ -3230,8 +2620,8 @@ public:
 namespace {
 class OpenBSDI386TargetInfo : public OpenBSDTargetInfo<X86_32TargetInfo> {
 public:
-  OpenBSDI386TargetInfo(const llvm::Triple &Triple)
-      : OpenBSDTargetInfo<X86_32TargetInfo>(Triple) {
+  OpenBSDI386TargetInfo(const std::string& triple) :
+    OpenBSDTargetInfo<X86_32TargetInfo>(triple) {
     SizeType = UnsignedLong;
     IntPtrType = SignedLong;
     PtrDiffType = SignedLong;
@@ -3242,8 +2632,8 @@ public:
 namespace {
 class BitrigI386TargetInfo : public BitrigTargetInfo<X86_32TargetInfo> {
 public:
-  BitrigI386TargetInfo(const llvm::Triple &Triple)
-      : BitrigTargetInfo<X86_32TargetInfo>(Triple) {
+  BitrigI386TargetInfo(const std::string& triple) :
+    BitrigTargetInfo<X86_32TargetInfo>(triple) {
     SizeType = UnsignedLong;
     IntPtrType = SignedLong;
     PtrDiffType = SignedLong;
@@ -3254,15 +2644,17 @@ public:
 namespace {
 class DarwinI386TargetInfo : public DarwinTargetInfo<X86_32TargetInfo> {
 public:
-  DarwinI386TargetInfo(const llvm::Triple &Triple)
-      : DarwinTargetInfo<X86_32TargetInfo>(Triple) {
+  DarwinI386TargetInfo(const std::string& triple) :
+    DarwinTargetInfo<X86_32TargetInfo>(triple) {
     LongDoubleWidth = 128;
     LongDoubleAlign = 128;
     SuitableAlign = 128;
     MaxVectorAlign = 256;
     SizeType = UnsignedLong;
     IntPtrType = SignedLong;
-    DescriptionString = "e-m:o-p:32:32-f64:32:64-f80:128-n8:16:32-S128";
+    DescriptionString = "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
+                        "i64:32:64-f32:32:32-f64:32:64-v64:64:64-v128:128:128-"
+                        "a0:0:64-f80:128:128-n8:16:32-S128";
     HasAlignMac68kSupport = true;
   }
 
@@ -3273,28 +2665,34 @@ namespace {
 // x86-32 Windows target
 class WindowsX86_32TargetInfo : public WindowsTargetInfo<X86_32TargetInfo> {
 public:
-  WindowsX86_32TargetInfo(const llvm::Triple &Triple)
-      : WindowsTargetInfo<X86_32TargetInfo>(Triple) {
+  WindowsX86_32TargetInfo(const std::string& triple)
+    : WindowsTargetInfo<X86_32TargetInfo>(triple) {
+    TLSSupported = false;
     WCharType = UnsignedShort;
     DoubleAlign = LongLongAlign = 64;
-    DescriptionString = "e-m:w-p:32:32-i64:64-f80:32-n8:16:32-S32";
+    DescriptionString = "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
+                        "i64:64:64-f32:32:32-f64:64:64-f80:128:128-v64:64:64-"
+                        "v128:128:128-a0:0:64-f80:32:32-n8:16:32-S32";
   }
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
     WindowsTargetInfo<X86_32TargetInfo>::getTargetDefines(Opts, Builder);
   }
 };
+} // end anonymous namespace
+
+namespace {
 
 // x86-32 Windows Visual Studio target
-class MicrosoftX86_32TargetInfo : public WindowsX86_32TargetInfo {
+class VisualStudioWindowsX86_32TargetInfo : public WindowsX86_32TargetInfo {
 public:
-  MicrosoftX86_32TargetInfo(const llvm::Triple &Triple)
-      : WindowsX86_32TargetInfo(Triple) {
+  VisualStudioWindowsX86_32TargetInfo(const std::string& triple)
+    : WindowsX86_32TargetInfo(triple) {
     LongDoubleWidth = LongDoubleAlign = 64;
     LongDoubleFormat = &llvm::APFloat::IEEEdouble;
   }
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
     WindowsX86_32TargetInfo::getTargetDefines(Opts, Builder);
     WindowsX86_32TargetInfo::getVisualStudioDefines(Opts, Builder);
     // The value of the following reflects processor type.
@@ -3305,46 +2703,30 @@ public:
 };
 } // end anonymous namespace
 
-static void addMinGWDefines(const LangOptions &Opts, MacroBuilder &Builder) {
-  Builder.defineMacro("__MSVCRT__");
-  Builder.defineMacro("__MINGW32__");
-
-  // Mingw defines __declspec(a) to __attribute__((a)).  Clang supports
-  // __declspec natively under -fms-extensions, but we define a no-op __declspec
-  // macro anyway for pre-processor compatibility.
-  if (Opts.MicrosoftExt)
-    Builder.defineMacro("__declspec", "__declspec");
-  else
-    Builder.defineMacro("__declspec(a)", "__attribute__((a))");
-
-  if (!Opts.MicrosoftExt) {
-    // Provide macros for all the calling convention keywords.  Provide both
-    // single and double underscore prefixed variants.  These are available on
-    // x64 as well as x86, even though they have no effect.
-    const char *CCs[] = {"cdecl", "stdcall", "fastcall", "thiscall", "pascal"};
-    for (const char *CC : CCs) {
-      std::string GCCSpelling = "__attribute__((__";
-      GCCSpelling += CC;
-      GCCSpelling += "__))";
-      Builder.defineMacro(Twine("_") + CC, GCCSpelling);
-      Builder.defineMacro(Twine("__") + CC, GCCSpelling);
-    }
-  }
-}
-
 namespace {
 // x86-32 MinGW target
 class MinGWX86_32TargetInfo : public WindowsX86_32TargetInfo {
 public:
-  MinGWX86_32TargetInfo(const llvm::Triple &Triple)
-      : WindowsX86_32TargetInfo(Triple) {}
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
+  MinGWX86_32TargetInfo(const std::string& triple)
+    : WindowsX86_32TargetInfo(triple) {
+  }
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
     WindowsX86_32TargetInfo::getTargetDefines(Opts, Builder);
     DefineStd(Builder, "WIN32", Opts);
     DefineStd(Builder, "WINNT", Opts);
     Builder.defineMacro("_X86_");
-    addMinGWDefines(Opts, Builder);
+    Builder.defineMacro("__MSVCRT__");
+    Builder.defineMacro("__MINGW32__");
+
+    // mingw32-gcc provides __declspec(a) as alias of __attribute__((a)).
+    // In contrast, clang-cc1 provides __declspec(a) with -fms-extensions.
+    if (Opts.MicrosoftExt)
+      // Provide "as-is" __declspec.
+      Builder.defineMacro("__declspec", "__declspec");
+    else
+      // Provide alias of __attribute__ like mingw32-gcc.
+      Builder.defineMacro("__declspec(a)", "__attribute__((a))");
   }
 };
 } // end anonymous namespace
@@ -3353,17 +2735,18 @@ namespace {
 // x86-32 Cygwin target
 class CygwinX86_32TargetInfo : public X86_32TargetInfo {
 public:
-  CygwinX86_32TargetInfo(const llvm::Triple &Triple)
-      : X86_32TargetInfo(Triple) {
+  CygwinX86_32TargetInfo(const std::string& triple)
+    : X86_32TargetInfo(triple) {
     TLSSupported = false;
     WCharType = UnsignedShort;
     DoubleAlign = LongLongAlign = 64;
-    DescriptionString = "e-m:w-p:32:32-i64:64-f80:32-n8:16:32-S32";
+    DescriptionString = "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
+                        "i64:64:64-f32:32:32-f64:64:64-v64:64:64-v128:128:128-"
+                        "a0:0:64-f80:32:32-n8:16:32-S32";
   }
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
     X86_32TargetInfo::getTargetDefines(Opts, Builder);
-    Builder.defineMacro("_X86_");
     Builder.defineMacro("__CYGWIN__");
     Builder.defineMacro("__CYGWIN32__");
     DefineStd(Builder, "unix", Opts);
@@ -3377,7 +2760,8 @@ namespace {
 // x86-32 Haiku target
 class HaikuX86_32TargetInfo : public X86_32TargetInfo {
 public:
-  HaikuX86_32TargetInfo(const llvm::Triple &Triple) : X86_32TargetInfo(Triple) {
+  HaikuX86_32TargetInfo(const std::string& triple)
+    : X86_32TargetInfo(triple) {
     SizeType = UnsignedLong;
     IntPtrType = SignedLong;
     PtrDiffType = SignedLong;
@@ -3385,8 +2769,8 @@ public:
     this->UserLabelPrefix = "";
     this->TLSSupported = false;
   }
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
     X86_32TargetInfo::getTargetDefines(Opts, Builder);
     Builder.defineMacro("__INTEL__");
     Builder.defineMacro("__HAIKU__");
@@ -3398,49 +2782,51 @@ public:
 template<typename Target>
 class RTEMSTargetInfo : public OSTargetInfo<Target> {
 protected:
-  void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
-                    MacroBuilder &Builder) const override {
+  virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
+                            MacroBuilder &Builder) const {
     // RTEMS defines; list based off of gcc output
 
     Builder.defineMacro("__rtems__");
     Builder.defineMacro("__ELF__");
   }
-
 public:
-  RTEMSTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
+  RTEMSTargetInfo(const std::string &triple)
+    : OSTargetInfo<Target>(triple) {
+      this->UserLabelPrefix = "";
 
-    switch (Triple.getArch()) {
-    default:
-    case llvm::Triple::x86:
-      // this->MCountName = ".mcount";
-      break;
-    case llvm::Triple::mips:
-    case llvm::Triple::mipsel:
-    case llvm::Triple::ppc:
-    case llvm::Triple::ppc64:
-    case llvm::Triple::ppc64le:
-      // this->MCountName = "_mcount";
-      break;
-    case llvm::Triple::arm:
-      // this->MCountName = "__mcount";
-      break;
+      llvm::Triple Triple(triple);
+      switch (Triple.getArch()) {
+        default:
+        case llvm::Triple::x86:
+          // this->MCountName = ".mcount";
+          break;
+        case llvm::Triple::mips:
+        case llvm::Triple::mipsel:
+        case llvm::Triple::ppc:
+        case llvm::Triple::ppc64:
+          // this->MCountName = "_mcount";
+          break;
+        case llvm::Triple::arm:
+          // this->MCountName = "__mcount";
+          break;
+      }
+
     }
-  }
 };
 
 namespace {
 // x86-32 RTEMS target
 class RTEMSX86_32TargetInfo : public X86_32TargetInfo {
 public:
-  RTEMSX86_32TargetInfo(const llvm::Triple &Triple) : X86_32TargetInfo(Triple) {
+  RTEMSX86_32TargetInfo(const std::string& triple)
+    : X86_32TargetInfo(triple) {
     SizeType = UnsignedLong;
     IntPtrType = SignedLong;
     PtrDiffType = SignedLong;
     this->UserLabelPrefix = "";
   }
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
     X86_32TargetInfo::getTargetDefines(Opts, Builder);
     Builder.defineMacro("__INTEL__");
     Builder.defineMacro("__rtems__");
@@ -3452,24 +2838,21 @@ namespace {
 // x86-64 generic target
 class X86_64TargetInfo : public X86TargetInfo {
 public:
-  X86_64TargetInfo(const llvm::Triple &Triple) : X86TargetInfo(Triple) {
-    const bool IsX32 = getTriple().getEnvironment() == llvm::Triple::GNUX32;
-    LongWidth = LongAlign = PointerWidth = PointerAlign = IsX32 ? 32 : 64;
+  X86_64TargetInfo(const std::string &triple) : X86TargetInfo(triple) {
+    LongWidth = LongAlign = PointerWidth = PointerAlign = 64;
     LongDoubleWidth = 128;
     LongDoubleAlign = 128;
     LargeArrayMinWidth = 128;
     LargeArrayAlign = 128;
     SuitableAlign = 128;
-    SizeType    = IsX32 ? UnsignedInt      : UnsignedLong;
-    PtrDiffType = IsX32 ? SignedInt        : SignedLong;
-    IntPtrType  = IsX32 ? SignedInt        : SignedLong;
-    IntMaxType  = IsX32 ? SignedLongLong   : SignedLong;
-    Int64Type   = IsX32 ? SignedLongLong   : SignedLong;
+    IntMaxType = SignedLong;
+    UIntMaxType = UnsignedLong;
+    Int64Type = SignedLong;
     RegParmMax = 6;
 
-    DescriptionString = (IsX32)
-                            ? "e-m:e-" "p:32:32-" "i64:64-f80:128-n8:16:32:64-S128"
-                            : "e-m:e-"            "i64:64-f80:128-n8:16:32:64-S128";
+    DescriptionString = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
+                        "i64:64:64-f32:32:32-f64:64:64-v64:64:64-v128:128:128-"
+                        "a0:0:64-s0:64:64-f80:128:128-n8:16:32:64-S128";
 
     // Use fpret only for long double.
     RealTypeUsesObjCFPRet = (1 << TargetInfo::LongDouble);
@@ -3478,31 +2861,29 @@ public:
     ComplexLongDoubleUsesFP2Ret = true;
 
     // x86-64 has atomics up to 16 bytes.
+    // FIXME: Once the backend is fixed, increase MaxAtomicInlineWidth to 128
+    // on CPUs with cmpxchg16b
     MaxAtomicPromoteWidth = 128;
-    MaxAtomicInlineWidth = 128;
+    MaxAtomicInlineWidth = 64;
   }
-  BuiltinVaListKind getBuiltinVaListKind() const override {
+  virtual BuiltinVaListKind getBuiltinVaListKind() const {
     return TargetInfo::X86_64ABIBuiltinVaList;
   }
 
-  int getEHDataRegisterNumber(unsigned RegNo) const override {
+  int getEHDataRegisterNumber(unsigned RegNo) const {
     if (RegNo == 0) return 0;
     if (RegNo == 1) return 1;
     return -1;
   }
 
-  CallingConvCheckResult checkCallingConvention(CallingConv CC) const override {
-    return (CC == CC_C ||
-            CC == CC_IntelOclBicc ||
-            CC == CC_X86_64Win64) ? CCCR_OK : CCCR_Warning;
+  virtual CallingConvCheckResult checkCallingConvention(CallingConv CC) const {
+    return TargetInfo::checkCallingConvention(CC);
   }
 
-  CallingConv getDefaultCallingConv(CallingConvMethodType MT) const override {
-    return CC_C;
+  virtual CallingConv getDefaultCallingConv() const {
+    return CC_Default;
   }
 
-  // for x32 we need it here explicitly
-  bool hasInt128Type() const override { return true; }
 };
 } // end anonymous namespace
 
@@ -3510,45 +2891,42 @@ namespace {
 // x86-64 Windows target
 class WindowsX86_64TargetInfo : public WindowsTargetInfo<X86_64TargetInfo> {
 public:
-  WindowsX86_64TargetInfo(const llvm::Triple &Triple)
-      : WindowsTargetInfo<X86_64TargetInfo>(Triple) {
+  WindowsX86_64TargetInfo(const std::string& triple)
+    : WindowsTargetInfo<X86_64TargetInfo>(triple) {
+    TLSSupported = false;
     WCharType = UnsignedShort;
     LongWidth = LongAlign = 32;
     DoubleAlign = LongLongAlign = 64;
     IntMaxType = SignedLongLong;
+    UIntMaxType = UnsignedLongLong;
     Int64Type = SignedLongLong;
     SizeType = UnsignedLongLong;
     PtrDiffType = SignedLongLong;
     IntPtrType = SignedLongLong;
     this->UserLabelPrefix = "";
   }
-  void getTargetDefines(const LangOptions &Opts,
-                                MacroBuilder &Builder) const override {
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
     WindowsTargetInfo<X86_64TargetInfo>::getTargetDefines(Opts, Builder);
     Builder.defineMacro("_WIN64");
   }
-  BuiltinVaListKind getBuiltinVaListKind() const override {
+  virtual BuiltinVaListKind getBuiltinVaListKind() const {
     return TargetInfo::CharPtrBuiltinVaList;
-  }
-  CallingConvCheckResult checkCallingConvention(CallingConv CC) const override {
-    return (CC == CC_C ||
-            CC == CC_IntelOclBicc ||
-            CC == CC_X86_64SysV) ? CCCR_OK : CCCR_Warning;
   }
 };
 } // end anonymous namespace
 
 namespace {
 // x86-64 Windows Visual Studio target
-class MicrosoftX86_64TargetInfo : public WindowsX86_64TargetInfo {
+class VisualStudioWindowsX86_64TargetInfo : public WindowsX86_64TargetInfo {
 public:
-  MicrosoftX86_64TargetInfo(const llvm::Triple &Triple)
-      : WindowsX86_64TargetInfo(Triple) {
+  VisualStudioWindowsX86_64TargetInfo(const std::string& triple)
+    : WindowsX86_64TargetInfo(triple) {
     LongDoubleWidth = LongDoubleAlign = 64;
     LongDoubleFormat = &llvm::APFloat::IEEEdouble;
   }
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
     WindowsX86_64TargetInfo::getTargetDefines(Opts, Builder);
     WindowsX86_64TargetInfo::getVisualStudioDefines(Opts, Builder);
     Builder.defineMacro("_M_X64");
@@ -3561,14 +2939,25 @@ namespace {
 // x86-64 MinGW target
 class MinGWX86_64TargetInfo : public WindowsX86_64TargetInfo {
 public:
-  MinGWX86_64TargetInfo(const llvm::Triple &Triple)
-      : WindowsX86_64TargetInfo(Triple) {}
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
+  MinGWX86_64TargetInfo(const std::string& triple)
+    : WindowsX86_64TargetInfo(triple) {
+  }
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
     WindowsX86_64TargetInfo::getTargetDefines(Opts, Builder);
     DefineStd(Builder, "WIN64", Opts);
+    Builder.defineMacro("__MSVCRT__");
+    Builder.defineMacro("__MINGW32__");
     Builder.defineMacro("__MINGW64__");
-    addMinGWDefines(Opts, Builder);
+
+    // mingw32-gcc provides __declspec(a) as alias of __attribute__((a)).
+    // In contrast, clang-cc1 provides __declspec(a) with -fms-extensions.
+    if (Opts.MicrosoftExt)
+      // Provide "as-is" __declspec.
+      Builder.defineMacro("__declspec", "__declspec");
+    else
+      // Provide alias of __attribute__ like mingw32-gcc.
+      Builder.defineMacro("__declspec(a)", "__attribute__((a))");
   }
 };
 } // end anonymous namespace
@@ -3576,15 +2965,10 @@ public:
 namespace {
 class DarwinX86_64TargetInfo : public DarwinTargetInfo<X86_64TargetInfo> {
 public:
-  DarwinX86_64TargetInfo(const llvm::Triple &Triple)
-      : DarwinTargetInfo<X86_64TargetInfo>(Triple) {
+  DarwinX86_64TargetInfo(const std::string& triple)
+      : DarwinTargetInfo<X86_64TargetInfo>(triple) {
     Int64Type = SignedLongLong;
     MaxVectorAlign = 256;
-    // The 64-bit iOS simulator uses the builtin bool type for Objective-C.
-    llvm::Triple T = llvm::Triple(Triple);
-    if (T.getOS() == llvm::Triple::IOS)
-      UseSignedCharForObjCBool = false;
-    DescriptionString = "e-m:o-i64:64-f80:128-n8:16:32:64-S128";
   }
 };
 } // end anonymous namespace
@@ -3592,9 +2976,10 @@ public:
 namespace {
 class OpenBSDX86_64TargetInfo : public OpenBSDTargetInfo<X86_64TargetInfo> {
 public:
-  OpenBSDX86_64TargetInfo(const llvm::Triple &Triple)
-      : OpenBSDTargetInfo<X86_64TargetInfo>(Triple) {
+  OpenBSDX86_64TargetInfo(const std::string& triple)
+      : OpenBSDTargetInfo<X86_64TargetInfo>(triple) {
     IntMaxType = SignedLongLong;
+    UIntMaxType = UnsignedLongLong;
     Int64Type = SignedLongLong;
   }
 };
@@ -3603,14 +2988,14 @@ public:
 namespace {
 class BitrigX86_64TargetInfo : public BitrigTargetInfo<X86_64TargetInfo> {
 public:
-  BitrigX86_64TargetInfo(const llvm::Triple &Triple)
-      : BitrigTargetInfo<X86_64TargetInfo>(Triple) {
-    IntMaxType = SignedLongLong;
-    Int64Type = SignedLongLong;
+  BitrigX86_64TargetInfo(const std::string& triple)
+      : BitrigTargetInfo<X86_64TargetInfo>(triple) {
+     IntMaxType = SignedLongLong;
+     UIntMaxType = UnsignedLongLong;
+     Int64Type = SignedLongLong;
   }
 };
-}
-
+} // end anonymous namespace
 
 namespace {
 class ARMTargetInfo : public TargetInfo {
@@ -3619,18 +3004,11 @@ class ARMTargetInfo : public TargetInfo {
     VFP2FPU = (1 << 0),
     VFP3FPU = (1 << 1),
     VFP4FPU = (1 << 2),
-    NeonFPU = (1 << 3),
-    FPARMV8 = (1 << 4)
-  };
-
-  // Possible HWDiv features.
-  enum HWDivMode {
-    HWDivThumb = (1 << 0),
-    HWDivARM = (1 << 1)
+    NeonFPU = (1 << 3)
   };
 
   static bool FPUModeIsVFP(FPUMode Mode) {
-    return Mode & (VFP2FPU | VFP3FPU | VFP4FPU | NeonFPU | FPARMV8);
+    return Mode & (VFP2FPU | VFP3FPU | VFP4FPU | NeonFPU);
   }
 
   static const TargetInfo::GCCRegAlias GCCRegAliases[];
@@ -3638,175 +3016,26 @@ class ARMTargetInfo : public TargetInfo {
 
   std::string ABI, CPU;
 
-  enum {
-    FP_Default,
-    FP_VFP,
-    FP_Neon
-  } FPMath;
-
-  unsigned FPU : 5;
+  unsigned FPU : 4;
 
   unsigned IsAAPCS : 1;
   unsigned IsThumb : 1;
-  unsigned HWDiv : 2;
 
   // Initialized via features.
   unsigned SoftFloat : 1;
   unsigned SoftFloatABI : 1;
 
-  unsigned CRC : 1;
-  unsigned Crypto : 1;
-
-  // ACLE 6.5.1 Hardware floating point
-  enum {
-    HW_FP_HP = (1 << 1), /// half (16-bit)
-    HW_FP_SP = (1 << 2), /// single (32-bit)
-    HW_FP_DP = (1 << 3), /// double (64-bit)
-  };
-  uint32_t HW_FP;
-
   static const Builtin::Info BuiltinInfo[];
 
-  static bool shouldUseInlineAtomic(const llvm::Triple &T) {
-    StringRef ArchName = T.getArchName();
-    if (T.getArch() == llvm::Triple::arm ||
-        T.getArch() == llvm::Triple::armeb) {
-      StringRef VersionStr;
-      if (ArchName.startswith("armv"))
-        VersionStr = ArchName.substr(4, 1);
-      else if (ArchName.startswith("armebv"))
-        VersionStr = ArchName.substr(6, 1);
-      else
-        return false;
-      unsigned Version;
-      if (VersionStr.getAsInteger(10, Version))
-        return false;
-      return Version >= 6;
-    }
-    assert(T.getArch() == llvm::Triple::thumb ||
-           T.getArch() == llvm::Triple::thumbeb);
-    StringRef VersionStr;
-    if (ArchName.startswith("thumbv"))
-      VersionStr = ArchName.substr(6, 1);
-    else if (ArchName.startswith("thumbebv"))
-      VersionStr = ArchName.substr(8, 1);
-    else
-      return false;
-    unsigned Version;
-    if (VersionStr.getAsInteger(10, Version))
-      return false;
-    return Version >= 7;
-  }
-
-  void setABIAAPCS() {
-    IsAAPCS = true;
-
-    DoubleAlign = LongLongAlign = LongDoubleAlign = SuitableAlign = 64;
-    const llvm::Triple &T = getTriple();
-
-    // size_t is unsigned long on MachO-derived environments and NetBSD.
-    if (T.isOSBinFormatMachO() || T.getOS() == llvm::Triple::NetBSD)
-      SizeType = UnsignedLong;
-    else
-      SizeType = UnsignedInt;
-
-    switch (T.getOS()) {
-    case llvm::Triple::NetBSD:
-      WCharType = SignedInt;
-      break;
-    case llvm::Triple::Win32:
-      WCharType = UnsignedShort;
-      break;
-    case llvm::Triple::Linux:
-    default:
-      // AAPCS 7.1.1, ARM-Linux ABI 2.4: type of wchar_t is unsigned int.
-      WCharType = UnsignedInt;
-      break;
-    }
-
-    UseBitFieldTypeAlignment = true;
-
-    ZeroLengthBitfieldBoundary = 0;
-
-    // Thumb1 add sp, #imm requires the immediate value be multiple of 4,
-    // so set preferred for small types to 32.
-    if (T.isOSBinFormatMachO()) {
-      DescriptionString =
-          BigEndian ? "E-m:o-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64"
-                    : "e-m:o-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64";
-    } else if (T.isOSWindows()) {
-      // FIXME: this is invalid for WindowsCE
-      assert(!BigEndian && "Windows on ARM does not support big endian");
-      DescriptionString = "e"
-                          "-m:e"
-                          "-p:32:32"
-                          "-i64:64"
-                          "-v128:64:128"
-                          "-a:0:32"
-                          "-n32"
-                          "-S64";
-    } else {
-      DescriptionString =
-          BigEndian ? "E-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64"
-                    : "e-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64";
-    }
-
-    // FIXME: Enumerated types are variable width in straight AAPCS.
-  }
-
-  void setABIAPCS() {
-    const llvm::Triple &T = getTriple();
-
-    IsAAPCS = false;
-
-    DoubleAlign = LongLongAlign = LongDoubleAlign = SuitableAlign = 32;
-
-    // size_t is unsigned int on FreeBSD.
-    if (T.getOS() == llvm::Triple::FreeBSD)
-      SizeType = UnsignedInt;
-    else
-      SizeType = UnsignedLong;
-
-    // Revert to using SignedInt on apcs-gnu to comply with existing behaviour.
-    WCharType = SignedInt;
-
-    // Do not respect the alignment of bit-field types when laying out
-    // structures. This corresponds to PCC_BITFIELD_TYPE_MATTERS in gcc.
-    UseBitFieldTypeAlignment = false;
-
-    /// gcc forces the alignment to 4 bytes, regardless of the type of the
-    /// zero length bitfield.  This corresponds to EMPTY_FIELD_BOUNDARY in
-    /// gcc.
-    ZeroLengthBitfieldBoundary = 32;
-
-    if (T.isOSBinFormatMachO())
-      DescriptionString =
-          BigEndian
-              ? "E-m:o-p:32:32-f64:32:64-v64:32:64-v128:32:128-a:0:32-n32-S32"
-              : "e-m:o-p:32:32-f64:32:64-v64:32:64-v128:32:128-a:0:32-n32-S32";
-    else
-      DescriptionString =
-          BigEndian
-              ? "E-m:e-p:32:32-f64:32:64-v64:32:64-v128:32:128-a:0:32-n32-S32"
-              : "e-m:e-p:32:32-f64:32:64-v64:32:64-v128:32:128-a:0:32-n32-S32";
-
-    // FIXME: Override "preferred align" for double and long long.
-  }
-
 public:
-  ARMTargetInfo(const llvm::Triple &Triple, bool IsBigEndian)
-      : TargetInfo(Triple), CPU("arm1136j-s"), FPMath(FP_Default),
-        IsAAPCS(true), HW_FP(0) {
-    BigEndian = IsBigEndian;
-
-    switch (getTriple().getOS()) {
-    case llvm::Triple::NetBSD:
-      PtrDiffType = SignedLong;
-      break;
-    default:
-      PtrDiffType = SignedInt;
-      break;
-    }
+  ARMTargetInfo(const std::string &TripleStr)
+    : TargetInfo(TripleStr), ABI("aapcs-linux"), CPU("arm1136j-s"), IsAAPCS(true)
+  {
+    BigEndian = false;
+    SizeType = UnsignedInt;
+    PtrDiffType = SignedInt;
+    // AAPCS 7.1.1, ARM-Linux ABI 2.4: type of wchar_t is unsigned int.
+    WCharType = UnsignedInt;
 
     // {} in inline assembly are neon specifiers, not assembly variant
     // specifiers.
@@ -3814,16 +3043,24 @@ public:
 
     // FIXME: Should we just treat this as a feature?
     IsThumb = getTriple().getArchName().startswith("thumb");
-
-    setABI("aapcs-linux");
+    if (IsThumb) {
+      // Thumb1 add sp, #imm requires the immediate value be multiple of 4,
+      // so set preferred for small types to 32.
+      DescriptionString = ("e-p:32:32:32-i1:8:32-i8:8:32-i16:16:32-i32:32:32-"
+                           "i64:64:64-f32:32:32-f64:64:64-"
+                           "v64:64:64-v128:64:128-a0:0:32-n32-S64");
+    } else {
+      DescriptionString = ("e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
+                           "i64:64:64-f32:32:32-f64:64:64-"
+                           "v64:64:64-v128:64:128-a0:0:64-n32-S64");
+    }
 
     // ARM targets default to using the ARM C++ ABI.
-    TheCXXABI.set(TargetCXXABI::GenericARM);
+    CXXABI = CXXABI_ARM;
 
     // ARM has atomics up to 8 bytes
+    // FIXME: Set MaxAtomicInlineWidth if we have the feature v6e
     MaxAtomicPromoteWidth = 64;
-    if (shouldUseInlineAtomic(getTriple()))
-      MaxAtomicInlineWidth = 64;
 
     // Do force alignment of members that follow zero length bitfields.  If
     // the alignment of the zero-length bitfield is greater than the member 
@@ -3831,8 +3068,8 @@ public:
     // zero length bitfield.
     UseZeroLengthBitfieldAlignment = true;
   }
-  StringRef getABI() const override { return ABI; }
-  bool setABI(const std::string &Name) override {
+  virtual const char *getABI() const { return ABI.c_str(); }
+  virtual bool setABI(const std::string &Name) {
     ABI = Name;
 
     // The defaults (above) are for AAPCS, check if we need to change them.
@@ -3840,136 +3077,107 @@ public:
     // FIXME: We need support for -meabi... we could just mangle it into the
     // name.
     if (Name == "apcs-gnu") {
-      setABIAPCS();
-      return true;
-    }
-    if (Name == "aapcs" || Name == "aapcs-vfp" || Name == "aapcs-linux") {
-      setABIAAPCS();
-      return true;
-    }
-    return false;
-  }
+      DoubleAlign = LongLongAlign = LongDoubleAlign = SuitableAlign = 32;
+      SizeType = UnsignedLong;
 
-  void getDefaultFeatures(llvm::StringMap<bool> &Features) const override {
-    if (IsAAPCS)
-      Features["aapcs"] = true;
-    else
-      Features["apcs"] = true;
+      // Revert to using SignedInt on apcs-gnu to comply with existing behaviour.
+      WCharType = SignedInt;
 
-    StringRef ArchName = getTriple().getArchName();
-    if (CPU == "arm1136jf-s" || CPU == "arm1176jzf-s" || CPU == "mpcore")
-      Features["vfp2"] = true;
-    else if (CPU == "cortex-a8" || CPU == "cortex-a9" ||
-             CPU == "cortex-a9-mp") {
-      Features["vfp3"] = true;
-      Features["neon"] = true;
-    }
-    else if (CPU == "cortex-a5") {
-      Features["vfp4"] = true;
-      Features["neon"] = true;
-    } else if (CPU == "swift" || CPU == "cortex-a7" ||
-               CPU == "cortex-a12" || CPU == "cortex-a15" ||
-               CPU == "cortex-a17" || CPU == "krait") {
-      Features["vfp4"] = true;
-      Features["neon"] = true;
-      Features["hwdiv"] = true;
-      Features["hwdiv-arm"] = true;
-    } else if (CPU == "cyclone") {
-      Features["v8fp"] = true;
-      Features["neon"] = true;
-      Features["hwdiv"] = true;
-      Features["hwdiv-arm"] = true;
-    } else if (CPU == "cortex-a53" || CPU == "cortex-a57") {
-      Features["fp-armv8"] = true;
-      Features["neon"] = true;
-      Features["hwdiv"] = true;
-      Features["hwdiv-arm"] = true;
-      Features["crc"] = true;
-      Features["crypto"] = true;
-    } else if (CPU == "cortex-r5" ||
-               // Enable the hwdiv extension for all v8a AArch32 cores by
-               // default.
-               ArchName == "armv8a" || ArchName == "armv8" ||
-               ArchName == "armebv8a" || ArchName == "armebv8" ||
-               ArchName == "thumbv8a" || ArchName == "thumbv8" ||
-               ArchName == "thumbebv8a" || ArchName == "thumbebv8") {
-      Features["hwdiv"] = true;
-      Features["hwdiv-arm"] = true;
-    } else if (CPU == "cortex-m3" || CPU == "cortex-m4" || CPU == "cortex-m7") {
-      Features["hwdiv"] = true;
-    }
-  }
+      // Do not respect the alignment of bit-field types when laying out
+      // structures. This corresponds to PCC_BITFIELD_TYPE_MATTERS in gcc.
+      UseBitFieldTypeAlignment = false;
 
-  bool handleTargetFeatures(std::vector<std::string> &Features,
-                            DiagnosticsEngine &Diags) override {
-    FPU = 0;
-    CRC = 0;
-    Crypto = 0;
-    SoftFloat = SoftFloatABI = false;
-    HWDiv = 0;
+      /// gcc forces the alignment to 4 bytes, regardless of the type of the
+      /// zero length bitfield.  This corresponds to EMPTY_FIELD_BOUNDARY in
+      /// gcc.
+      ZeroLengthBitfieldBoundary = 32;
 
-    for (const auto &Feature : Features) {
-      if (Feature == "+soft-float") {
-        SoftFloat = true;
-      } else if (Feature == "+soft-float-abi") {
-        SoftFloatABI = true;
-      } else if (Feature == "+vfp2") {
-        FPU |= VFP2FPU;
-        HW_FP = HW_FP_SP | HW_FP_DP;
-      } else if (Feature == "+vfp3") {
-        FPU |= VFP3FPU;
-        HW_FP = HW_FP_SP | HW_FP_DP;
-      } else if (Feature == "+vfp4") {
-        FPU |= VFP4FPU;
-        HW_FP = HW_FP_SP | HW_FP_DP | HW_FP_HP;
-      } else if (Feature == "+fp-armv8") {
-        FPU |= FPARMV8;
-        HW_FP = HW_FP_SP | HW_FP_DP | HW_FP_HP;
-      } else if (Feature == "+neon") {
-        FPU |= NeonFPU;
-        HW_FP = HW_FP_SP | HW_FP_DP;
-      } else if (Feature == "+hwdiv") {
-        HWDiv |= HWDivThumb;
-      } else if (Feature == "+hwdiv-arm") {
-        HWDiv |= HWDivARM;
-      } else if (Feature == "+crc") {
-        CRC = 1;
-      } else if (Feature == "+crypto") {
-        Crypto = 1;
-      } else if (Feature == "+fp-only-sp") {
-        HW_FP &= ~HW_FP_DP;
+      IsAAPCS = false;
+
+      if (IsThumb) {
+        // Thumb1 add sp, #imm requires the immediate value be multiple of 4,
+        // so set preferred for small types to 32.
+        DescriptionString = ("e-p:32:32:32-i1:8:32-i8:8:32-i16:16:32-i32:32:32-"
+                             "i64:32:64-f32:32:32-f64:32:64-"
+                             "v64:32:64-v128:32:128-a0:0:32-n32-S32");
+      } else {
+        DescriptionString = ("e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
+                             "i64:32:64-f32:32:32-f64:32:64-"
+                             "v64:32:64-v128:32:128-a0:0:32-n32-S32");
       }
-    }
 
-    if (!(FPU & NeonFPU) && FPMath == FP_Neon) {
-      Diags.Report(diag::err_target_unsupported_fpmath) << "neon";
+      // FIXME: Override "preferred align" for double and long long.
+    } else if (Name == "aapcs" || Name == "aapcs-vfp") {
+      IsAAPCS = true;
+      // FIXME: Enumerated types are variable width in straight AAPCS.
+    } else if (Name == "aapcs-linux") {
+      IsAAPCS = true;
+    } else
       return false;
-    }
-
-    if (FPMath == FP_Neon)
-      Features.push_back("+neonfp");
-    else if (FPMath == FP_VFP)
-      Features.push_back("-neonfp");
-
-    // Remove front-end specific options which the backend handles differently.
-    const StringRef FrontEndFeatures[] = { "+soft-float", "+soft-float-abi" };
-    for (const auto &FEFeature : FrontEndFeatures) {
-      auto Feature = std::find(Features.begin(), Features.end(), FEFeature);
-      if (Feature != Features.end())
-        Features.erase(Feature);
-    }
 
     return true;
   }
 
-  bool hasFeature(StringRef Feature) const override {
+  void getDefaultFeatures(llvm::StringMap<bool> &Features) const {
+    if (CPU == "arm1136jf-s" || CPU == "arm1176jzf-s" || CPU == "mpcore")
+      Features["vfp2"] = true;
+    else if (CPU == "cortex-a8" || CPU == "cortex-a15" ||
+             CPU == "cortex-a9" || CPU == "cortex-a9-mp")
+      Features["neon"] = true;
+    else if (CPU == "swift") {
+      Features["vfp4"] = true;
+      Features["neon"] = true;
+    }
+  }
+
+  virtual bool setFeatureEnabled(llvm::StringMap<bool> &Features,
+                                 StringRef Name,
+                                 bool Enabled) const {
+    if (Name == "soft-float" || Name == "soft-float-abi" ||
+        Name == "vfp2" || Name == "vfp3" || Name == "vfp4" || Name == "neon" ||
+        Name == "d16" || Name == "neonfp") {
+      Features[Name] = Enabled;
+    } else
+      return false;
+
+    return true;
+  }
+
+  virtual void HandleTargetFeatures(std::vector<std::string> &Features) {
+    FPU = 0;
+    SoftFloat = SoftFloatABI = false;
+    for (unsigned i = 0, e = Features.size(); i != e; ++i) {
+      if (Features[i] == "+soft-float")
+        SoftFloat = true;
+      else if (Features[i] == "+soft-float-abi")
+        SoftFloatABI = true;
+      else if (Features[i] == "+vfp2")
+        FPU |= VFP2FPU;
+      else if (Features[i] == "+vfp3")
+        FPU |= VFP3FPU;
+      else if (Features[i] == "+vfp4")
+        FPU |= VFP4FPU;
+      else if (Features[i] == "+neon")
+        FPU |= NeonFPU;
+    }
+
+    // Remove front-end specific options which the backend handles differently.
+    std::vector<std::string>::iterator it;
+    it = std::find(Features.begin(), Features.end(), "+soft-float");
+    if (it != Features.end())
+      Features.erase(it);
+    it = std::find(Features.begin(), Features.end(), "+soft-float-abi");
+    if (it != Features.end())
+      Features.erase(it);
+  }
+
+  virtual bool hasFeature(StringRef Feature) const {
     return llvm::StringSwitch<bool>(Feature)
         .Case("arm", true)
         .Case("softfloat", SoftFloat)
         .Case("thumb", IsThumb)
-        .Case("neon", (FPU & NeonFPU) && !SoftFloat)
-        .Case("hwdiv", HWDiv & HWDivThumb)
-        .Case("hwdiv-arm", HWDiv & HWDivARM)
+        .Case("neon", FPU == NeonFPU && !SoftFloat && 
+              StringRef(getCPUDefineSuffix(CPU)).startswith("7"))    
         .Default(false);
   }
   // FIXME: Should we actually have some table instead of these switches?
@@ -3989,122 +3197,54 @@ public:
       .Cases("arm1176jz-s", "arm1176jzf-s", "6ZK")
       .Cases("arm1136jf-s", "mpcorenovfp", "mpcore", "6K")
       .Cases("arm1156t2-s", "arm1156t2f-s", "6T2")
-      .Cases("cortex-a5", "cortex-a7", "cortex-a8", "cortex-a9-mp", "7A")
-      .Cases("cortex-a9", "cortex-a12", "cortex-a15", "cortex-a17", "krait", "7A")
-      .Cases("cortex-r4", "cortex-r5", "7R")
+      .Cases("cortex-a8", "cortex-a9", "cortex-a15", "7A")
+      .Case("cortex-a9-mp", "7F")
       .Case("swift", "7S")
-      .Case("cyclone", "8A")
-      .Case("cortex-m3", "7M")
-      .Cases("cortex-m4", "cortex-m7", "7EM")
+      .Cases("cortex-m3", "cortex-m4", "7M")
       .Case("cortex-m0", "6M")
-      .Cases("cortex-a53", "cortex-a57", "8A")
-      .Default(nullptr);
+      .Default(0);
   }
   static const char *getCPUProfile(StringRef Name) {
     return llvm::StringSwitch<const char*>(Name)
-      .Cases("cortex-a5", "cortex-a7", "cortex-a8", "A")
-      .Cases("cortex-a9", "cortex-a12", "cortex-a15", "cortex-a17", "krait", "A")
-      .Cases("cortex-a53", "cortex-a57", "A")
-      .Cases("cortex-m3", "cortex-m4", "cortex-m0", "cortex-m7", "M")
-      .Cases("cortex-r4", "cortex-r5", "R")
+      .Cases("cortex-a8", "cortex-a9", "A")
+      .Cases("cortex-m3", "cortex-m4", "cortex-m0", "M")
       .Default("");
   }
-  bool setCPU(const std::string &Name) override {
+  virtual bool setCPU(const std::string &Name) {
     if (!getCPUDefineSuffix(Name))
       return false;
-
-    // Cortex M does not support 8 byte atomics, while general Thumb2 does.
-    StringRef Profile = getCPUProfile(Name);
-    if (Profile == "M" && MaxAtomicInlineWidth) {
-      MaxAtomicPromoteWidth = 32;
-      MaxAtomicInlineWidth = 32;
-    }
 
     CPU = Name;
     return true;
   }
-  bool setFPMath(StringRef Name) override;
-  bool supportsThumb(StringRef ArchName, StringRef CPUArch,
-                     unsigned CPUArchVer) const {
-    return CPUArchVer >= 7 || (CPUArch.find('T') != StringRef::npos) ||
-           (CPUArch.find('M') != StringRef::npos);
-  }
-  bool supportsThumb2(StringRef ArchName, StringRef CPUArch,
-                      unsigned CPUArchVer) const {
-    // We check both CPUArchVer and ArchName because when only triple is
-    // specified, the default CPU is arm1136j-s.
-    return ArchName.endswith("v6t2") || ArchName.endswith("v7") ||
-           ArchName.endswith("v8") || CPUArch == "6T2" || CPUArchVer >= 7;
-  }
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
     // Target identification.
     Builder.defineMacro("__arm");
     Builder.defineMacro("__arm__");
 
     // Target properties.
+    Builder.defineMacro("__ARMEL__");
+    Builder.defineMacro("__LITTLE_ENDIAN__");
     Builder.defineMacro("__REGISTER_PREFIX__", "");
 
     StringRef CPUArch = getCPUDefineSuffix(CPU);
-    unsigned int CPUArchVer;
-    if (CPUArch.substr(0, 1).getAsInteger<unsigned int>(10, CPUArchVer))
-      llvm_unreachable("Invalid char for architecture version number");
     Builder.defineMacro("__ARM_ARCH_" + CPUArch + "__");
-
-    // ACLE 6.4.1 ARM/Thumb instruction set architecture
-    StringRef CPUProfile = getCPUProfile(CPU);
-    StringRef ArchName = getTriple().getArchName();
-
-    // __ARM_ARCH is defined as an integer value indicating the current ARM ISA
     Builder.defineMacro("__ARM_ARCH", CPUArch.substr(0, 1));
-    if (CPUArch[0] >= '8') {                                                    
-      Builder.defineMacro("__ARM_FEATURE_NUMERIC_MAXMIN");                      
-      Builder.defineMacro("__ARM_FEATURE_DIRECTED_ROUNDING");                   
-    }
-
-    // __ARM_ARCH_ISA_ARM is defined to 1 if the core supports the ARM ISA.  It
-    // is not defined for the M-profile.
-    // NOTE that the deffault profile is assumed to be 'A'
-    if (CPUProfile.empty() || CPUProfile != "M")
-      Builder.defineMacro("__ARM_ARCH_ISA_ARM", "1");
-
-    // __ARM_ARCH_ISA_THUMB is defined to 1 if the core supporst the original
-    // Thumb ISA (including v6-M).  It is set to 2 if the core supports the
-    // Thumb-2 ISA as found in the v6T2 architecture and all v7 architecture.
-    if (supportsThumb2(ArchName, CPUArch, CPUArchVer))
-      Builder.defineMacro("__ARM_ARCH_ISA_THUMB", "2");
-    else if (supportsThumb(ArchName, CPUArch, CPUArchVer))
-      Builder.defineMacro("__ARM_ARCH_ISA_THUMB", "1");
-
-    // __ARM_32BIT_STATE is defined to 1 if code is being generated for a 32-bit
-    // instruction set such as ARM or Thumb.
-    Builder.defineMacro("__ARM_32BIT_STATE", "1");
-
-    // ACLE 6.4.2 Architectural Profile (A, R, M or pre-Cortex)
-
-    // __ARM_ARCH_PROFILE is defined as 'A', 'R', 'M' or 'S', or unset.
+    StringRef CPUProfile = getCPUProfile(CPU);
     if (!CPUProfile.empty())
-      Builder.defineMacro("__ARM_ARCH_PROFILE", "'" + CPUProfile + "'");
-
-    // ACLE 6.5.1 Hardware Floating Point
-    if (HW_FP)
-      Builder.defineMacro("__ARM_FP", "0x" + llvm::utohexstr(HW_FP));
-
-    // ACLE predefines.
-    Builder.defineMacro("__ARM_ACLE", "200");
-
+      Builder.defineMacro("__ARM_ARCH_PROFILE", CPUProfile);
+    
     // Subtarget options.
 
     // FIXME: It's more complicated than this and we don't really support
     // interworking.
-    // Windows on ARM does not "support" interworking
-    if (5 <= CPUArchVer && CPUArchVer <= 8 && !getTriple().isOSWindows())
+    if ('5' <= CPUArch[0] && CPUArch[0] <= '7')
       Builder.defineMacro("__THUMB_INTERWORK__");
 
     if (ABI == "aapcs" || ABI == "aapcs-linux" || ABI == "aapcs-vfp") {
-      // Embedded targets on Darwin follow AAPCS, but not EABI.
-      // Windows on ARM follows AAPCS VFP, but does not conform to EABI.
-      if (!getTriple().isOSDarwin() && !getTriple().isOSWindows())
+      // M-class CPUs on Darwin follow AAPCS, but not EABI.
+      if (!(getTriple().isOSDarwin() && CPUProfile == "M"))
         Builder.defineMacro("__ARM_EABI__");
       Builder.defineMacro("__ARM_PCS", "1");
 
@@ -4118,14 +3258,13 @@ public:
     if (CPU == "xscale")
       Builder.defineMacro("__XSCALE__");
 
+    bool IsARMv7 = CPUArch.startswith("7");
     if (IsThumb) {
       Builder.defineMacro("__THUMBEL__");
       Builder.defineMacro("__thumb__");
-      if (supportsThumb2(ArchName, CPUArch, CPUArchVer))
+      if (CPUArch == "6T2" || IsARMv7)
         Builder.defineMacro("__thumb2__");
     }
-    if (((HWDiv & HWDivThumb) && IsThumb) || ((HWDiv & HWDivARM) && !IsThumb))
-      Builder.defineMacro("__ARM_ARCH_EXT_IDIV__", "1");
 
     // Note, this is always on in gcc, even though it doesn't make sense.
     Builder.defineMacro("__APCS_32__");
@@ -4139,50 +3278,29 @@ public:
       if (FPU & VFP4FPU)
         Builder.defineMacro("__ARM_VFPV4__");
     }
-
+    
     // This only gets set when Neon instructions are actually available, unlike
     // the VFP define, hence the soft float and arch check. This is subtly
     // different from gcc, we follow the intent which was that it should be set
     // when Neon instructions are actually available.
-    if ((FPU & NeonFPU) && !SoftFloat && CPUArchVer >= 7) {
-      Builder.defineMacro("__ARM_NEON");
+    if ((FPU & NeonFPU) && !SoftFloat && IsARMv7)
       Builder.defineMacro("__ARM_NEON__");
-    }
-
-    Builder.defineMacro("__ARM_SIZEOF_WCHAR_T",
-                        Opts.ShortWChar ? "2" : "4");
-
-    Builder.defineMacro("__ARM_SIZEOF_MINIMAL_ENUM",
-                        Opts.ShortEnums ? "1" : "4");
-
-    if (CRC)
-      Builder.defineMacro("__ARM_FEATURE_CRC32");
-
-    if (Crypto)
-      Builder.defineMacro("__ARM_FEATURE_CRYPTO");
-
-    if (CPUArchVer >= 6 && CPUArch != "6M") {
-      Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_1");
-      Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_2");
-      Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_4");
-      Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8");
-    }
   }
-  void getTargetBuiltins(const Builtin::Info *&Records,
-                         unsigned &NumRecords) const override {
+  virtual void getTargetBuiltins(const Builtin::Info *&Records,
+                                 unsigned &NumRecords) const {
     Records = BuiltinInfo;
     NumRecords = clang::ARM::LastTSBuiltin-Builtin::FirstTSBuiltin;
   }
-  bool isCLZForZeroUndef() const override { return false; }
-  BuiltinVaListKind getBuiltinVaListKind() const override {
+  virtual bool isCLZForZeroUndef() const { return false; }
+  virtual BuiltinVaListKind getBuiltinVaListKind() const {
     return IsAAPCS ? AAPCSABIBuiltinVaList : TargetInfo::VoidPtrBuiltinVaList;
   }
-  void getGCCRegNames(const char * const *&Names,
-                      unsigned &NumNames) const override;
-  void getGCCRegAliases(const GCCRegAlias *&Aliases,
-                        unsigned &NumAliases) const override;
-  bool validateAsmConstraint(const char *&Name,
-                             TargetInfo::ConstraintInfo &Info) const override {
+  virtual void getGCCRegNames(const char * const *&Names,
+                              unsigned &NumNames) const;
+  virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                unsigned &NumAliases) const;
+  virtual bool validateAsmConstraint(const char *&Name,
+                                     TargetInfo::ConstraintInfo &Info) const {
     switch (*Name) {
     default: break;
     case 'l': // r0-r7
@@ -4200,11 +3318,11 @@ public:
       case 'v': // ...VFP load/store (reg+constant offset)
       case 'y': // ...iWMMXt load/store
       case 't': // address valid for load/store opaque types wider
-                // than 128-bits
+	        // than 128-bits
       case 'n': // valid address for Neon doubleword vector load/store
       case 'm': // valid address for Neon element and structure load/store
       case 's': // valid address for non-offset loads/stores of quad-word
-                // values in four ARM registers
+	        // values in four ARM registers
         Info.setAllowsMemory();
         Name++;
         return true;
@@ -4212,7 +3330,7 @@ public:
     }
     return false;
   }
-  std::string convertConstraint(const char *&Constraint) const override {
+  virtual std::string convertConstraint(const char *&Constraint) const {
     std::string R;
     switch (*Constraint) {
     case 'U':   // Two-character constraint; add "^" hint for later parsing.
@@ -4227,12 +3345,9 @@ public:
     }
     return R;
   }
-  bool
-  validateConstraintModifier(StringRef Constraint, char Modifier, unsigned Size,
-                             std::string &SuggestedModifier) const override {
-    bool isOutput = (Constraint[0] == '=');
-    bool isInOut = (Constraint[0] == '+');
-
+  virtual bool validateConstraintModifier(StringRef Constraint,
+                                          const char Modifier,
+                                          unsigned Size) const {
     // Strip off constraint modifiers.
     while (Constraint[0] == '=' ||
            Constraint[0] == '+' ||
@@ -4244,7 +3359,7 @@ public:
     case 'r': {
       switch (Modifier) {
       default:
-        return (isInOut || isOutput || Size <= 64);
+        return Size == 32;
       case 'q':
         // A register of size 32 cannot fit a vector type.
         return false;
@@ -4254,33 +3369,15 @@ public:
 
     return true;
   }
-  const char *getClobbers() const override {
+  virtual const char *getClobbers() const {
     // FIXME: Is this really right?
     return "";
   }
 
-  CallingConvCheckResult checkCallingConvention(CallingConv CC) const override {
+  virtual CallingConvCheckResult checkCallingConvention(CallingConv CC) const {
     return (CC == CC_AAPCS || CC == CC_AAPCS_VFP) ? CCCR_OK : CCCR_Warning;
   }
-
-  int getEHDataRegisterNumber(unsigned RegNo) const override {
-    if (RegNo == 0) return 0;
-    if (RegNo == 1) return 1;
-    return -1;
-  }
 };
-
-bool ARMTargetInfo::setFPMath(StringRef Name) {
-  if (Name == "neon") {
-    FPMath = FP_Neon;
-    return true;
-  } else if (Name == "vfp" || Name == "vfp2" || Name == "vfp3" ||
-             Name == "vfp4") {
-    FPMath = FP_VFP;
-    return true;
-  }
-  return false;
-}
 
 const char * const ARMTargetInfo::GCCRegNames[] = {
   // Integer registers
@@ -4341,517 +3438,30 @@ const Builtin::Info ARMTargetInfo::BuiltinInfo[] = {
 #define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
 #define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER,\
                                               ALL_LANGUAGES },
-#include "clang/Basic/BuiltinsNEON.def"
-
-#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
-#define LANGBUILTIN(ID, TYPE, ATTRS, LANG) { #ID, TYPE, ATTRS, 0, LANG },
-#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER,\
-                                              ALL_LANGUAGES },
 #include "clang/Basic/BuiltinsARM.def"
 };
-
-class ARMleTargetInfo : public ARMTargetInfo {
-public:
-  ARMleTargetInfo(const llvm::Triple &Triple)
-    : ARMTargetInfo(Triple, false) { }
-  virtual void getTargetDefines(const LangOptions &Opts,
-                                MacroBuilder &Builder) const {
-    Builder.defineMacro("__ARMEL__");
-    ARMTargetInfo::getTargetDefines(Opts, Builder);
-  }
-};
-
-class ARMbeTargetInfo : public ARMTargetInfo {
-public:
-  ARMbeTargetInfo(const llvm::Triple &Triple)
-    : ARMTargetInfo(Triple, true) { }
-  virtual void getTargetDefines(const LangOptions &Opts,
-                                MacroBuilder &Builder) const {
-    Builder.defineMacro("__ARMEB__");
-    Builder.defineMacro("__ARM_BIG_ENDIAN");
-    ARMTargetInfo::getTargetDefines(Opts, Builder);
-  }
-};
 } // end anonymous namespace.
-
-namespace {
-class WindowsARMTargetInfo : public WindowsTargetInfo<ARMleTargetInfo> {
-  const llvm::Triple Triple;
-public:
-  WindowsARMTargetInfo(const llvm::Triple &Triple)
-    : WindowsTargetInfo<ARMleTargetInfo>(Triple), Triple(Triple) {
-    TLSSupported = false;
-    WCharType = UnsignedShort;
-    SizeType = UnsignedInt;
-    UserLabelPrefix = "";
-  }
-  void getVisualStudioDefines(const LangOptions &Opts,
-                              MacroBuilder &Builder) const {
-    WindowsTargetInfo<ARMleTargetInfo>::getVisualStudioDefines(Opts, Builder);
-
-    // FIXME: this is invalid for WindowsCE
-    Builder.defineMacro("_M_ARM_NT", "1");
-    Builder.defineMacro("_M_ARMT", "_M_ARM");
-    Builder.defineMacro("_M_THUMB", "_M_ARM");
-
-    assert((Triple.getArch() == llvm::Triple::arm ||
-            Triple.getArch() == llvm::Triple::thumb) &&
-           "invalid architecture for Windows ARM target info");
-    unsigned Offset = Triple.getArch() == llvm::Triple::arm ? 4 : 6;
-    Builder.defineMacro("_M_ARM", Triple.getArchName().substr(Offset));
-
-    // TODO map the complete set of values
-    // 31: VFPv3 40: VFPv4
-    Builder.defineMacro("_M_ARM_FP", "31");
-  }
-  BuiltinVaListKind getBuiltinVaListKind() const override {
-    return TargetInfo::CharPtrBuiltinVaList;
-  }
-};
-
-// Windows ARM + Itanium C++ ABI Target
-class ItaniumWindowsARMleTargetInfo : public WindowsARMTargetInfo {
-public:
-  ItaniumWindowsARMleTargetInfo(const llvm::Triple &Triple)
-    : WindowsARMTargetInfo(Triple) {
-    TheCXXABI.set(TargetCXXABI::GenericARM);
-  }
-
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
-    WindowsARMTargetInfo::getTargetDefines(Opts, Builder);
-
-    if (Opts.MSVCCompat)
-      WindowsARMTargetInfo::getVisualStudioDefines(Opts, Builder);
-  }
-};
-
-// Windows ARM, MS (C++) ABI
-class MicrosoftARMleTargetInfo : public WindowsARMTargetInfo {
-public:
-  MicrosoftARMleTargetInfo(const llvm::Triple &Triple)
-    : WindowsARMTargetInfo(Triple) {
-    TheCXXABI.set(TargetCXXABI::Microsoft);
-  }
-
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
-    WindowsARMTargetInfo::getTargetDefines(Opts, Builder);
-    WindowsARMTargetInfo::getVisualStudioDefines(Opts, Builder);
-  }
-};
-}
-
 
 namespace {
 class DarwinARMTargetInfo :
-  public DarwinTargetInfo<ARMleTargetInfo> {
+  public DarwinTargetInfo<ARMTargetInfo> {
 protected:
-  void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
-                    MacroBuilder &Builder) const override {
+  virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
+                            MacroBuilder &Builder) const {
     getDarwinDefines(Builder, Opts, Triple, PlatformName, PlatformMinVersion);
   }
 
 public:
-  DarwinARMTargetInfo(const llvm::Triple &Triple)
-      : DarwinTargetInfo<ARMleTargetInfo>(Triple) {
+  DarwinARMTargetInfo(const std::string& triple)
+    : DarwinTargetInfo<ARMTargetInfo>(triple) {
     HasAlignMac68kSupport = true;
     // iOS always has 64-bit atomic instructions.
-    // FIXME: This should be based off of the target features in ARMleTargetInfo.
+    // FIXME: This should be based off of the target features in ARMTargetInfo.
     MaxAtomicInlineWidth = 64;
-
-    // Darwin on iOS uses a variant of the ARM C++ ABI.
-    TheCXXABI.set(TargetCXXABI::iOS);
   }
 };
 } // end anonymous namespace.
 
-
-namespace {
-class AArch64TargetInfo : public TargetInfo {
-  virtual void setDescriptionString() = 0;
-  static const TargetInfo::GCCRegAlias GCCRegAliases[];
-  static const char *const GCCRegNames[];
-
-  enum FPUModeEnum {
-    FPUMode,
-    NeonMode
-  };
-
-  unsigned FPU;
-  unsigned CRC;
-  unsigned Crypto;
-
-  static const Builtin::Info BuiltinInfo[];
-
-  std::string ABI;
-
-public:
-  AArch64TargetInfo(const llvm::Triple &Triple)
-      : TargetInfo(Triple), ABI("aapcs") {
-
-    if (getTriple().getOS() == llvm::Triple::NetBSD) {
-      WCharType = SignedInt;
-
-      // NetBSD apparently prefers consistency across ARM targets to consistency
-      // across 64-bit targets.
-      Int64Type = SignedLongLong;
-      IntMaxType = SignedLongLong;
-    } else {
-      WCharType = UnsignedInt;
-      Int64Type = SignedLong;
-      IntMaxType = SignedLong;
-    }
-
-    LongWidth = LongAlign = PointerWidth = PointerAlign = 64;
-    MaxVectorAlign = 128;
-    RegParmMax = 8;
-    MaxAtomicInlineWidth = 128;
-    MaxAtomicPromoteWidth = 128;
-
-    LongDoubleWidth = LongDoubleAlign = 128;
-    LongDoubleFormat = &llvm::APFloat::IEEEquad;
-
-    // {} in inline assembly are neon specifiers, not assembly variant
-    // specifiers.
-    NoAsmVariants = true;
-
-    // AArch64 targets default to using the ARM C++ ABI.
-    TheCXXABI.set(TargetCXXABI::GenericAArch64);
-  }
-
-  StringRef getABI() const override { return ABI; }
-  virtual bool setABI(const std::string &Name) override {
-    if (Name != "aapcs" && Name != "darwinpcs")
-      return false;
-
-    ABI = Name;
-    return true;
-  }
-
-  virtual bool setCPU(const std::string &Name) override {
-    bool CPUKnown = llvm::StringSwitch<bool>(Name)
-                        .Case("generic", true)
-                        .Cases("cortex-a53", "cortex-a57", true)
-                        .Case("cyclone", true)
-                        .Default(false);
-    return CPUKnown;
-  }
-
-  virtual void getTargetDefines(const LangOptions &Opts,
-                                MacroBuilder &Builder) const  override {
-    // Target identification.
-    Builder.defineMacro("__aarch64__");
-
-    // Target properties.
-    Builder.defineMacro("_LP64");
-    Builder.defineMacro("__LP64__");
-
-    // ACLE predefines. Many can only have one possible value on v8 AArch64.
-    Builder.defineMacro("__ARM_ACLE", "200");
-    Builder.defineMacro("__ARM_ARCH", "8");
-    Builder.defineMacro("__ARM_ARCH_PROFILE", "'A'");
-
-    Builder.defineMacro("__ARM_64BIT_STATE");
-    Builder.defineMacro("__ARM_PCS_AAPCS64");
-    Builder.defineMacro("__ARM_ARCH_ISA_A64");
-
-    Builder.defineMacro("__ARM_FEATURE_UNALIGNED");
-    Builder.defineMacro("__ARM_FEATURE_CLZ");
-    Builder.defineMacro("__ARM_FEATURE_FMA");
-    Builder.defineMacro("__ARM_FEATURE_DIV");
-    Builder.defineMacro("__ARM_FEATURE_IDIV"); // As specified in ACLE
-    Builder.defineMacro("__ARM_FEATURE_DIV");  // For backwards compatibility
-    Builder.defineMacro("__ARM_FEATURE_NUMERIC_MAXMIN");
-    Builder.defineMacro("__ARM_FEATURE_DIRECTED_ROUNDING");
-
-    Builder.defineMacro("__ARM_ALIGN_MAX_STACK_PWR", "4");
-
-    // 0xe implies support for half, single and double precision operations.
-    Builder.defineMacro("__ARM_FP", "0xe");
-
-    // PCS specifies this for SysV variants, which is all we support. Other ABIs
-    // may choose __ARM_FP16_FORMAT_ALTERNATIVE.
-    Builder.defineMacro("__ARM_FP16_FORMAT_IEEE");
-
-    if (Opts.FastMath || Opts.FiniteMathOnly)
-      Builder.defineMacro("__ARM_FP_FAST");
-
-    if ((Opts.C99 || Opts.C11) && !Opts.Freestanding)
-      Builder.defineMacro("__ARM_FP_FENV_ROUNDING");
-
-    Builder.defineMacro("__ARM_SIZEOF_WCHAR_T", Opts.ShortWChar ? "2" : "4");
-
-    Builder.defineMacro("__ARM_SIZEOF_MINIMAL_ENUM",
-                        Opts.ShortEnums ? "1" : "4");
-
-    if (FPU == NeonMode) {
-      Builder.defineMacro("__ARM_NEON");
-      // 64-bit NEON supports half, single and double precision operations.
-      Builder.defineMacro("__ARM_NEON_FP", "0xe");
-    }
-
-    if (CRC)
-      Builder.defineMacro("__ARM_FEATURE_CRC32");
-
-    if (Crypto)
-      Builder.defineMacro("__ARM_FEATURE_CRYPTO");
-  }
-
-  virtual void getTargetBuiltins(const Builtin::Info *&Records,
-                                 unsigned &NumRecords) const override {
-    Records = BuiltinInfo;
-    NumRecords = clang::AArch64::LastTSBuiltin - Builtin::FirstTSBuiltin;
-  }
-
-  virtual bool hasFeature(StringRef Feature) const override {
-    return Feature == "aarch64" ||
-      Feature == "arm64" ||
-      (Feature == "neon" && FPU == NeonMode);
-  }
-
-  bool handleTargetFeatures(std::vector<std::string> &Features,
-                            DiagnosticsEngine &Diags) override {
-    FPU = FPUMode;
-    CRC = 0;
-    Crypto = 0;
-    for (unsigned i = 0, e = Features.size(); i != e; ++i) {
-      if (Features[i] == "+neon")
-        FPU = NeonMode;
-      if (Features[i] == "+crc")
-        CRC = 1;
-      if (Features[i] == "+crypto")
-        Crypto = 1;
-    }
-
-    setDescriptionString();
-
-    return true;
-  }
-
-  virtual bool isCLZForZeroUndef() const override { return false; }
-
-  virtual BuiltinVaListKind getBuiltinVaListKind() const override {
-    return TargetInfo::AArch64ABIBuiltinVaList;
-  }
-
-  virtual void getGCCRegNames(const char *const *&Names,
-                              unsigned &NumNames) const override;
-  virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
-                                unsigned &NumAliases) const override;
-
-  virtual bool validateAsmConstraint(const char *&Name,
-                                     TargetInfo::ConstraintInfo &Info) const override {
-    switch (*Name) {
-    default:
-      return false;
-    case 'w': // Floating point and SIMD registers (V0-V31)
-      Info.setAllowsRegister();
-      return true;
-    case 'I': // Constant that can be used with an ADD instruction
-    case 'J': // Constant that can be used with a SUB instruction
-    case 'K': // Constant that can be used with a 32-bit logical instruction
-    case 'L': // Constant that can be used with a 64-bit logical instruction
-    case 'M': // Constant that can be used as a 32-bit MOV immediate
-    case 'N': // Constant that can be used as a 64-bit MOV immediate
-    case 'Y': // Floating point constant zero
-    case 'Z': // Integer constant zero
-      return true;
-    case 'Q': // A memory reference with base register and no offset
-      Info.setAllowsMemory();
-      return true;
-    case 'S': // A symbolic address
-      Info.setAllowsRegister();
-      return true;
-    case 'U':
-      // Ump: A memory address suitable for ldp/stp in SI, DI, SF and DF modes, whatever they may be
-      // Utf: A memory address suitable for ldp/stp in TF mode, whatever it may be
-      // Usa: An absolute symbolic address
-      // Ush: The high part (bits 32:12) of a pc-relative symbolic address
-      llvm_unreachable("FIXME: Unimplemented support for bizarre constraints");
-    case 'z': // Zero register, wzr or xzr
-      Info.setAllowsRegister();
-      return true;
-    case 'x': // Floating point and SIMD registers (V0-V15)
-      Info.setAllowsRegister();
-      return true;
-    }
-    return false;
-  }
-
-  bool
-  validateConstraintModifier(StringRef Constraint, char Modifier, unsigned Size,
-                             std::string &SuggestedModifier) const override {
-    // Strip off constraint modifiers.
-    while (Constraint[0] == '=' || Constraint[0] == '+' || Constraint[0] == '&')
-      Constraint = Constraint.substr(1);
-
-    switch (Constraint[0]) {
-    default:
-      return true;
-    case 'z':
-    case 'r': {
-      switch (Modifier) {
-      case 'x':
-      case 'w':
-        // For now assume that the person knows what they're
-        // doing with the modifier.
-        return true;
-      default:
-        // By default an 'r' constraint will be in the 'x'
-        // registers.
-        if (Size == 64)
-          return true;
-
-        SuggestedModifier = "w";
-        return false;
-      }
-    }
-    }
-  }
-
-  virtual const char *getClobbers() const override { return ""; }
-
-  int getEHDataRegisterNumber(unsigned RegNo) const override {
-    if (RegNo == 0)
-      return 0;
-    if (RegNo == 1)
-      return 1;
-    return -1;
-  }
-};
-
-const char *const AArch64TargetInfo::GCCRegNames[] = {
-  // 32-bit Integer registers
-  "w0",  "w1",  "w2",  "w3",  "w4",  "w5",  "w6",  "w7",  "w8",  "w9",  "w10",
-  "w11", "w12", "w13", "w14", "w15", "w16", "w17", "w18", "w19", "w20", "w21",
-  "w22", "w23", "w24", "w25", "w26", "w27", "w28", "w29", "w30", "wsp",
-
-  // 64-bit Integer registers
-  "x0",  "x1",  "x2",  "x3",  "x4",  "x5",  "x6",  "x7",  "x8",  "x9",  "x10",
-  "x11", "x12", "x13", "x14", "x15", "x16", "x17", "x18", "x19", "x20", "x21",
-  "x22", "x23", "x24", "x25", "x26", "x27", "x28", "fp",  "lr",  "sp",
-
-  // 32-bit floating point regsisters
-  "s0",  "s1",  "s2",  "s3",  "s4",  "s5",  "s6",  "s7",  "s8",  "s9",  "s10",
-  "s11", "s12", "s13", "s14", "s15", "s16", "s17", "s18", "s19", "s20", "s21",
-  "s22", "s23", "s24", "s25", "s26", "s27", "s28", "s29", "s30", "s31",
-
-  // 64-bit floating point regsisters
-  "d0",  "d1",  "d2",  "d3",  "d4",  "d5",  "d6",  "d7",  "d8",  "d9",  "d10",
-  "d11", "d12", "d13", "d14", "d15", "d16", "d17", "d18", "d19", "d20", "d21",
-  "d22", "d23", "d24", "d25", "d26", "d27", "d28", "d29", "d30", "d31",
-
-  // Vector registers
-  "v0",  "v1",  "v2",  "v3",  "v4",  "v5",  "v6",  "v7",  "v8",  "v9",  "v10",
-  "v11", "v12", "v13", "v14", "v15", "v16", "v17", "v18", "v19", "v20", "v21",
-  "v22", "v23", "v24", "v25", "v26", "v27", "v28", "v29", "v30", "v31"
-};
-
-void AArch64TargetInfo::getGCCRegNames(const char *const *&Names,
-                                     unsigned &NumNames) const {
-  Names = GCCRegNames;
-  NumNames = llvm::array_lengthof(GCCRegNames);
-}
-
-const TargetInfo::GCCRegAlias AArch64TargetInfo::GCCRegAliases[] = {
-  { { "w31" }, "wsp" },
-  { { "x29" }, "fp" },
-  { { "x30" }, "lr" },
-  { { "x31" }, "sp" },
-  // The S/D/Q and W/X registers overlap, but aren't really aliases; we
-  // don't want to substitute one of these for a different-sized one.
-};
-
-void AArch64TargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
-                                       unsigned &NumAliases) const {
-  Aliases = GCCRegAliases;
-  NumAliases = llvm::array_lengthof(GCCRegAliases);
-}
-
-const Builtin::Info AArch64TargetInfo::BuiltinInfo[] = {
-#define BUILTIN(ID, TYPE, ATTRS)                                               \
-  { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
-#include "clang/Basic/BuiltinsNEON.def"
-
-#define BUILTIN(ID, TYPE, ATTRS)                                               \
-  { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
-#include "clang/Basic/BuiltinsAArch64.def"
-};
-
-class AArch64leTargetInfo : public AArch64TargetInfo {
-  void setDescriptionString() override {
-    if (getTriple().isOSBinFormatMachO())
-      DescriptionString = "e-m:o-i64:64-i128:128-n32:64-S128";
-    else
-      DescriptionString = "e-m:e-i64:64-i128:128-n32:64-S128";
-  }
-
-public:
-  AArch64leTargetInfo(const llvm::Triple &Triple)
-    : AArch64TargetInfo(Triple) {
-    BigEndian = false;
-    }
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
-    Builder.defineMacro("__AARCH64EL__");
-    AArch64TargetInfo::getTargetDefines(Opts, Builder);
-  }
-};
-
-class AArch64beTargetInfo : public AArch64TargetInfo {
-  void setDescriptionString() override {
-    assert(!getTriple().isOSBinFormatMachO());
-    DescriptionString = "E-m:e-i64:64-i128:128-n32:64-S128";
-  }
-
-public:
-  AArch64beTargetInfo(const llvm::Triple &Triple)
-    : AArch64TargetInfo(Triple) { }
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
-    Builder.defineMacro("__AARCH64EB__");
-    Builder.defineMacro("__AARCH_BIG_ENDIAN");
-    Builder.defineMacro("__ARM_BIG_ENDIAN");
-    AArch64TargetInfo::getTargetDefines(Opts, Builder);
-  }
-};
-} // end anonymous namespace.
-
-namespace {
-class DarwinAArch64TargetInfo : public DarwinTargetInfo<AArch64leTargetInfo> {
-protected:
-  void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
-                    MacroBuilder &Builder) const override {
-    Builder.defineMacro("__AARCH64_SIMD__");
-    Builder.defineMacro("__ARM64_ARCH_8__");
-    Builder.defineMacro("__ARM_NEON__");
-    Builder.defineMacro("__LITTLE_ENDIAN__");
-    Builder.defineMacro("__REGISTER_PREFIX__", "");
-    Builder.defineMacro("__arm64", "1");
-    Builder.defineMacro("__arm64__", "1");
-
-    getDarwinDefines(Builder, Opts, Triple, PlatformName, PlatformMinVersion);
-  }
-
-public:
-  DarwinAArch64TargetInfo(const llvm::Triple &Triple)
-      : DarwinTargetInfo<AArch64leTargetInfo>(Triple) {
-    Int64Type = SignedLongLong;
-    WCharType = SignedInt;
-    UseSignedCharForObjCBool = false;
-
-    LongDoubleWidth = LongDoubleAlign = 64;
-    LongDoubleFormat = &llvm::APFloat::IEEEdouble;
-
-    TheCXXABI.set(TargetCXXABI::iOS64);
-  }
-
-  virtual BuiltinVaListKind getBuiltinVaListKind() const override {
-    return TargetInfo::CharPtrBuiltinVaList;
-  }
-};
-} // end anonymous namespace
 
 namespace {
 // Hexagon abstract base class
@@ -4861,52 +3471,56 @@ class HexagonTargetInfo : public TargetInfo {
   static const TargetInfo::GCCRegAlias GCCRegAliases[];
   std::string CPU;
 public:
-  HexagonTargetInfo(const llvm::Triple &Triple) : TargetInfo(Triple) {
+  HexagonTargetInfo(const std::string& triple) : TargetInfo(triple)  {
     BigEndian = false;
-    DescriptionString = "e-m:e-p:32:32-i1:32-i64:64-a:0-n32";
+    DescriptionString = ("e-p:32:32:32-"
+                         "i64:64:64-i32:32:32-i16:16:16-i1:32:32"
+                         "f64:64:64-f32:32:32-a0:0-n32");
 
     // {} in inline assembly are packet specifiers, not assembly variant
     // specifiers.
     NoAsmVariants = true;
   }
 
-  void getTargetBuiltins(const Builtin::Info *&Records,
-                         unsigned &NumRecords) const override {
+  virtual void getTargetBuiltins(const Builtin::Info *&Records,
+                                 unsigned &NumRecords) const {
     Records = BuiltinInfo;
     NumRecords = clang::Hexagon::LastTSBuiltin-Builtin::FirstTSBuiltin;
   }
 
-  bool validateAsmConstraint(const char *&Name,
-                             TargetInfo::ConstraintInfo &Info) const override {
+  virtual bool validateAsmConstraint(const char *&Name,
+                                     TargetInfo::ConstraintInfo &Info) const {
     return true;
   }
 
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override;
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const;
 
-  bool hasFeature(StringRef Feature) const override {
+  virtual bool hasFeature(StringRef Feature) const {
     return Feature == "hexagon";
   }
-
-  BuiltinVaListKind getBuiltinVaListKind() const override {
+  
+  virtual BuiltinVaListKind getBuiltinVaListKind() const {
     return TargetInfo::CharPtrBuiltinVaList;
   }
-  void getGCCRegNames(const char * const *&Names,
-                      unsigned &NumNames) const override;
-  void getGCCRegAliases(const GCCRegAlias *&Aliases,
-                        unsigned &NumAliases) const override;
-  const char *getClobbers() const override {
+  virtual void getGCCRegNames(const char * const *&Names,
+                              unsigned &NumNames) const;
+  virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                unsigned &NumAliases) const;
+  virtual const char *getClobbers() const {
     return "";
   }
 
   static const char *getHexagonCPUSuffix(StringRef Name) {
     return llvm::StringSwitch<const char*>(Name)
+      .Case("hexagonv2", "2")
+      .Case("hexagonv3", "3")
       .Case("hexagonv4", "4")
       .Case("hexagonv5", "5")
-      .Default(nullptr);
+      .Default(0);
   }
 
-  bool setCPU(const std::string &Name) override {
+  virtual bool setCPU(const std::string &Name) {
     if (!getHexagonCPUSuffix(Name))
       return false;
 
@@ -5006,74 +3620,85 @@ const Builtin::Info HexagonTargetInfo::BuiltinInfo[] = {
 
 
 namespace {
-// Shared base class for SPARC v8 (32-bit) and SPARC v9 (64-bit).
-class SparcTargetInfo : public TargetInfo {
+class SparcV8TargetInfo : public TargetInfo {
   static const TargetInfo::GCCRegAlias GCCRegAliases[];
   static const char * const GCCRegNames[];
   bool SoftFloat;
 public:
-  SparcTargetInfo(const llvm::Triple &Triple) : TargetInfo(Triple) {}
+  SparcV8TargetInfo(const std::string& triple) : TargetInfo(triple) {
+    // FIXME: Support Sparc quad-precision long double?
+    DescriptionString = "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
+                        "i64:64:64-f32:32:32-f64:64:64-v64:64:64-n32";
+  }
+  virtual bool setFeatureEnabled(llvm::StringMap<bool> &Features,
+                                 StringRef Name,
+                                 bool Enabled) const {
+    if (Name == "soft-float")
+      Features[Name] = Enabled;
+    else
+      return false;
 
-  bool handleTargetFeatures(std::vector<std::string> &Features,
-                            DiagnosticsEngine &Diags) override {
+    return true;
+  }
+  virtual void HandleTargetFeatures(std::vector<std::string> &Features) {
     SoftFloat = false;
     for (unsigned i = 0, e = Features.size(); i != e; ++i)
       if (Features[i] == "+soft-float")
         SoftFloat = true;
-    return true;
   }
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
     DefineStd(Builder, "sparc", Opts);
+    Builder.defineMacro("__sparcv8");
     Builder.defineMacro("__REGISTER_PREFIX__", "");
 
     if (SoftFloat)
       Builder.defineMacro("SOFT_FLOAT", "1");
   }
-
-  bool hasFeature(StringRef Feature) const override {
+  
+  virtual bool hasFeature(StringRef Feature) const {
     return llvm::StringSwitch<bool>(Feature)
              .Case("softfloat", SoftFloat)
              .Case("sparc", true)
              .Default(false);
   }
-
-  void getTargetBuiltins(const Builtin::Info *&Records,
-                         unsigned &NumRecords) const override {
+  
+  virtual void getTargetBuiltins(const Builtin::Info *&Records,
+                                 unsigned &NumRecords) const {
     // FIXME: Implement!
   }
-  BuiltinVaListKind getBuiltinVaListKind() const override {
+  virtual BuiltinVaListKind getBuiltinVaListKind() const {
     return TargetInfo::VoidPtrBuiltinVaList;
   }
-  void getGCCRegNames(const char * const *&Names,
-                      unsigned &NumNames) const override;
-  void getGCCRegAliases(const GCCRegAlias *&Aliases,
-                        unsigned &NumAliases) const override;
-  bool validateAsmConstraint(const char *&Name,
-                             TargetInfo::ConstraintInfo &info) const override {
+  virtual void getGCCRegNames(const char * const *&Names,
+                              unsigned &NumNames) const;
+  virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                unsigned &NumAliases) const;
+  virtual bool validateAsmConstraint(const char *&Name,
+                                     TargetInfo::ConstraintInfo &info) const {
     // FIXME: Implement!
     return false;
   }
-  const char *getClobbers() const override {
+  virtual const char *getClobbers() const {
     // FIXME: Implement!
     return "";
   }
 };
 
-const char * const SparcTargetInfo::GCCRegNames[] = {
+const char * const SparcV8TargetInfo::GCCRegNames[] = {
   "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
   "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
   "r16", "r17", "r18", "r19", "r20", "r21", "r22", "r23",
   "r24", "r25", "r26", "r27", "r28", "r29", "r30", "r31"
 };
 
-void SparcTargetInfo::getGCCRegNames(const char * const *&Names,
-                                     unsigned &NumNames) const {
+void SparcV8TargetInfo::getGCCRegNames(const char * const *&Names,
+                                       unsigned &NumNames) const {
   Names = GCCRegNames;
   NumNames = llvm::array_lengthof(GCCRegNames);
 }
 
-const TargetInfo::GCCRegAlias SparcTargetInfo::GCCRegAliases[] = {
+const TargetInfo::GCCRegAlias SparcV8TargetInfo::GCCRegAliases[] = {
   { { "g0" }, "r0" },
   { { "g1" }, "r1" },
   { { "g2" }, "r2" },
@@ -5108,87 +3733,26 @@ const TargetInfo::GCCRegAlias SparcTargetInfo::GCCRegAliases[] = {
   { { "i7" }, "r31" },
 };
 
-void SparcTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
-                                       unsigned &NumAliases) const {
+void SparcV8TargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                         unsigned &NumAliases) const {
   Aliases = GCCRegAliases;
   NumAliases = llvm::array_lengthof(GCCRegAliases);
 }
-
-// SPARC v8 is the 32-bit mode selected by Triple::sparc.
-class SparcV8TargetInfo : public SparcTargetInfo {
-public:
-  SparcV8TargetInfo(const llvm::Triple &Triple) : SparcTargetInfo(Triple) {
-    DescriptionString = "E-m:e-p:32:32-i64:64-f128:64-n32-S64";
-  }
-
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
-    SparcTargetInfo::getTargetDefines(Opts, Builder);
-    Builder.defineMacro("__sparcv8");
-  }
-};
-
-// SPARC v9 is the 64-bit mode selected by Triple::sparcv9.
-class SparcV9TargetInfo : public SparcTargetInfo {
-public:
-  SparcV9TargetInfo(const llvm::Triple &Triple) : SparcTargetInfo(Triple) {
-    // FIXME: Support Sparc quad-precision long double?
-    DescriptionString = "E-m:e-i64:64-n32:64-S128";
-    // This is an LP64 platform.
-    LongWidth = LongAlign = PointerWidth = PointerAlign = 64;
-
-    // OpenBSD uses long long for int64_t and intmax_t.
-    if (getTriple().getOS() == llvm::Triple::OpenBSD)
-      IntMaxType = SignedLongLong;
-    else
-      IntMaxType = SignedLong;
-    Int64Type = IntMaxType;
-
-    // The SPARCv8 System V ABI has long double 128-bits in size, but 64-bit
-    // aligned. The SPARCv9 SCD 2.4.1 says 16-byte aligned.
-    LongDoubleWidth = 128;
-    LongDoubleAlign = 128;
-    LongDoubleFormat = &llvm::APFloat::IEEEquad;
-    MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
-  }
-
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
-    SparcTargetInfo::getTargetDefines(Opts, Builder);
-    Builder.defineMacro("__sparcv9");
-    Builder.defineMacro("__arch64__");
-    // Solaris doesn't need these variants, but the BSDs do.
-    if (getTriple().getOS() != llvm::Triple::Solaris) {
-      Builder.defineMacro("__sparc64__");
-      Builder.defineMacro("__sparc_v9__");
-      Builder.defineMacro("__sparcv9__");
-    }
-  }
-
-  bool setCPU(const std::string &Name) override {
-    bool CPUKnown = llvm::StringSwitch<bool>(Name)
-      .Case("v9", true)
-      .Case("ultrasparc", true)
-      .Case("ultrasparc3", true)
-      .Case("niagara", true)
-      .Case("niagara2", true)
-      .Case("niagara3", true)
-      .Case("niagara4", true)
-      .Default(false);
-
-    // No need to store the CPU yet.  There aren't any CPU-specific
-    // macros to define.
-    return CPUKnown;
-  }
-};
-
 } // end anonymous namespace.
 
 namespace {
+class AuroraUXSparcV8TargetInfo : public AuroraUXTargetInfo<SparcV8TargetInfo> {
+public:
+  AuroraUXSparcV8TargetInfo(const std::string& triple) :
+      AuroraUXTargetInfo<SparcV8TargetInfo>(triple) {
+    SizeType = UnsignedInt;
+    PtrDiffType = SignedInt;
+  }
+};
 class SolarisSparcV8TargetInfo : public SolarisTargetInfo<SparcV8TargetInfo> {
 public:
-  SolarisSparcV8TargetInfo(const llvm::Triple &Triple)
-      : SolarisTargetInfo<SparcV8TargetInfo>(Triple) {
+  SolarisSparcV8TargetInfo(const std::string& triple) :
+      SolarisTargetInfo<SparcV8TargetInfo>(triple) {
     SizeType = UnsignedInt;
     PtrDiffType = SignedInt;
   }
@@ -5196,114 +3760,10 @@ public:
 } // end anonymous namespace.
 
 namespace {
-class SystemZTargetInfo : public TargetInfo {
-  static const char *const GCCRegNames[];
-
-public:
-  SystemZTargetInfo(const llvm::Triple &Triple) : TargetInfo(Triple) {
-    TLSSupported = true;
-    IntWidth = IntAlign = 32;
-    LongWidth = LongLongWidth = LongAlign = LongLongAlign = 64;
-    PointerWidth = PointerAlign = 64;
-    LongDoubleWidth = 128;
-    LongDoubleAlign = 64;
-    LongDoubleFormat = &llvm::APFloat::IEEEquad;
-    MinGlobalAlign = 16;
-    DescriptionString = "E-m:e-i1:8:16-i8:8:16-i64:64-f128:64-a:8:16-n32:64";
-    MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
-  }
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
-    Builder.defineMacro("__s390__");
-    Builder.defineMacro("__s390x__");
-    Builder.defineMacro("__zarch__");
-    Builder.defineMacro("__LONG_DOUBLE_128__");
-  }
-  void getTargetBuiltins(const Builtin::Info *&Records,
-                         unsigned &NumRecords) const override {
-    // FIXME: Implement.
-    Records = nullptr;
-    NumRecords = 0;
-  }
-
-  void getGCCRegNames(const char *const *&Names,
-                      unsigned &NumNames) const override;
-  void getGCCRegAliases(const GCCRegAlias *&Aliases,
-                        unsigned &NumAliases) const override {
-    // No aliases.
-    Aliases = nullptr;
-    NumAliases = 0;
-  }
-  bool validateAsmConstraint(const char *&Name,
-                             TargetInfo::ConstraintInfo &info) const override;
-  const char *getClobbers() const override {
-    // FIXME: Is this really right?
-    return "";
-  }
-  BuiltinVaListKind getBuiltinVaListKind() const override {
-    return TargetInfo::SystemZBuiltinVaList;
-  }
-  bool setCPU(const std::string &Name) override {
-    bool CPUKnown = llvm::StringSwitch<bool>(Name)
-      .Case("z10", true)
-      .Case("z196", true)
-      .Case("zEC12", true)
-      .Default(false);
-
-    // No need to store the CPU yet.  There aren't any CPU-specific
-    // macros to define.
-    return CPUKnown;
-  }
-};
-
-const char *const SystemZTargetInfo::GCCRegNames[] = {
-  "r0",  "r1",  "r2",  "r3",  "r4",  "r5",  "r6",  "r7",
-  "r8",  "r9",  "r10", "r11", "r12", "r13", "r14", "r15",
-  "f0",  "f2",  "f4",  "f6",  "f1",  "f3",  "f5",  "f7",
-  "f8",  "f10", "f12", "f14", "f9",  "f11", "f13", "f15"
-};
-
-void SystemZTargetInfo::getGCCRegNames(const char *const *&Names,
-                                       unsigned &NumNames) const {
-  Names = GCCRegNames;
-  NumNames = llvm::array_lengthof(GCCRegNames);
-}
-
-bool SystemZTargetInfo::
-validateAsmConstraint(const char *&Name,
-                      TargetInfo::ConstraintInfo &Info) const {
-  switch (*Name) {
-  default:
-    return false;
-
-  case 'a': // Address register
-  case 'd': // Data register (equivalent to 'r')
-  case 'f': // Floating-point register
-    Info.setAllowsRegister();
-    return true;
-
-  case 'I': // Unsigned 8-bit constant
-  case 'J': // Unsigned 12-bit constant
-  case 'K': // Signed 16-bit constant
-  case 'L': // Signed 20-bit displacement (on all targets we support)
-  case 'M': // 0x7fffffff
-    return true;
-
-  case 'Q': // Memory with base and unsigned 12-bit displacement
-  case 'R': // Likewise, plus an index
-  case 'S': // Memory with base and signed 20-bit displacement
-  case 'T': // Likewise, plus an index
-    Info.setAllowsMemory();
-    return true;
-  }
-}
-}
-
-namespace {
   class MSP430TargetInfo : public TargetInfo {
     static const char * const GCCRegNames[];
   public:
-    MSP430TargetInfo(const llvm::Triple &Triple) : TargetInfo(Triple) {
+    MSP430TargetInfo(const std::string& triple) : TargetInfo(triple) {
       BigEndian = false;
       TLSSupported = false;
       IntWidth = 16; IntAlign = 16;
@@ -5312,45 +3772,46 @@ namespace {
       PointerWidth = 16; PointerAlign = 16;
       SuitableAlign = 16;
       SizeType = UnsignedInt;
-      IntMaxType = SignedLongLong;
-      IntPtrType = SignedInt;
+      IntMaxType = SignedLong;
+      UIntMaxType = UnsignedLong;
+      IntPtrType = SignedShort;
       PtrDiffType = SignedInt;
       SigAtomicType = SignedLong;
-      DescriptionString = "e-m:e-p:16:16-i32:16:32-a:16-n8:16";
-    }
-    void getTargetDefines(const LangOptions &Opts,
-                          MacroBuilder &Builder) const override {
+      DescriptionString = "e-p:16:16:16-i8:8:8-i16:16:16-i32:16:32-n8:16";
+   }
+    virtual void getTargetDefines(const LangOptions &Opts,
+                                  MacroBuilder &Builder) const {
       Builder.defineMacro("MSP430");
       Builder.defineMacro("__MSP430__");
       // FIXME: defines for different 'flavours' of MCU
     }
-    void getTargetBuiltins(const Builtin::Info *&Records,
-                           unsigned &NumRecords) const override {
-      // FIXME: Implement.
-      Records = nullptr;
+    virtual void getTargetBuiltins(const Builtin::Info *&Records,
+                                   unsigned &NumRecords) const {
+     // FIXME: Implement.
+      Records = 0;
       NumRecords = 0;
     }
-    bool hasFeature(StringRef Feature) const override {
+    virtual bool hasFeature(StringRef Feature) const {
       return Feature == "msp430";
     }
-    void getGCCRegNames(const char * const *&Names,
-                        unsigned &NumNames) const override;
-    void getGCCRegAliases(const GCCRegAlias *&Aliases,
-                          unsigned &NumAliases) const override {
+    virtual void getGCCRegNames(const char * const *&Names,
+                                unsigned &NumNames) const;
+    virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                  unsigned &NumAliases) const {
       // No aliases.
-      Aliases = nullptr;
+      Aliases = 0;
       NumAliases = 0;
     }
-    bool validateAsmConstraint(const char *&Name,
-                               TargetInfo::ConstraintInfo &info) const override {
+    virtual bool validateAsmConstraint(const char *&Name,
+                                       TargetInfo::ConstraintInfo &info) const {
       // No target constraints for now.
       return false;
     }
-    const char *getClobbers() const override {
+    virtual const char *getClobbers() const {
       // FIXME: Is this really right?
       return "";
     }
-    BuiltinVaListKind getBuiltinVaListKind() const override {
+    virtual BuiltinVaListKind getBuiltinVaListKind() const {
       // FIXME: implement
       return TargetInfo::CharPtrBuiltinVaList;
    }
@@ -5389,7 +3850,7 @@ namespace {
 
   class TCETargetInfo : public TargetInfo{
   public:
-    TCETargetInfo(const llvm::Triple &Triple) : TargetInfo(Triple) {
+    TCETargetInfo(const std::string& triple) : TargetInfo(triple) {
       TLSSupported = false;
       IntWidth = 32;
       LongWidth = LongLongWidth = 32;
@@ -5400,6 +3861,7 @@ namespace {
       SuitableAlign = 32;
       SizeType = UnsignedInt;
       IntMaxType = SignedLong;
+      UIntMaxType = UnsignedLong;
       IntPtrType = SignedInt;
       PtrDiffType = SignedInt;
       FloatWidth = 32;
@@ -5411,147 +3873,101 @@ namespace {
       FloatFormat = &llvm::APFloat::IEEEsingle;
       DoubleFormat = &llvm::APFloat::IEEEsingle;
       LongDoubleFormat = &llvm::APFloat::IEEEsingle;
-      DescriptionString = "E-p:32:32-i8:8:32-i16:16:32-i64:32"
-                          "-f64:32-v64:32-v128:32-a:0:32-n32";
+      DescriptionString = "E-p:32:32:32-i1:8:8-i8:8:32-"
+                          "i16:16:32-i32:32:32-i64:32:32-"
+                          "f32:32:32-f64:32:32-v64:32:32-"
+                          "v128:32:32-a0:0:32-n32";
       AddrSpaceMap = &TCEOpenCLAddrSpaceMap;
-      UseAddrSpaceMapMangling = true;
     }
 
-    void getTargetDefines(const LangOptions &Opts,
-                          MacroBuilder &Builder) const override {
+    virtual void getTargetDefines(const LangOptions &Opts,
+                                  MacroBuilder &Builder) const {
       DefineStd(Builder, "tce", Opts);
       Builder.defineMacro("__TCE__");
       Builder.defineMacro("__TCE_V1__");
     }
-    bool hasFeature(StringRef Feature) const override {
+    virtual bool hasFeature(StringRef Feature) const {
       return Feature == "tce";
     }
-
-    void getTargetBuiltins(const Builtin::Info *&Records,
-                           unsigned &NumRecords) const override {}
-    const char *getClobbers() const override {
+    
+    virtual void getTargetBuiltins(const Builtin::Info *&Records,
+                                   unsigned &NumRecords) const {}
+    virtual const char *getClobbers() const {
       return "";
     }
-    BuiltinVaListKind getBuiltinVaListKind() const override {
+    virtual BuiltinVaListKind getBuiltinVaListKind() const {
       return TargetInfo::VoidPtrBuiltinVaList;
     }
-    void getGCCRegNames(const char * const *&Names,
-                        unsigned &NumNames) const override {}
-    bool validateAsmConstraint(const char *&Name,
-                               TargetInfo::ConstraintInfo &info) const override{
+    virtual void getGCCRegNames(const char * const *&Names,
+                                unsigned &NumNames) const {}
+    virtual bool validateAsmConstraint(const char *&Name,
+                                       TargetInfo::ConstraintInfo &info) const {
       return true;
     }
-    void getGCCRegAliases(const GCCRegAlias *&Aliases,
-                          unsigned &NumAliases) const override {}
+    virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                  unsigned &NumAliases) const {}
   };
 }
 
 namespace {
 class MipsTargetInfoBase : public TargetInfo {
-  virtual void setDescriptionString() = 0;
-
   static const Builtin::Info BuiltinInfo[];
   std::string CPU;
   bool IsMips16;
-  bool IsMicromips;
-  bool IsNan2008;
-  bool IsSingleFloat;
   enum MipsFloatABI {
-    HardFloat, SoftFloat
+    HardFloat, SingleFloat, SoftFloat
   } FloatABI;
   enum DspRevEnum {
     NoDSP, DSP1, DSP2
   } DspRev;
-  bool HasMSA;
 
 protected:
-  bool HasFP64;
   std::string ABI;
 
 public:
-  MipsTargetInfoBase(const llvm::Triple &Triple, const std::string &ABIStr,
-                     const std::string &CPUStr)
-      : TargetInfo(Triple), CPU(CPUStr), IsMips16(false), IsMicromips(false),
-        IsNan2008(false), IsSingleFloat(false), FloatABI(HardFloat),
-        DspRev(NoDSP), HasMSA(false), HasFP64(false), ABI(ABIStr) {}
+  MipsTargetInfoBase(const std::string& triple,
+                     const std::string& ABIStr,
+                     const std::string& CPUStr)
+    : TargetInfo(triple),
+      CPU(CPUStr),
+      IsMips16(false),
+      FloatABI(HardFloat),
+      DspRev(NoDSP),
+      ABI(ABIStr)
+  {}
 
-  bool isNaN2008Default() const {
-    return CPU == "mips32r6" || CPU == "mips64r6";
-  }
-
-  bool isFP64Default() const {
-    return CPU == "mips32r6" || ABI == "n32" || ABI == "n64" || ABI == "64";
-  }
-
-  StringRef getABI() const override { return ABI; }
-  bool setCPU(const std::string &Name) override {
-    bool IsMips32 = getTriple().getArch() == llvm::Triple::mips ||
-                    getTriple().getArch() == llvm::Triple::mipsel;
+  virtual const char *getABI() const { return ABI.c_str(); }
+  virtual bool setABI(const std::string &Name) = 0;
+  virtual bool setCPU(const std::string &Name) {
     CPU = Name;
-    return llvm::StringSwitch<bool>(Name)
-        .Case("mips1", IsMips32)
-        .Case("mips2", IsMips32)
-        .Case("mips3", true)
-        .Case("mips4", true)
-        .Case("mips5", true)
-        .Case("mips32", IsMips32)
-        .Case("mips32r2", IsMips32)
-        .Case("mips32r6", IsMips32)
-        .Case("mips64", true)
-        .Case("mips64r2", true)
-        .Case("mips64r6", true)
-        .Case("octeon", true)
-        .Default(false);
+    return true;
   }
-  const std::string& getCPU() const { return CPU; }
-  void getDefaultFeatures(llvm::StringMap<bool> &Features) const override {
-    // The backend enables certain ABI's by default according to the
-    // architecture.
-    // Disable both possible defaults so that we don't end up with multiple
-    // ABI's selected and trigger an assertion.
-    Features["o32"] = false;
-    Features["n64"] = false;
-
+  void getDefaultFeatures(llvm::StringMap<bool> &Features) const {
     Features[ABI] = true;
-    if (CPU == "octeon")
-      Features["mips64r2"] = Features["cnmips"] = true;
-    else
-      Features[CPU] = true;
+    Features[CPU] = true;
   }
 
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
-    Builder.defineMacro("__mips__");
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
+    DefineStd(Builder, "mips", Opts);
     Builder.defineMacro("_mips");
-    if (Opts.GNUMode)
-      Builder.defineMacro("mips");
-
     Builder.defineMacro("__REGISTER_PREFIX__", "");
 
     switch (FloatABI) {
     case HardFloat:
       Builder.defineMacro("__mips_hard_float", Twine(1));
       break;
+    case SingleFloat:
+      Builder.defineMacro("__mips_hard_float", Twine(1));
+      Builder.defineMacro("__mips_single_float", Twine(1));
+      break;
     case SoftFloat:
       Builder.defineMacro("__mips_soft_float", Twine(1));
       break;
     }
 
-    if (IsSingleFloat)
-      Builder.defineMacro("__mips_single_float", Twine(1));
-
-    Builder.defineMacro("__mips_fpr", HasFP64 ? Twine(64) : Twine(32));
-    Builder.defineMacro("_MIPS_FPSET",
-                        Twine(32 / (HasFP64 || IsSingleFloat ? 1 : 2)));
-
     if (IsMips16)
       Builder.defineMacro("__mips16", Twine(1));
-
-    if (IsMicromips)
-      Builder.defineMacro("__mips_micromips", Twine(1));
-
-    if (IsNan2008)
-      Builder.defineMacro("__mips_nan2008", Twine(1));
 
     switch (DspRev) {
     default:
@@ -5567,9 +3983,6 @@ public:
       break;
     }
 
-    if (HasMSA)
-      Builder.defineMacro("__mips_msa", Twine(1));
-
     Builder.defineMacro("_MIPS_SZPTR", Twine(getPointerWidth(0)));
     Builder.defineMacro("_MIPS_SZINT", Twine(getIntWidth()));
     Builder.defineMacro("_MIPS_SZLONG", Twine(getLongWidth()));
@@ -5578,23 +3991,20 @@ public:
     Builder.defineMacro("_MIPS_ARCH_" + StringRef(CPU).upper());
   }
 
-  void getTargetBuiltins(const Builtin::Info *&Records,
-                         unsigned &NumRecords) const override {
+  virtual void getTargetBuiltins(const Builtin::Info *&Records,
+                                 unsigned &NumRecords) const {
     Records = BuiltinInfo;
     NumRecords = clang::Mips::LastTSBuiltin - Builtin::FirstTSBuiltin;
   }
-  bool hasFeature(StringRef Feature) const override {
-    return llvm::StringSwitch<bool>(Feature)
-      .Case("mips", true)
-      .Case("fp64", HasFP64)
-      .Default(false);
+  virtual bool hasFeature(StringRef Feature) const {
+    return Feature == "mips";
   }
-  BuiltinVaListKind getBuiltinVaListKind() const override {
+  virtual BuiltinVaListKind getBuiltinVaListKind() const {
     return TargetInfo::VoidPtrBuiltinVaList;
   }
-  void getGCCRegNames(const char * const *&Names,
-                      unsigned &NumNames) const override {
-    static const char *const GCCRegNames[] = {
+  virtual void getGCCRegNames(const char * const *&Names,
+                              unsigned &NumNames) const {
+    static const char * const GCCRegNames[] = {
       // CPU register names
       // Must match second column of GCCRegAliases
       "$0",   "$1",   "$2",   "$3",   "$4",   "$5",   "$6",   "$7",
@@ -5608,101 +4018,75 @@ public:
       "$f24", "$f25", "$f26", "$f27", "$f28", "$f29", "$f30", "$f31",
       // Hi/lo and condition register names
       "hi",   "lo",   "",     "$fcc0","$fcc1","$fcc2","$fcc3","$fcc4",
-      "$fcc5","$fcc6","$fcc7",
-      // MSA register names
-      "$w0",  "$w1",  "$w2",  "$w3",  "$w4",  "$w5",  "$w6",  "$w7",
-      "$w8",  "$w9",  "$w10", "$w11", "$w12", "$w13", "$w14", "$w15",
-      "$w16", "$w17", "$w18", "$w19", "$w20", "$w21", "$w22", "$w23",
-      "$w24", "$w25", "$w26", "$w27", "$w28", "$w29", "$w30", "$w31",
-      // MSA control register names
-      "$msair",      "$msacsr", "$msaaccess", "$msasave", "$msamodify",
-      "$msarequest", "$msamap", "$msaunmap"
+      "$fcc5","$fcc6","$fcc7"
     };
     Names = GCCRegNames;
     NumNames = llvm::array_lengthof(GCCRegNames);
   }
-  void getGCCRegAliases(const GCCRegAlias *&Aliases,
-                        unsigned &NumAliases) const override = 0;
-  bool validateAsmConstraint(const char *&Name,
-                             TargetInfo::ConstraintInfo &Info) const override {
+  virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                unsigned &NumAliases) const = 0;
+  virtual bool validateAsmConstraint(const char *&Name,
+                                     TargetInfo::ConstraintInfo &Info) const {
     switch (*Name) {
     default:
       return false;
         
     case 'r': // CPU registers.
     case 'd': // Equivalent to "r" unless generating MIPS16 code.
-    case 'y': // Equivalent to "r", backward compatibility only.
+    case 'y': // Equivalent to "r", backwards compatibility only.
     case 'f': // floating-point registers.
     case 'c': // $25 for indirect jumps
     case 'l': // lo register
     case 'x': // hilo register pair
       Info.setAllowsRegister();
       return true;
-    case 'R': // An address that can be used in a non-macro load or store
-      Info.setAllowsMemory();
-      return true;
     }
   }
 
-  const char *getClobbers() const override {
+  virtual const char *getClobbers() const {
     // FIXME: Implement!
     return "";
   }
 
-  bool handleTargetFeatures(std::vector<std::string> &Features,
-                            DiagnosticsEngine &Diags) override {
+  virtual bool setFeatureEnabled(llvm::StringMap<bool> &Features,
+                                 StringRef Name,
+                                 bool Enabled) const {
+    if (Name == "soft-float" || Name == "single-float" ||
+        Name == "o32" || Name == "n32" || Name == "n64" || Name == "eabi" ||
+        Name == "mips32" || Name == "mips32r2" ||
+        Name == "mips64" || Name == "mips64r2" ||
+        Name == "mips16" || Name == "dsp" || Name == "dspr2") {
+      Features[Name] = Enabled;
+      return true;
+    }
+    return false;
+  }
+
+  virtual void HandleTargetFeatures(std::vector<std::string> &Features) {
     IsMips16 = false;
-    IsMicromips = false;
-    IsNan2008 = isNaN2008Default();
-    IsSingleFloat = false;
     FloatABI = HardFloat;
     DspRev = NoDSP;
-    HasFP64 = isFP64Default();
 
     for (std::vector<std::string>::iterator it = Features.begin(),
          ie = Features.end(); it != ie; ++it) {
       if (*it == "+single-float")
-        IsSingleFloat = true;
+        FloatABI = SingleFloat;
       else if (*it == "+soft-float")
         FloatABI = SoftFloat;
       else if (*it == "+mips16")
         IsMips16 = true;
-      else if (*it == "+micromips")
-        IsMicromips = true;
       else if (*it == "+dsp")
         DspRev = std::max(DspRev, DSP1);
       else if (*it == "+dspr2")
         DspRev = std::max(DspRev, DSP2);
-      else if (*it == "+msa")
-        HasMSA = true;
-      else if (*it == "+fp64")
-        HasFP64 = true;
-      else if (*it == "-fp64")
-        HasFP64 = false;
-      else if (*it == "+nan2008")
-        IsNan2008 = true;
-      else if (*it == "-nan2008")
-        IsNan2008 = false;
     }
 
-    // Remove front-end specific options.
+    // Remove front-end specific option.
     std::vector<std::string>::iterator it =
       std::find(Features.begin(), Features.end(), "+soft-float");
     if (it != Features.end())
       Features.erase(it);
-
-    setDescriptionString();
-
-    return true;
   }
-
-  int getEHDataRegisterNumber(unsigned RegNo) const override {
-    if (RegNo == 0) return 4;
-    if (RegNo == 1) return 5;
-    return -1;
-  }
-
-  bool isCLZForZeroUndef() const override { return false; }
 };
 
 const Builtin::Info MipsTargetInfoBase::BuiltinInfo[] = {
@@ -5714,31 +4098,21 @@ const Builtin::Info MipsTargetInfoBase::BuiltinInfo[] = {
 
 class Mips32TargetInfoBase : public MipsTargetInfoBase {
 public:
-  Mips32TargetInfoBase(const llvm::Triple &Triple)
-      : MipsTargetInfoBase(Triple, "o32", "mips32r2") {
+  Mips32TargetInfoBase(const std::string& triple) :
+    MipsTargetInfoBase(triple, "o32", "mips32") {
     SizeType = UnsignedInt;
     PtrDiffType = SignedInt;
-    MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 32;
   }
-  bool setABI(const std::string &Name) override {
-    if (Name == "o32" || Name == "eabi") {
+  virtual bool setABI(const std::string &Name) {
+    if ((Name == "o32") || (Name == "eabi")) {
       ABI = Name;
       return true;
-    }
-    return false;
+    } else
+      return false;
   }
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
     MipsTargetInfoBase::getTargetDefines(Opts, Builder);
-
-    Builder.defineMacro("__mips", "32");
-    Builder.defineMacro("_MIPS_ISA", "_MIPS_ISA_MIPS32");
-
-    const std::string& CPUStr = getCPU();
-    if (CPUStr == "mips32")
-      Builder.defineMacro("__mips_isa_rev", "1");
-    else if (CPUStr == "mips32r2")
-      Builder.defineMacro("__mips_isa_rev", "2");
 
     if (ABI == "o32") {
       Builder.defineMacro("__mips_o32");
@@ -5750,8 +4124,8 @@ public:
     else
       llvm_unreachable("Invalid ABI for Mips32.");
   }
-  void getGCCRegAliases(const GCCRegAlias *&Aliases,
-                        unsigned &NumAliases) const override {
+  virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                unsigned &NumAliases) const {
     static const TargetInfo::GCCRegAlias GCCRegAliases[] = {
       { { "at" },  "$1" },
       { { "v0" },  "$2" },
@@ -5791,16 +4165,13 @@ public:
 };
 
 class Mips32EBTargetInfo : public Mips32TargetInfoBase {
-  void setDescriptionString() override {
-    DescriptionString = "E-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64";
-  }
-
 public:
-  Mips32EBTargetInfo(const llvm::Triple &Triple)
-      : Mips32TargetInfoBase(Triple) {
+  Mips32EBTargetInfo(const std::string& triple) : Mips32TargetInfoBase(triple) {
+    DescriptionString = "E-p:32:32:32-i1:8:8-i8:8:32-i16:16:32-i32:32:32-"
+                        "i64:64:64-f32:32:32-f64:64:64-v64:64:64-n32";
   }
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
     DefineStd(Builder, "MIPSEB", Opts);
     Builder.defineMacro("_MIPSEB");
     Mips32TargetInfoBase::getTargetDefines(Opts, Builder);
@@ -5808,17 +4179,14 @@ public:
 };
 
 class Mips32ELTargetInfo : public Mips32TargetInfoBase {
-  void setDescriptionString() override {
-    DescriptionString = "e-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64";
-  }
-
 public:
-  Mips32ELTargetInfo(const llvm::Triple &Triple)
-      : Mips32TargetInfoBase(Triple) {
+  Mips32ELTargetInfo(const std::string& triple) : Mips32TargetInfoBase(triple) {
     BigEndian = false;
+    DescriptionString = "e-p:32:32:32-i1:8:8-i8:8:32-i16:16:32-i32:32:32-"
+                        "i64:64:64-f32:32:32-f64:64:64-v64:64:64-n32";
   }
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
     DefineStd(Builder, "MIPSEL", Opts);
     Builder.defineMacro("_MIPSEL");
     Mips32TargetInfoBase::getTargetDefines(Opts, Builder);
@@ -5826,62 +4194,37 @@ public:
 };
 
 class Mips64TargetInfoBase : public MipsTargetInfoBase {
+  virtual void SetDescriptionString(const std::string &Name) = 0;
 public:
-  Mips64TargetInfoBase(const llvm::Triple &Triple)
-      : MipsTargetInfoBase(Triple, "n64", "mips64r2") {
-    LongDoubleWidth = LongDoubleAlign = 128;
-    LongDoubleFormat = &llvm::APFloat::IEEEquad;
-    if (getTriple().getOS() == llvm::Triple::FreeBSD) {
-      LongDoubleWidth = LongDoubleAlign = 64;
-      LongDoubleFormat = &llvm::APFloat::IEEEdouble;
-    }
-    setN64ABITypes();
-    SuitableAlign = 128;
-    MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
-  }
-
-  void setN64ABITypes() {
+  Mips64TargetInfoBase(const std::string& triple) :
+    MipsTargetInfoBase(triple, "n64", "mips64") {
     LongWidth = LongAlign = 64;
     PointerWidth = PointerAlign = 64;
-    SizeType = UnsignedLong;
-    PtrDiffType = SignedLong;
+    LongDoubleWidth = LongDoubleAlign = 128;
+    LongDoubleFormat = &llvm::APFloat::IEEEquad;
+    SuitableAlign = 128;
   }
+  virtual bool setABI(const std::string &Name) {
+    SetDescriptionString(Name);
 
-  void setN32ABITypes() {
-    LongWidth = LongAlign = 32;
-    PointerWidth = PointerAlign = 32;
-    SizeType = UnsignedInt;
-    PtrDiffType = SignedInt;
-  }
+    if (Name != "n32" && Name != "n64")
+      return false;
 
-  bool setABI(const std::string &Name) override {
+    ABI = Name;
+
     if (Name == "n32") {
-      setN32ABITypes();
-      ABI = Name;
-      return true;
+      LongWidth = LongAlign = 32;
+      PointerWidth = PointerAlign = 32;
     }
-    if (Name == "n64") {
-      setN64ABITypes();
-      ABI = Name;
-      return true;
-    }
-    return false;
-  }
 
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
+    return true;
+  }
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
     MipsTargetInfoBase::getTargetDefines(Opts, Builder);
 
-    Builder.defineMacro("__mips", "64");
     Builder.defineMacro("__mips64");
     Builder.defineMacro("__mips64__");
-    Builder.defineMacro("_MIPS_ISA", "_MIPS_ISA_MIPS64");
-
-    const std::string& CPUStr = getCPU();
-    if (CPUStr == "mips64")
-      Builder.defineMacro("__mips_isa_rev", "1");
-    else if (CPUStr == "mips64r2")
-      Builder.defineMacro("__mips_isa_rev", "2");
 
     if (ABI == "n32") {
       Builder.defineMacro("__mips_n32");
@@ -5896,8 +4239,8 @@ public:
     else
       llvm_unreachable("Invalid ABI for Mips64.");
   }
-  void getGCCRegAliases(const GCCRegAlias *&Aliases,
-                        unsigned &NumAliases) const override {
+  virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                unsigned &NumAliases) const {
     static const TargetInfo::GCCRegAlias GCCRegAliases[] = {
       { { "at" },  "$1" },
       { { "v0" },  "$2" },
@@ -5934,24 +4277,25 @@ public:
     Aliases = GCCRegAliases;
     NumAliases = llvm::array_lengthof(GCCRegAliases);
   }
-
-  bool hasInt128Type() const override { return true; }
 };
 
 class Mips64EBTargetInfo : public Mips64TargetInfoBase {
-  void setDescriptionString() override {
-    if (ABI == "n32")
-      DescriptionString = "E-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32:64-S128";
-    else
-      DescriptionString = "E-m:m-i8:8:32-i16:16:32-i64:64-n32:64-S128";
-
+  virtual void SetDescriptionString(const std::string &Name) {
+    // Change DescriptionString only if ABI is n32.  
+    if (Name == "n32")
+      DescriptionString = "E-p:32:32:32-i1:8:8-i8:8:32-i16:16:32-i32:32:32-"
+                          "i64:64:64-f32:32:32-f64:64:64-f128:128:128-"
+                          "v64:64:64-n32";      
   }
-
 public:
-  Mips64EBTargetInfo(const llvm::Triple &Triple)
-      : Mips64TargetInfoBase(Triple) {}
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
+  Mips64EBTargetInfo(const std::string& triple) : Mips64TargetInfoBase(triple) {
+    // Default ABI is n64.  
+    DescriptionString = "E-p:64:64:64-i1:8:8-i8:8:32-i16:16:32-i32:32:32-"
+                        "i64:64:64-f32:32:32-f64:64:64-f128:128:128-"
+                        "v64:64:64-n32";
+  }
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
     DefineStd(Builder, "MIPSEB", Opts);
     Builder.defineMacro("_MIPSEB");
     Mips64TargetInfoBase::getTargetDefines(Opts, Builder);
@@ -5959,20 +4303,23 @@ public:
 };
 
 class Mips64ELTargetInfo : public Mips64TargetInfoBase {
-  void setDescriptionString() override {
-    if (ABI == "n32")
-      DescriptionString = "e-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32:64-S128";
-    else
-      DescriptionString = "e-m:m-i8:8:32-i16:16:32-i64:64-n32:64-S128";
+  virtual void SetDescriptionString(const std::string &Name) {
+    // Change DescriptionString only if ABI is n32.  
+    if (Name == "n32")
+      DescriptionString = "e-p:32:32:32-i1:8:8-i8:8:32-i16:16:32-i32:32:32-"
+                          "i64:64:64-f32:32:32-f64:64:64-f128:128:128"
+                          "-v64:64:64-n32";      
   }
 public:
-  Mips64ELTargetInfo(const llvm::Triple &Triple)
-      : Mips64TargetInfoBase(Triple) {
+  Mips64ELTargetInfo(const std::string& triple) : Mips64TargetInfoBase(triple) {
     // Default ABI is n64.
     BigEndian = false;
+    DescriptionString = "e-p:64:64:64-i1:8:8-i8:8:32-i16:16:32-i32:32:32-"
+                        "i64:64:64-f32:32:32-f64:64:64-f128:128:128-"
+                        "v64:64:64-n32";
   }
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
     DefineStd(Builder, "MIPSEL", Opts);
     Builder.defineMacro("_MIPSEL");
     Mips64TargetInfoBase::getTargetDefines(Opts, Builder);
@@ -5983,7 +4330,7 @@ public:
 namespace {
 class PNaClTargetInfo : public TargetInfo {
 public:
-  PNaClTargetInfo(const llvm::Triple &Triple) : TargetInfo(Triple) {
+  PNaClTargetInfo(const std::string& triple) : TargetInfo(triple) {
     BigEndian = false;
     this->UserLabelPrefix = "";
     this->LongAlign = 32;
@@ -5991,6 +4338,7 @@ public:
     this->PointerAlign = 32;
     this->PointerWidth = 32;
     this->IntMaxType = TargetInfo::SignedLongLong;
+    this->UIntMaxType = TargetInfo::UnsignedLongLong;
     this->Int64Type = TargetInfo::SignedLongLong;
     this->DoubleAlign = 64;
     this->LongDoubleWidth = 64;
@@ -5998,257 +4346,57 @@ public:
     this->SizeType = TargetInfo::UnsignedInt;
     this->PtrDiffType = TargetInfo::SignedInt;
     this->IntPtrType = TargetInfo::SignedInt;
-    this->RegParmMax = 0; // Disallow regparm
+    this->RegParmMax = 2;
+    DescriptionString = "e-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-"
+                        "f32:32:32-f64:64:64-p:32:32:32-v128:32:32";
   }
 
-  void getDefaultFeatures(llvm::StringMap<bool> &Features) const override {
+  void getDefaultFeatures(llvm::StringMap<bool> &Features) const {
   }
-  void getArchDefines(const LangOptions &Opts, MacroBuilder &Builder) const {
+  virtual void getArchDefines(const LangOptions &Opts,
+                              MacroBuilder &Builder) const {
     Builder.defineMacro("__le32__");
     Builder.defineMacro("__pnacl__");
   }
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
+    Builder.defineMacro("__LITTLE_ENDIAN__");
     getArchDefines(Opts, Builder);
   }
-  bool hasFeature(StringRef Feature) const override {
+  virtual bool hasFeature(StringRef Feature) const {
     return Feature == "pnacl";
   }
-  void getTargetBuiltins(const Builtin::Info *&Records,
-                         unsigned &NumRecords) const override {
+  virtual void getTargetBuiltins(const Builtin::Info *&Records,
+                                 unsigned &NumRecords) const {
   }
-  BuiltinVaListKind getBuiltinVaListKind() const override {
+  virtual BuiltinVaListKind getBuiltinVaListKind() const {
     return TargetInfo::PNaClABIBuiltinVaList;
   }
-  void getGCCRegNames(const char * const *&Names,
-                      unsigned &NumNames) const override;
-  void getGCCRegAliases(const GCCRegAlias *&Aliases,
-                        unsigned &NumAliases) const override;
-  bool validateAsmConstraint(const char *&Name,
-                             TargetInfo::ConstraintInfo &Info) const override {
+  virtual void getGCCRegNames(const char * const *&Names,
+                              unsigned &NumNames) const;
+  virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                unsigned &NumAliases) const;
+  virtual bool validateAsmConstraint(const char *&Name,
+                                     TargetInfo::ConstraintInfo &Info) const {
     return false;
   }
 
-  const char *getClobbers() const override {
+  virtual const char *getClobbers() const {
     return "";
   }
 };
 
 void PNaClTargetInfo::getGCCRegNames(const char * const *&Names,
                                      unsigned &NumNames) const {
-  Names = nullptr;
+  Names = NULL;
   NumNames = 0;
 }
 
 void PNaClTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
                                        unsigned &NumAliases) const {
-  Aliases = nullptr;
+  Aliases = NULL;
   NumAliases = 0;
 }
-} // end anonymous namespace.
-
-namespace {
-class Le64TargetInfo : public TargetInfo {
-  static const Builtin::Info BuiltinInfo[];
-
-public:
-  Le64TargetInfo(const llvm::Triple &Triple) : TargetInfo(Triple) {
-    BigEndian = false;
-    NoAsmVariants = true;
-    LongWidth = LongAlign = PointerWidth = PointerAlign = 64;
-    MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
-    DescriptionString =
-        "e-S128-p:64:64-v16:16-v32:32-v64:64-v96:32-v128:32-m:e-n8:16:32:64";
-  }
-
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
-    DefineStd(Builder, "unix", Opts);
-    defineCPUMacros(Builder, "le64", /*Tuning=*/false);
-    Builder.defineMacro("__ELF__");
-  }
-  void getTargetBuiltins(const Builtin::Info *&Records,
-                         unsigned &NumRecords) const override {
-    Records = BuiltinInfo;
-    NumRecords = clang::Le64::LastTSBuiltin - Builtin::FirstTSBuiltin;
-  }
-  BuiltinVaListKind getBuiltinVaListKind() const override {
-    return TargetInfo::PNaClABIBuiltinVaList;
-  }
-  const char *getClobbers() const override { return ""; }
-  void getGCCRegNames(const char *const *&Names,
-                      unsigned &NumNames) const override {
-    Names = nullptr;
-    NumNames = 0;
-  }
-  void getGCCRegAliases(const GCCRegAlias *&Aliases,
-                        unsigned &NumAliases) const override {
-    Aliases = nullptr;
-    NumAliases = 0;
-  }
-  bool validateAsmConstraint(const char *&Name,
-                             TargetInfo::ConstraintInfo &Info) const override {
-    return false;
-  }
-
-  bool hasProtectedVisibility() const override { return false; }
-};
-} // end anonymous namespace.
-
-const Builtin::Info Le64TargetInfo::BuiltinInfo[] = {
-#define BUILTIN(ID, TYPE, ATTRS)                                               \
-  { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
-#include "clang/Basic/BuiltinsLe64.def"
-};
-
-namespace {
-  static const unsigned SPIRAddrSpaceMap[] = {
-    1,    // opencl_global
-    3,    // opencl_local
-    2,    // opencl_constant
-    0,    // cuda_device
-    0,    // cuda_constant
-    0     // cuda_shared
-  };
-  class SPIRTargetInfo : public TargetInfo {
-  public:
-    SPIRTargetInfo(const llvm::Triple &Triple) : TargetInfo(Triple) {
-      assert(getTriple().getOS() == llvm::Triple::UnknownOS &&
-        "SPIR target must use unknown OS");
-      assert(getTriple().getEnvironment() == llvm::Triple::UnknownEnvironment &&
-        "SPIR target must use unknown environment type");
-      BigEndian = false;
-      TLSSupported = false;
-      LongWidth = LongAlign = 64;
-      AddrSpaceMap = &SPIRAddrSpaceMap;
-      UseAddrSpaceMapMangling = true;
-      // Define available target features
-      // These must be defined in sorted order!
-      NoAsmVariants = true;
-    }
-    void getTargetDefines(const LangOptions &Opts,
-                          MacroBuilder &Builder) const override {
-      DefineStd(Builder, "SPIR", Opts);
-    }
-    bool hasFeature(StringRef Feature) const override {
-      return Feature == "spir";
-    }
-
-    void getTargetBuiltins(const Builtin::Info *&Records,
-                           unsigned &NumRecords) const override {}
-    const char *getClobbers() const override {
-      return "";
-    }
-    void getGCCRegNames(const char * const *&Names,
-                        unsigned &NumNames) const override {}
-    bool validateAsmConstraint(const char *&Name,
-                               TargetInfo::ConstraintInfo &info) const override {
-      return true;
-    }
-    void getGCCRegAliases(const GCCRegAlias *&Aliases,
-                          unsigned &NumAliases) const override {}
-    BuiltinVaListKind getBuiltinVaListKind() const override {
-      return TargetInfo::VoidPtrBuiltinVaList;
-    }
-  };
-
-
-  class SPIR32TargetInfo : public SPIRTargetInfo {
-  public:
-    SPIR32TargetInfo(const llvm::Triple &Triple) : SPIRTargetInfo(Triple) {
-      PointerWidth = PointerAlign = 32;
-      SizeType     = TargetInfo::UnsignedInt;
-      PtrDiffType = IntPtrType = TargetInfo::SignedInt;
-      DescriptionString
-        = "e-p:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-"
-          "v96:128-v192:256-v256:256-v512:512-v1024:1024";
-    }
-    void getTargetDefines(const LangOptions &Opts,
-                          MacroBuilder &Builder) const override {
-      DefineStd(Builder, "SPIR32", Opts);
-    }
-  };
-
-  class SPIR64TargetInfo : public SPIRTargetInfo {
-  public:
-    SPIR64TargetInfo(const llvm::Triple &Triple) : SPIRTargetInfo(Triple) {
-      PointerWidth = PointerAlign = 64;
-      SizeType     = TargetInfo::UnsignedLong;
-      PtrDiffType = IntPtrType = TargetInfo::SignedLong;
-      DescriptionString = "e-i64:64-v16:16-v24:32-v32:32-v48:64-"
-                          "v96:128-v192:256-v256:256-v512:512-v1024:1024";
-    }
-    void getTargetDefines(const LangOptions &Opts,
-                          MacroBuilder &Builder) const override {
-      DefineStd(Builder, "SPIR64", Opts);
-    }
-  };
-}
-
-namespace {
-class XCoreTargetInfo : public TargetInfo {
-  static const Builtin::Info BuiltinInfo[];
-public:
-  XCoreTargetInfo(const llvm::Triple &Triple) : TargetInfo(Triple) {
-    BigEndian = false;
-    NoAsmVariants = true;
-    LongLongAlign = 32;
-    SuitableAlign = 32;
-    DoubleAlign = LongDoubleAlign = 32;
-    SizeType = UnsignedInt;
-    PtrDiffType = SignedInt;
-    IntPtrType = SignedInt;
-    WCharType = UnsignedChar;
-    WIntType = UnsignedInt;
-    UseZeroLengthBitfieldAlignment = true;
-    DescriptionString = "e-m:e-p:32:32-i1:8:32-i8:8:32-i16:16:32-i64:32"
-                        "-f64:32-a:0:32-n32";
-  }
-  void getTargetDefines(const LangOptions &Opts,
-                        MacroBuilder &Builder) const override {
-    Builder.defineMacro("__XS1B__");
-  }
-  void getTargetBuiltins(const Builtin::Info *&Records,
-                         unsigned &NumRecords) const override {
-    Records = BuiltinInfo;
-    NumRecords = clang::XCore::LastTSBuiltin-Builtin::FirstTSBuiltin;
-  }
-  BuiltinVaListKind getBuiltinVaListKind() const override {
-    return TargetInfo::VoidPtrBuiltinVaList;
-  }
-  const char *getClobbers() const override {
-    return "";
-  }
-  void getGCCRegNames(const char * const *&Names,
-                      unsigned &NumNames) const override {
-    static const char * const GCCRegNames[] = {
-      "r0",   "r1",   "r2",   "r3",   "r4",   "r5",   "r6",   "r7",
-      "r8",   "r9",   "r10",  "r11",  "cp",   "dp",   "sp",   "lr"
-    };
-    Names = GCCRegNames;
-    NumNames = llvm::array_lengthof(GCCRegNames);
-  }
-  void getGCCRegAliases(const GCCRegAlias *&Aliases,
-                        unsigned &NumAliases) const override {
-    Aliases = nullptr;
-    NumAliases = 0;
-  }
-  bool validateAsmConstraint(const char *&Name,
-                             TargetInfo::ConstraintInfo &Info) const override {
-    return false;
-  }
-  int getEHDataRegisterNumber(unsigned RegNo) const override {
-    // R0=ExceptionPointerRegister R1=ExceptionSelectorRegister
-    return (RegNo < 2)? RegNo : -1;
-  }
-};
-
-const Builtin::Info XCoreTargetInfo::BuiltinInfo[] = {
-#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
-#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER,\
-                                              ALL_LANGUAGES },
-#include "clang/Basic/BuiltinsXCore.def"
-};
 } // end anonymous namespace.
 
 
@@ -6256,397 +4404,284 @@ const Builtin::Info XCoreTargetInfo::BuiltinInfo[] = {
 // Driver code
 //===----------------------------------------------------------------------===//
 
-static TargetInfo *AllocateTarget(const llvm::Triple &Triple) {
+static TargetInfo *AllocateTarget(const std::string &T) {
+  llvm::Triple Triple(T);
   llvm::Triple::OSType os = Triple.getOS();
 
   switch (Triple.getArch()) {
   default:
-    return nullptr;
-
-  case llvm::Triple::xcore:
-    return new XCoreTargetInfo(Triple);
+    return NULL;
 
   case llvm::Triple::hexagon:
-    return new HexagonTargetInfo(Triple);
-
-  case llvm::Triple::aarch64:
-    if (Triple.isOSDarwin())
-      return new DarwinAArch64TargetInfo(Triple);
-
-    switch (os) {
-    case llvm::Triple::Linux:
-      return new LinuxTargetInfo<AArch64leTargetInfo>(Triple);
-    case llvm::Triple::NetBSD:
-      return new NetBSDTargetInfo<AArch64leTargetInfo>(Triple);
-    default:
-      return new AArch64leTargetInfo(Triple);
-    }
-
-  case llvm::Triple::aarch64_be:
-    switch (os) {
-    case llvm::Triple::Linux:
-      return new LinuxTargetInfo<AArch64beTargetInfo>(Triple);
-    case llvm::Triple::NetBSD:
-      return new NetBSDTargetInfo<AArch64beTargetInfo>(Triple);
-    default:
-      return new AArch64beTargetInfo(Triple);
-    }
+    return new HexagonTargetInfo(T);
 
   case llvm::Triple::arm:
   case llvm::Triple::thumb:
-    if (Triple.isOSBinFormatMachO())
-      return new DarwinARMTargetInfo(Triple);
-
-    switch (os) {
-    case llvm::Triple::Linux:
-      return new LinuxTargetInfo<ARMleTargetInfo>(Triple);
-    case llvm::Triple::FreeBSD:
-      return new FreeBSDTargetInfo<ARMleTargetInfo>(Triple);
-    case llvm::Triple::NetBSD:
-      return new NetBSDTargetInfo<ARMleTargetInfo>(Triple);
-    case llvm::Triple::OpenBSD:
-      return new OpenBSDTargetInfo<ARMleTargetInfo>(Triple);
-    case llvm::Triple::Bitrig:
-      return new BitrigTargetInfo<ARMleTargetInfo>(Triple);
-    case llvm::Triple::RTEMS:
-      return new RTEMSTargetInfo<ARMleTargetInfo>(Triple);
-    case llvm::Triple::NaCl:
-      return new NaClTargetInfo<ARMleTargetInfo>(Triple);
-    case llvm::Triple::Win32:
-      switch (Triple.getEnvironment()) {
-      default:
-        return new ARMleTargetInfo(Triple);
-      case llvm::Triple::Itanium:
-        return new ItaniumWindowsARMleTargetInfo(Triple);
-      case llvm::Triple::MSVC:
-        return new MicrosoftARMleTargetInfo(Triple);
-      }
-    default:
-      return new ARMleTargetInfo(Triple);
-    }
-
-  case llvm::Triple::armeb:
-  case llvm::Triple::thumbeb:
     if (Triple.isOSDarwin())
-      return new DarwinARMTargetInfo(Triple);
+      return new DarwinARMTargetInfo(T);
 
     switch (os) {
     case llvm::Triple::Linux:
-      return new LinuxTargetInfo<ARMbeTargetInfo>(Triple);
+      return new LinuxTargetInfo<ARMTargetInfo>(T);
     case llvm::Triple::FreeBSD:
-      return new FreeBSDTargetInfo<ARMbeTargetInfo>(Triple);
+      return new FreeBSDTargetInfo<ARMTargetInfo>(T);
     case llvm::Triple::NetBSD:
-      return new NetBSDTargetInfo<ARMbeTargetInfo>(Triple);
+      return new NetBSDTargetInfo<ARMTargetInfo>(T);
     case llvm::Triple::OpenBSD:
-      return new OpenBSDTargetInfo<ARMbeTargetInfo>(Triple);
+      return new OpenBSDTargetInfo<ARMTargetInfo>(T);
     case llvm::Triple::Bitrig:
-      return new BitrigTargetInfo<ARMbeTargetInfo>(Triple);
+      return new BitrigTargetInfo<ARMTargetInfo>(T);
     case llvm::Triple::RTEMS:
-      return new RTEMSTargetInfo<ARMbeTargetInfo>(Triple);
-    case llvm::Triple::NaCl:
-      return new NaClTargetInfo<ARMbeTargetInfo>(Triple);
+      return new RTEMSTargetInfo<ARMTargetInfo>(T);
+    case llvm::Triple::NativeClient:
+      return new NaClTargetInfo<ARMTargetInfo>(T);
     default:
-      return new ARMbeTargetInfo(Triple);
+      return new ARMTargetInfo(T);
     }
 
   case llvm::Triple::msp430:
-    return new MSP430TargetInfo(Triple);
+    return new MSP430TargetInfo(T);
 
   case llvm::Triple::mips:
     switch (os) {
     case llvm::Triple::Linux:
-      return new LinuxTargetInfo<Mips32EBTargetInfo>(Triple);
+      return new LinuxTargetInfo<Mips32EBTargetInfo>(T);
     case llvm::Triple::RTEMS:
-      return new RTEMSTargetInfo<Mips32EBTargetInfo>(Triple);
+      return new RTEMSTargetInfo<Mips32EBTargetInfo>(T);
     case llvm::Triple::FreeBSD:
-      return new FreeBSDTargetInfo<Mips32EBTargetInfo>(Triple);
+      return new FreeBSDTargetInfo<Mips32EBTargetInfo>(T);
     case llvm::Triple::NetBSD:
-      return new NetBSDTargetInfo<Mips32EBTargetInfo>(Triple);
+      return new NetBSDTargetInfo<Mips32EBTargetInfo>(T);
     default:
-      return new Mips32EBTargetInfo(Triple);
+      return new Mips32EBTargetInfo(T);
     }
 
   case llvm::Triple::mipsel:
     switch (os) {
     case llvm::Triple::Linux:
-      return new LinuxTargetInfo<Mips32ELTargetInfo>(Triple);
+      return new LinuxTargetInfo<Mips32ELTargetInfo>(T);
     case llvm::Triple::RTEMS:
-      return new RTEMSTargetInfo<Mips32ELTargetInfo>(Triple);
+      return new RTEMSTargetInfo<Mips32ELTargetInfo>(T);
     case llvm::Triple::FreeBSD:
-      return new FreeBSDTargetInfo<Mips32ELTargetInfo>(Triple);
+      return new FreeBSDTargetInfo<Mips32ELTargetInfo>(T);
     case llvm::Triple::NetBSD:
-      return new NetBSDTargetInfo<Mips32ELTargetInfo>(Triple);
-    case llvm::Triple::NaCl:
-      return new NaClTargetInfo<Mips32ELTargetInfo>(Triple);
+      return new NetBSDTargetInfo<Mips32ELTargetInfo>(T);
     default:
-      return new Mips32ELTargetInfo(Triple);
+      return new Mips32ELTargetInfo(T);
     }
 
   case llvm::Triple::mips64:
     switch (os) {
     case llvm::Triple::Linux:
-      return new LinuxTargetInfo<Mips64EBTargetInfo>(Triple);
+      return new LinuxTargetInfo<Mips64EBTargetInfo>(T);
     case llvm::Triple::RTEMS:
-      return new RTEMSTargetInfo<Mips64EBTargetInfo>(Triple);
+      return new RTEMSTargetInfo<Mips64EBTargetInfo>(T);
     case llvm::Triple::FreeBSD:
-      return new FreeBSDTargetInfo<Mips64EBTargetInfo>(Triple);
+      return new FreeBSDTargetInfo<Mips64EBTargetInfo>(T);
     case llvm::Triple::NetBSD:
-      return new NetBSDTargetInfo<Mips64EBTargetInfo>(Triple);
+      return new NetBSDTargetInfo<Mips64EBTargetInfo>(T);
     case llvm::Triple::OpenBSD:
-      return new OpenBSDTargetInfo<Mips64EBTargetInfo>(Triple);
+      return new OpenBSDTargetInfo<Mips64EBTargetInfo>(T);
     default:
-      return new Mips64EBTargetInfo(Triple);
+      return new Mips64EBTargetInfo(T);
     }
 
   case llvm::Triple::mips64el:
     switch (os) {
     case llvm::Triple::Linux:
-      return new LinuxTargetInfo<Mips64ELTargetInfo>(Triple);
+      return new LinuxTargetInfo<Mips64ELTargetInfo>(T);
     case llvm::Triple::RTEMS:
-      return new RTEMSTargetInfo<Mips64ELTargetInfo>(Triple);
+      return new RTEMSTargetInfo<Mips64ELTargetInfo>(T);
     case llvm::Triple::FreeBSD:
-      return new FreeBSDTargetInfo<Mips64ELTargetInfo>(Triple);
+      return new FreeBSDTargetInfo<Mips64ELTargetInfo>(T);
     case llvm::Triple::NetBSD:
-      return new NetBSDTargetInfo<Mips64ELTargetInfo>(Triple);
+      return new NetBSDTargetInfo<Mips64ELTargetInfo>(T);
     case llvm::Triple::OpenBSD:
-      return new OpenBSDTargetInfo<Mips64ELTargetInfo>(Triple);
+      return new OpenBSDTargetInfo<Mips64ELTargetInfo>(T);
     default:
-      return new Mips64ELTargetInfo(Triple);
+      return new Mips64ELTargetInfo(T);
     }
 
   case llvm::Triple::le32:
     switch (os) {
-      case llvm::Triple::NaCl:
-        return new NaClTargetInfo<PNaClTargetInfo>(Triple);
+      case llvm::Triple::NativeClient:
+        return new NaClTargetInfo<PNaClTargetInfo>(T);
       default:
-        return nullptr;
+        return NULL;
     }
-
-  case llvm::Triple::le64:
-    return new Le64TargetInfo(Triple);
 
   case llvm::Triple::ppc:
     if (Triple.isOSDarwin())
-      return new DarwinPPC32TargetInfo(Triple);
+      return new DarwinPPC32TargetInfo(T);
     switch (os) {
     case llvm::Triple::Linux:
-      return new LinuxTargetInfo<PPC32TargetInfo>(Triple);
+      return new LinuxTargetInfo<PPC32TargetInfo>(T);
     case llvm::Triple::FreeBSD:
-      return new FreeBSDTargetInfo<PPC32TargetInfo>(Triple);
+      return new FreeBSDTargetInfo<PPC32TargetInfo>(T);
     case llvm::Triple::NetBSD:
-      return new NetBSDTargetInfo<PPC32TargetInfo>(Triple);
+      return new NetBSDTargetInfo<PPC32TargetInfo>(T);
     case llvm::Triple::OpenBSD:
-      return new OpenBSDTargetInfo<PPC32TargetInfo>(Triple);
+      return new OpenBSDTargetInfo<PPC32TargetInfo>(T);
     case llvm::Triple::RTEMS:
-      return new RTEMSTargetInfo<PPC32TargetInfo>(Triple);
+      return new RTEMSTargetInfo<PPC32TargetInfo>(T);
     default:
-      return new PPC32TargetInfo(Triple);
+      return new PPC32TargetInfo(T);
     }
 
   case llvm::Triple::ppc64:
     if (Triple.isOSDarwin())
-      return new DarwinPPC64TargetInfo(Triple);
+      return new DarwinPPC64TargetInfo(T);
     switch (os) {
     case llvm::Triple::Linux:
-      return new LinuxTargetInfo<PPC64TargetInfo>(Triple);
+      return new LinuxTargetInfo<PPC64TargetInfo>(T);
     case llvm::Triple::Lv2:
-      return new PS3PPUTargetInfo<PPC64TargetInfo>(Triple);
+      return new PS3PPUTargetInfo<PPC64TargetInfo>(T);
     case llvm::Triple::FreeBSD:
-      return new FreeBSDTargetInfo<PPC64TargetInfo>(Triple);
+      return new FreeBSDTargetInfo<PPC64TargetInfo>(T);
     case llvm::Triple::NetBSD:
-      return new NetBSDTargetInfo<PPC64TargetInfo>(Triple);
+      return new NetBSDTargetInfo<PPC64TargetInfo>(T);
     default:
-      return new PPC64TargetInfo(Triple);
-    }
-
-  case llvm::Triple::ppc64le:
-    switch (os) {
-    case llvm::Triple::Linux:
-      return new LinuxTargetInfo<PPC64TargetInfo>(Triple);
-    default:
-      return new PPC64TargetInfo(Triple);
+      return new PPC64TargetInfo(T);
     }
 
   case llvm::Triple::nvptx:
-    return new NVPTX32TargetInfo(Triple);
+    return new NVPTX32TargetInfo(T);
   case llvm::Triple::nvptx64:
-    return new NVPTX64TargetInfo(Triple);
+    return new NVPTX64TargetInfo(T);
+
+  case llvm::Triple::mblaze:
+    return new MBlazeTargetInfo(T);
 
   case llvm::Triple::r600:
-    return new R600TargetInfo(Triple);
+    return new R600TargetInfo(T);
 
   case llvm::Triple::sparc:
     switch (os) {
     case llvm::Triple::Linux:
-      return new LinuxTargetInfo<SparcV8TargetInfo>(Triple);
+      return new LinuxTargetInfo<SparcV8TargetInfo>(T);
+    case llvm::Triple::AuroraUX:
+      return new AuroraUXSparcV8TargetInfo(T);
     case llvm::Triple::Solaris:
-      return new SolarisSparcV8TargetInfo(Triple);
+      return new SolarisSparcV8TargetInfo(T);
     case llvm::Triple::NetBSD:
-      return new NetBSDTargetInfo<SparcV8TargetInfo>(Triple);
+      return new NetBSDTargetInfo<SparcV8TargetInfo>(T);
     case llvm::Triple::OpenBSD:
-      return new OpenBSDTargetInfo<SparcV8TargetInfo>(Triple);
+      return new OpenBSDTargetInfo<SparcV8TargetInfo>(T);
     case llvm::Triple::RTEMS:
-      return new RTEMSTargetInfo<SparcV8TargetInfo>(Triple);
+      return new RTEMSTargetInfo<SparcV8TargetInfo>(T);
     default:
-      return new SparcV8TargetInfo(Triple);
+      return new SparcV8TargetInfo(T);
     }
 
-  case llvm::Triple::sparcv9:
-    switch (os) {
-    case llvm::Triple::Linux:
-      return new LinuxTargetInfo<SparcV9TargetInfo>(Triple);
-    case llvm::Triple::Solaris:
-      return new SolarisTargetInfo<SparcV9TargetInfo>(Triple);
-    case llvm::Triple::NetBSD:
-      return new NetBSDTargetInfo<SparcV9TargetInfo>(Triple);
-    case llvm::Triple::OpenBSD:
-      return new OpenBSDTargetInfo<SparcV9TargetInfo>(Triple);
-    case llvm::Triple::FreeBSD:
-      return new FreeBSDTargetInfo<SparcV9TargetInfo>(Triple);
-    default:
-      return new SparcV9TargetInfo(Triple);
-    }
-
-  case llvm::Triple::systemz:
-    switch (os) {
-    case llvm::Triple::Linux:
-      return new LinuxTargetInfo<SystemZTargetInfo>(Triple);
-    default:
-      return new SystemZTargetInfo(Triple);
-    }
+  // FIXME: Need a real SPU target.
+  case llvm::Triple::cellspu:
+    return new PS3SPUTargetInfo<PPC64TargetInfo>(T);
 
   case llvm::Triple::tce:
-    return new TCETargetInfo(Triple);
+    return new TCETargetInfo(T);
 
   case llvm::Triple::x86:
     if (Triple.isOSDarwin())
-      return new DarwinI386TargetInfo(Triple);
+      return new DarwinI386TargetInfo(T);
 
     switch (os) {
+    case llvm::Triple::AuroraUX:
+      return new AuroraUXTargetInfo<X86_32TargetInfo>(T);
     case llvm::Triple::Linux:
-      return new LinuxTargetInfo<X86_32TargetInfo>(Triple);
+      return new LinuxTargetInfo<X86_32TargetInfo>(T);
     case llvm::Triple::DragonFly:
-      return new DragonFlyBSDTargetInfo<X86_32TargetInfo>(Triple);
+      return new DragonFlyBSDTargetInfo<X86_32TargetInfo>(T);
     case llvm::Triple::NetBSD:
-      return new NetBSDI386TargetInfo(Triple);
+      return new NetBSDI386TargetInfo(T);
     case llvm::Triple::OpenBSD:
-      return new OpenBSDI386TargetInfo(Triple);
+      return new OpenBSDI386TargetInfo(T);
     case llvm::Triple::Bitrig:
-      return new BitrigI386TargetInfo(Triple);
+      return new BitrigI386TargetInfo(T);
     case llvm::Triple::FreeBSD:
-      return new FreeBSDTargetInfo<X86_32TargetInfo>(Triple);
-    case llvm::Triple::KFreeBSD:
-      return new KFreeBSDTargetInfo<X86_32TargetInfo>(Triple);
+      return new FreeBSDTargetInfo<X86_32TargetInfo>(T);
     case llvm::Triple::Minix:
-      return new MinixTargetInfo<X86_32TargetInfo>(Triple);
+      return new MinixTargetInfo<X86_32TargetInfo>(T);
     case llvm::Triple::Solaris:
-      return new SolarisTargetInfo<X86_32TargetInfo>(Triple);
-    case llvm::Triple::Win32: {
-      switch (Triple.getEnvironment()) {
-      default:
-        return new X86_32TargetInfo(Triple);
-      case llvm::Triple::Cygnus:
-        return new CygwinX86_32TargetInfo(Triple);
-      case llvm::Triple::GNU:
-        return new MinGWX86_32TargetInfo(Triple);
-      case llvm::Triple::Itanium:
-      case llvm::Triple::MSVC:
-        return new MicrosoftX86_32TargetInfo(Triple);
-      }
-    }
+      return new SolarisTargetInfo<X86_32TargetInfo>(T);
+    case llvm::Triple::Cygwin:
+      return new CygwinX86_32TargetInfo(T);
+    case llvm::Triple::MinGW32:
+      return new MinGWX86_32TargetInfo(T);
+    case llvm::Triple::Win32:
+      return new VisualStudioWindowsX86_32TargetInfo(T);
     case llvm::Triple::Haiku:
-      return new HaikuX86_32TargetInfo(Triple);
+      return new HaikuX86_32TargetInfo(T);
     case llvm::Triple::RTEMS:
-      return new RTEMSX86_32TargetInfo(Triple);
-    case llvm::Triple::NaCl:
-      return new NaClTargetInfo<X86_32TargetInfo>(Triple);
+      return new RTEMSX86_32TargetInfo(T);
+    case llvm::Triple::NativeClient:
+      return new NaClTargetInfo<X86_32TargetInfo>(T);
     default:
-      return new X86_32TargetInfo(Triple);
+      return new X86_32TargetInfo(T);
     }
 
   case llvm::Triple::x86_64:
-    if (Triple.isOSDarwin() || Triple.isOSBinFormatMachO())
-      return new DarwinX86_64TargetInfo(Triple);
+    if (Triple.isOSDarwin() || Triple.getEnvironment() == llvm::Triple::MachO)
+      return new DarwinX86_64TargetInfo(T);
 
     switch (os) {
+    case llvm::Triple::AuroraUX:
+      return new AuroraUXTargetInfo<X86_64TargetInfo>(T);
     case llvm::Triple::Linux:
-      return new LinuxTargetInfo<X86_64TargetInfo>(Triple);
+      return new LinuxTargetInfo<X86_64TargetInfo>(T);
     case llvm::Triple::DragonFly:
-      return new DragonFlyBSDTargetInfo<X86_64TargetInfo>(Triple);
+      return new DragonFlyBSDTargetInfo<X86_64TargetInfo>(T);
     case llvm::Triple::NetBSD:
-      return new NetBSDTargetInfo<X86_64TargetInfo>(Triple);
+      return new NetBSDTargetInfo<X86_64TargetInfo>(T);
     case llvm::Triple::OpenBSD:
-      return new OpenBSDX86_64TargetInfo(Triple);
+      return new OpenBSDX86_64TargetInfo(T);
     case llvm::Triple::Bitrig:
-      return new BitrigX86_64TargetInfo(Triple);
+      return new BitrigX86_64TargetInfo(T);
     case llvm::Triple::FreeBSD:
-      return new FreeBSDTargetInfo<X86_64TargetInfo>(Triple);
-    case llvm::Triple::KFreeBSD:
-      return new KFreeBSDTargetInfo<X86_64TargetInfo>(Triple);
+      return new FreeBSDTargetInfo<X86_64TargetInfo>(T);
     case llvm::Triple::Solaris:
-      return new SolarisTargetInfo<X86_64TargetInfo>(Triple);
-    case llvm::Triple::Win32: {
-      switch (Triple.getEnvironment()) {
-      default:
-        return new X86_64TargetInfo(Triple);
-      case llvm::Triple::GNU:
-        return new MinGWX86_64TargetInfo(Triple);
-      case llvm::Triple::MSVC:
-        return new MicrosoftX86_64TargetInfo(Triple);
-      }
-    }
-    case llvm::Triple::NaCl:
-      return new NaClTargetInfo<X86_64TargetInfo>(Triple);
+      return new SolarisTargetInfo<X86_64TargetInfo>(T);
+    case llvm::Triple::MinGW32:
+      return new MinGWX86_64TargetInfo(T);
+    case llvm::Triple::Win32:   // This is what Triple.h supports now.
+      return new VisualStudioWindowsX86_64TargetInfo(T);
+    case llvm::Triple::NativeClient:
+      return new NaClTargetInfo<X86_64TargetInfo>(T);
     default:
-      return new X86_64TargetInfo(Triple);
-    }
-
-    case llvm::Triple::spir: {
-      if (Triple.getOS() != llvm::Triple::UnknownOS ||
-          Triple.getEnvironment() != llvm::Triple::UnknownEnvironment)
-        return nullptr;
-      return new SPIR32TargetInfo(Triple);
-    }
-    case llvm::Triple::spir64: {
-      if (Triple.getOS() != llvm::Triple::UnknownOS ||
-          Triple.getEnvironment() != llvm::Triple::UnknownEnvironment)
-        return nullptr;
-      return new SPIR64TargetInfo(Triple);
+      return new X86_64TargetInfo(T);
     }
   }
 }
 
 /// CreateTargetInfo - Return the target info object for the specified target
 /// triple.
-TargetInfo *
-TargetInfo::CreateTargetInfo(DiagnosticsEngine &Diags,
-                             const std::shared_ptr<TargetOptions> &Opts) {
-  llvm::Triple Triple(Opts->Triple);
+TargetInfo *TargetInfo::CreateTargetInfo(DiagnosticsEngine &Diags,
+                                         TargetOptions &Opts) {
+  llvm::Triple Triple(Opts.Triple);
 
   // Construct the target
-  std::unique_ptr<TargetInfo> Target(AllocateTarget(Triple));
+  OwningPtr<TargetInfo> Target(AllocateTarget(Triple.str()));
   if (!Target) {
     Diags.Report(diag::err_target_unknown_triple) << Triple.str();
-    return nullptr;
+    return 0;
   }
-  Target->TargetOpts = Opts;
+  Target->setTargetOpts(Opts);
 
   // Set the target CPU if specified.
-  if (!Opts->CPU.empty() && !Target->setCPU(Opts->CPU)) {
-    Diags.Report(diag::err_target_unknown_cpu) << Opts->CPU;
-    return nullptr;
+  if (!Opts.CPU.empty() && !Target->setCPU(Opts.CPU)) {
+    Diags.Report(diag::err_target_unknown_cpu) << Opts.CPU;
+    return 0;
   }
 
   // Set the target ABI if specified.
-  if (!Opts->ABI.empty() && !Target->setABI(Opts->ABI)) {
-    Diags.Report(diag::err_target_unknown_abi) << Opts->ABI;
-    return nullptr;
+  if (!Opts.ABI.empty() && !Target->setABI(Opts.ABI)) {
+    Diags.Report(diag::err_target_unknown_abi) << Opts.ABI;
+    return 0;
   }
 
-  // Set the fp math unit.
-  if (!Opts->FPMath.empty() && !Target->setFPMath(Opts->FPMath)) {
-    Diags.Report(diag::err_target_unknown_fpmath) << Opts->FPMath;
-    return nullptr;
+  // Set the target C++ ABI.
+  if (!Opts.CXXABI.empty() && !Target->setCXXABI(Opts.CXXABI)) {
+    Diags.Report(diag::err_target_unknown_cxxabi) << Opts.CXXABI;
+    return 0;
   }
 
   // Compute the default target features, we need the target to handle this
@@ -6655,24 +4690,50 @@ TargetInfo::CreateTargetInfo(DiagnosticsEngine &Diags,
   Target->getDefaultFeatures(Features);
 
   // Apply the user specified deltas.
-  for (unsigned I = 0, N = Opts->FeaturesAsWritten.size();
-       I < N; ++I) {
-    const char *Name = Opts->FeaturesAsWritten[I].c_str();
+  // First the enables.
+  for (std::vector<std::string>::const_iterator 
+         it = Opts.FeaturesAsWritten.begin(),
+         ie = Opts.FeaturesAsWritten.end(); 
+       it != ie; ++it) {
+    const char *Name = it->c_str();
+
+    if (Name[0] != '+')
+      continue;
+
     // Apply the feature via the target.
-    bool Enabled = Name[0] == '+';
-    Target->setFeatureEnabled(Features, Name + 1, Enabled);
+    if (!Target->setFeatureEnabled(Features, Name + 1, true)) {
+      Diags.Report(diag::err_target_invalid_feature) << Name;
+      return 0;
+    }
+  }
+
+  // Then the disables.
+  for (std::vector<std::string>::const_iterator 
+         it = Opts.FeaturesAsWritten.begin(),
+         ie = Opts.FeaturesAsWritten.end(); 
+       it != ie; ++it) {
+    const char *Name = it->c_str();
+
+    if (Name[0] == '+')
+      continue;
+
+    // Apply the feature via the target.
+    if (Name[0] != '-' ||
+        !Target->setFeatureEnabled(Features, Name + 1, false)) {
+      Diags.Report(diag::err_target_invalid_feature) << Name;
+      return 0;
+    }
   }
 
   // Add the features to the compile options.
   //
   // FIXME: If we are completely confident that we have the right set, we only
   // need to pass the minuses.
-  Opts->Features.clear();
+  Opts.Features.clear();
   for (llvm::StringMap<bool>::const_iterator it = Features.begin(),
          ie = Features.end(); it != ie; ++it)
-    Opts->Features.push_back((it->second ? "+" : "-") + it->first().str());
-  if (!Target->handleTargetFeatures(Opts->Features, Diags))
-    return nullptr;
+    Opts.Features.push_back((it->second ? "+" : "-") + it->first().str());
+  Target->HandleTargetFeatures(Opts.Features);
 
-  return Target.release();
+  return Target.take();
 }

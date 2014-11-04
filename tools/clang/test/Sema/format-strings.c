@@ -1,9 +1,8 @@
 // RUN: %clang_cc1 -fsyntax-only -verify -Wformat-nonliteral -isystem %S/Inputs %s
 // RUN: %clang_cc1 -fsyntax-only -verify -Wformat-nonliteral -isystem %S/Inputs -fno-signed-char %s
 
-#include <stdarg.h>
-#include <stddef.h>
 #define __need_wint_t
+#include <stdarg.h>
 #include <stddef.h> // For wint_t and wchar_t
 
 typedef struct _FILE FILE;
@@ -59,9 +58,6 @@ def"
   printf("%*d", (unsigned) 1, 1); // no-warning  
 }
 
-// When calling a non-variadic format function (vprintf, vscanf, NSLogv, ...),
-// warn only if the format string argument is a parameter that is not itself
-// declared as a format string with compatible format.
 __attribute__((__format__ (__printf__, 2, 4)))
 void check_string_literal2( FILE* fp, const char* s, char *buf, ... ) {
   char * b;
@@ -217,7 +213,7 @@ void test10(int x, float f, int i, long long lli) {
   printf("%**\n"); // expected-warning{{invalid conversion specifier '*'}}
   printf("%d%d\n", x); // expected-warning{{more '%' conversions than data arguments}}
   printf("%d\n", x, x); // expected-warning{{data argument not used by format string}}
-  printf("%W%d\n", x, x); // expected-warning{{invalid conversion specifier 'W'}}
+  printf("%W%d%Z\n", x, x, x); // expected-warning{{invalid conversion specifier 'W'}} expected-warning{{invalid conversion specifier 'Z'}}
   printf("%"); // expected-warning{{incomplete format specifier}}
   printf("%.d", x); // no-warning
   printf("%.", x);  // expected-warning{{incomplete format specifier}}
@@ -536,21 +532,6 @@ void pr9751() {
          0.0); // expected-warning{{format specifies}}
 }
 
-void pr18905() {
-  const char s1[] = "s\0%s"; // expected-note{{format string is defined here}}
-  const char s2[1] = "s"; // expected-note{{format string is defined here}}
-  const char s3[2] = "s\0%s"; // expected-warning{{initializer-string for char array is too long}}
-  const char s4[10] = "s";
-  const char s5[0] = "%s"; // expected-warning{{initializer-string for char array is too long}}
-                           // expected-note@-1{{format string is defined here}}
-
-  printf(s1); // expected-warning{{format string contains '\0' within the string body}}
-  printf(s2); // expected-warning{{format string is not null-terminated}}
-  printf(s3); // no-warning
-  printf(s4); // no-warning
-  printf(s5); // expected-warning{{format string is not null-terminated}}
-}
-
 void __attribute__((format(strfmon,1,2))) monformat(const char *fmt, ...);
 void __attribute__((format(strftime,1,0))) dateformat(const char *fmt);
 
@@ -560,7 +541,7 @@ void test_other_formats() {
   monformat("", 1); // expected-warning{{format string is empty}}
   monformat(str); // expected-warning{{format string is not a string literal (potentially insecure)}}
   dateformat(""); // expected-warning{{format string is empty}}
-  dateformat(str); // no-warning (using strftime non-literal is not unsafe)
+  dateformat(str); // no-warning (using strftime non literal is not unsafe)
 }
 
 // Do not warn about unused arguments coming from system headers.
@@ -607,13 +588,3 @@ void test_qualifiers(volatile int *vip, const int *cip,
   printf("%n", (ip_t)0); // No warning.
   printf("%n", (cip_t)0); // expected-warning{{format specifies type 'int *' but the argument has type 'cip_t' (aka 'const int *')}}
 }
-
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#pragma GCC diagnostic warning "-Wformat-security"
-// <rdar://problem/14178260>
-extern void test_format_security_extra_args(const char*, int, ...)
-    __attribute__((__format__(__printf__, 1, 3)));
-void test_format_security_pos(char* string) {
-  test_format_security_extra_args(string, 5); // expected-warning {{format string is not a string literal (potentially insecure)}}
-}
-#pragma GCC diagnostic warning "-Wformat-nonliteral"

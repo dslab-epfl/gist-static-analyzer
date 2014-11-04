@@ -11,13 +11,7 @@
 #define LLVM_MC_MCWINCOFFOBJECTWRITER_H
 
 namespace llvm {
-  class MCFixup;
-  class MCObjectWriter;
-  class MCValue;
-  class raw_ostream;
-
   class MCWinCOFFObjectTargetWriter {
-    virtual void anchor();
     const unsigned Machine;
 
   protected:
@@ -27,10 +21,7 @@ namespace llvm {
     virtual ~MCWinCOFFObjectTargetWriter() {}
 
     unsigned getMachine() const { return Machine; }
-    virtual unsigned getRelocType(const MCValue &Target,
-                                  const MCFixup &Fixup,
-                                  bool IsCrossSection) const = 0;
-    virtual bool recordRelocation(const MCFixup &) const { return true; }
+    virtual unsigned getRelocType(unsigned FixupKind) const = 0;
   };
 
   /// \brief Construct a new Win COFF writer instance.

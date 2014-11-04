@@ -110,9 +110,3 @@ void never_called_by_anyone() {
   clang_analyzer_checkInlined(0); // no-warning
 }
 
-
-void knr_one_argument(a) int a; { }
-
-void call_with_less_arguments() {
-  knr_one_argument(); // expected-warning{{too few arguments}} expected-warning{{Function taking 1 argument}}
-}

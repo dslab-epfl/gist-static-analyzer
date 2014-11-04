@@ -11,39 +11,36 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_MIPS_MIPS16FRAMELOWERING_H
-#define LLVM_LIB_TARGET_MIPS_MIPS16FRAMELOWERING_H
+#ifndef MIPS16_FRAMEINFO_H
+#define MIPS16_FRAMEINFO_H
 
 #include "MipsFrameLowering.h"
 
 namespace llvm {
 class Mips16FrameLowering : public MipsFrameLowering {
 public:
-  explicit Mips16FrameLowering(const MipsSubtarget &STI);
+  explicit Mips16FrameLowering(const MipsSubtarget &STI)
+    : MipsFrameLowering(STI) {}
 
   /// emitProlog/emitEpilog - These methods insert prolog and epilog code into
   /// the function.
-  void emitPrologue(MachineFunction &MF) const override;
-  void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const override;
-
-  void eliminateCallFramePseudoInstr(MachineFunction &MF,
-                                  MachineBasicBlock &MBB,
-                                  MachineBasicBlock::iterator I) const override;
+  void emitPrologue(MachineFunction &MF) const;
+  void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const;
 
   bool spillCalleeSavedRegisters(MachineBasicBlock &MBB,
                                  MachineBasicBlock::iterator MI,
                                  const std::vector<CalleeSavedInfo> &CSI,
-                                 const TargetRegisterInfo *TRI) const override;
+                                 const TargetRegisterInfo *TRI) const;
 
   bool restoreCalleeSavedRegisters(MachineBasicBlock &MBB,
-                                  MachineBasicBlock::iterator MI,
-                                  const std::vector<CalleeSavedInfo> &CSI,
-                                  const TargetRegisterInfo *TRI) const override;
+                                   MachineBasicBlock::iterator MI,
+                                   const std::vector<CalleeSavedInfo> &CSI,
+                                   const TargetRegisterInfo *TRI) const;
 
-  bool hasReservedCallFrame(const MachineFunction &MF) const override;
+  bool hasReservedCallFrame(const MachineFunction &MF) const;
 
   void processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
-                                            RegScavenger *RS) const override;
+                                            RegScavenger *RS) const;
 };
 
 } // End llvm namespace

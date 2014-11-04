@@ -7,9 +7,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_AST_COMMENTVISITOR_H
-#define LLVM_CLANG_AST_COMMENTVISITOR_H
-
 #include "clang/AST/Comment.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -67,4 +64,3 @@ class ConstCommentVisitor :
 } // end namespace comments
 } // end namespace clang
 
-#endif

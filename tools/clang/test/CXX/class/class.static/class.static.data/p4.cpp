@@ -10,14 +10,15 @@ struct OutOfClassInitializerOnly {
 int const OutOfClassInitializerOnly::i = 0;
 
 struct InClassInitializerAndOutOfClassCopyInitializer {
-  static const int i = 0; // expected-note{{previous initialization is here}}
+  static const int i = 0; // expected-note{{previous definition is here}}
 };
-int const InClassInitializerAndOutOfClassCopyInitializer::i = 0; // expected-error{{static data member 'i' already has an initializer}}
+int const InClassInitializerAndOutOfClassCopyInitializer::i = 0; // expected-error{{redefinition of 'i'}}
 
 struct InClassInitializerAndOutOfClassDirectInitializer {
-  static const int i = 0; // expected-note{{previous initialization is here}}
+  static const int i = 0; // expected-note{{previous definition is here}}
 };
-int const InClassInitializerAndOutOfClassDirectInitializer::i(0); // expected-error{{static data member 'i' already has an initializer}}
+int const InClassInitializerAndOutOfClassDirectInitializer::i(0); // expected-error{{redefinition of 'i'}}
+
 
 
 int main() { }

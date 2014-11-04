@@ -1,4 +1,3 @@
-
 ;===- ./projects/LLVMBuild.txt ---------------------------------*- Conf -*--===;
 ;
 ;                     The LLVM Compiler Infrastructure

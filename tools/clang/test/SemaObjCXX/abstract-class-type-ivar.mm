@@ -1,6 +1,5 @@
 // RUN: %clang_cc1 -fsyntax-only -verify -Wno-objc-root-class %s
 // rdar://12095239
-// rdar://14261999
 
 class CppAbstractBase {
 public:
@@ -17,14 +16,11 @@ class CppConcreteSub : public CppAbstractBase {
     CppConcreteSub _concrete; // expected-error{{instance variable type 'CppConcreteSub' is an abstract class}}
 }
 - (CppAbstractBase*)abstract;
-@property (nonatomic, readonly) const CppConcreteSub Prop;  // expected-note {{property declared here}}
 @end
-
 @implementation Objc
 - (CppAbstractBase*)abstract {
     return &_concrete;
 }
-@synthesize Prop; // expected-error {{synthesized instance variable type 'const CppConcreteSub' is an abstract class}}
 @end
 
 class Cpp {

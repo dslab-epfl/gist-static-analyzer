@@ -7,7 +7,7 @@ declare void @foo()
 ; This testcase tests for a problem where LICM hoists 
 ; potentially trapping instructions when they are not guaranteed to execute.
 define i32 @test1(i1 %c) {
-; CHECK-LABEL: @test1(
+; CHECK: @test1
 	%A = load i32* @X		; <i32> [#uses=2]
 	br label %Loop
 Loop:		; preds = %LoopTail, %0
@@ -34,7 +34,7 @@ declare void @foo2(i32) nounwind
 
 ;; It is ok and desirable to hoist this potentially trapping instruction.
 define i32 @test2(i1 %c) {
-; CHECK-LABEL: @test2(
+; CHECK: @test2
 ; CHECK-NEXT: load i32* @X
 ; CHECK-NEXT: %B = sdiv i32 4, %A
 	%A = load i32* @X		; <i32> [#uses=2]
@@ -52,7 +52,7 @@ Out:		; preds = %Loop
 
 ; This loop invariant instruction should be constant folded, not hoisted.
 define i32 @test3(i1 %c) {
-; CHECK-LABEL: define i32 @test3(
+; CHECK: define i32 @test3
 ; CHECK: call void @foo2(i32 6)
 	%A = load i32* @X		; <i32> [#uses=2]
 	br label %Loop
@@ -65,7 +65,7 @@ Out:		; preds = %Loop
 	ret i32 %C
 }
 
-; CHECK-LABEL: @test4(
+; CHECK: @test4
 ; CHECK: call
 ; CHECK: sdiv
 ; CHECK: ret
@@ -90,29 +90,3 @@ for.end:                                          ; preds = %for.body
 
 declare void @foo_may_call_exit(i32)
 
-; PR14854
-; CHECK-LABEL: @test5(
-; CHECK: extractvalue
-; CHECK: br label %tailrecurse
-; CHECK: tailrecurse:
-; CHECK: ifend:
-; CHECK: insertvalue
-define { i32*, i32 } @test5(i32 %i, { i32*, i32 } %e) {
-entry:
-  br label %tailrecurse
-
-tailrecurse:                                      ; preds = %then, %entry
-  %i.tr = phi i32 [ %i, %entry ], [ %cmp2, %then ]
-  %out = extractvalue { i32*, i32 } %e, 1
-  %d = insertvalue { i32*, i32 } %e, i32* null, 0
-  %cmp1 = icmp sgt i32 %out, %i.tr
-  br i1 %cmp1, label %then, label %ifend
-
-then:                                             ; preds = %tailrecurse
-  call void @foo()
-  %cmp2 = add i32 %i.tr, 1
-  br label %tailrecurse
-
-ifend:                                            ; preds = %tailrecurse
-  ret { i32*, i32 } %d
-}

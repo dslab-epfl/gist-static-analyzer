@@ -10,7 +10,6 @@
 
 #define NS_INLINE static __inline__ __attribute__((always_inline))
 #define nil ((void*) 0)
-#define NULL ((void*)0)
 
 typedef int BOOL;
 typedef unsigned NSUInteger;
@@ -103,8 +102,3 @@ NS_INLINE id CFBridgingRelease(CFTypeRef CF_CONSUMED X) {
 }
 
 #endif
-
-void *_Block_copy(const void *aBlock);
-void _Block_release(const void *aBlock);
-#define Block_copy(...) ((__typeof(__VA_ARGS__))_Block_copy((const void *)(__VA_ARGS__)))
-#define Block_release(...) _Block_release((const void *)(__VA_ARGS__))

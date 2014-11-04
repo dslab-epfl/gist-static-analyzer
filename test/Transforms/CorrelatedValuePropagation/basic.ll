@@ -1,7 +1,7 @@
 ; RUN: opt < %s -correlated-propagation -S | FileCheck %s
 ; PR2581
 
-; CHECK-LABEL: @test1(
+; CHECK: @test1
 define i32 @test1(i1 %C) nounwind  {
         br i1 %C, label %exit, label %body
 
@@ -18,7 +18,7 @@ exit:           ; preds = %0
 
 ; PR4420
 declare i1 @ext()
-; CHECK-LABEL: @test2(
+; CHECK: @test2
 define i1 @test2() {
 entry:
         %cond = tail call i1 @ext()             ; <i1> [#uses=2]
@@ -42,7 +42,7 @@ bb3:            ; preds = %bb1
 
 ; PR4855
 @gv = internal constant i8 7
-; CHECK-LABEL: @test3(
+; CHECK: @test3
 define i8 @test3(i8* %a) nounwind {
 entry:
         %cond = icmp eq i8* %a, @gv
@@ -58,7 +58,7 @@ bb2:            ; preds = %entry
 }
 
 ; PR1757
-; CHECK-LABEL: @test4(
+; CHECK: @test4
 define i32 @test4(i32) {
 EntryBlock:
 ; CHECK: icmp sgt i32 %0, 2  
@@ -81,28 +81,8 @@ LessThanOrEqualToTwo:
   ret i32 0
 }
 
-declare i32* @f(i32*)
-define void @test5(i32* %x, i32* %y) {
-; CHECK-LABEL: @test5(
-entry:
-  %pre = icmp eq i32* %x, null
-  br i1 %pre, label %return, label %loop
-
-loop:
-  %phi = phi i32* [ %sel, %loop ], [ %x, %entry ]
-; CHECK: %phi = phi i32* [ %f, %loop ], [ %x, %entry ]
-  %f = tail call i32* @f(i32* %phi)
-  %cmp1 = icmp ne i32* %f, %y
-  %sel = select i1 %cmp1, i32* %f, i32* null
-  %cmp2 = icmp eq i32* %sel, null
-  br i1 %cmp2, label %return, label %loop
-
-return:
-  ret void
-}
-
 define i32 @switch1(i32 %s) {
-; CHECK-LABEL: @switch1(
+; CHECK: @switch1
 entry:
   %cmp = icmp slt i32 %s, 0
   br i1 %cmp, label %negative, label %out
@@ -125,7 +105,7 @@ negative:
   ]
 
 out:
-  %p = phi i32 [ 1, %entry ], [ -1, %negative ], [ -1, %negative ], [ -1, %negative ], [ -1, %negative ], [ -1, %negative ]
+  %p = phi i32 [ 1, %entry ], [ -1, %negative ], [ -1, %negative ], [ -1, %negative ], [ -1, %negative ]
   ret i32 %p
 
 next:
@@ -134,7 +114,7 @@ next:
 }
 
 define i32 @switch2(i32 %s) {
-; CHECK-LABEL: @switch2(
+; CHECK: @switch2
 entry:
   %cmp = icmp sgt i32 %s, 0
   br i1 %cmp, label %positive, label %out
@@ -157,7 +137,7 @@ next:
 }
 
 define i32 @switch3(i32 %s) {
-; CHECK-LABEL: @switch3(
+; CHECK: @switch3
 entry:
   %cmp = icmp sgt i32 %s, 0
   br i1 %cmp, label %positive, label %out
@@ -180,7 +160,7 @@ next:
 }
 
 define void @switch4(i32 %s) {
-; CHECK-LABEL: @switch4(
+; CHECK: @switch4
 entry:
   %cmp = icmp eq i32 %s, 0
   br i1 %cmp, label %zero, label %out

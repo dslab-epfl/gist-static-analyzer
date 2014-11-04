@@ -1,3 +1,5 @@
+.. _extending_llvm:
+
 ============================================================
 Extending LLVM: Adding instructions, intrinsics, types, etc.
 ============================================================
@@ -45,7 +47,7 @@ function and then be turned into an instruction if warranted.
    what the restrictions are.  Talk to other people about it so that you are
    sure it's a good idea.
 
-#. ``llvm/include/llvm/IR/Intrinsics*.td``:
+#. ``llvm/include/llvm/Intrinsics*.td``:
 
    Add an entry for your intrinsic.  Describe its memory access characteristics
    for optimization (this controls whether it will be DCE'd, CSE'd, etc). Note
@@ -281,12 +283,12 @@ Adding a derived type
 
    add ability to parse in the type from text assembly
 
-#. ``llvm/lib/Bitcode/Writer/Writer.cpp``:
+#. ``llvm/lib/BitCode/Writer/Writer.cpp``:
 
    modify ``void BitcodeWriter::outputType(const Type *T)`` to serialize your
    type
 
-#. ``llvm/lib/Bitcode/Reader/Reader.cpp``:
+#. ``llvm/lib/BitCode/Reader/Reader.cpp``:
 
    modify ``const Type *BitcodeReader::ParseType()`` to read your data type
 

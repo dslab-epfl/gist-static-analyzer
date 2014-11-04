@@ -7,11 +7,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_CODEGEN_CODEGENACTION_H
-#define LLVM_CLANG_CODEGEN_CODEGENACTION_H
+#ifndef LLVM_CLANG_CODEGEN_CODE_GEN_ACTION_H
+#define LLVM_CLANG_CODEGEN_CODE_GEN_ACTION_H
 
 #include "clang/Frontend/FrontendAction.h"
-#include <memory>
+#include "llvm/ADT/OwningPtr.h"
 
 namespace llvm {
   class LLVMContext;
@@ -24,7 +24,7 @@ class BackendConsumer;
 class CodeGenAction : public ASTFrontendAction {
 private:
   unsigned Act;
-  std::unique_ptr<llvm::Module> TheModule;
+  OwningPtr<llvm::Module> TheModule;
   llvm::Module *LinkModule;
   llvm::LLVMContext *VMContext;
   bool OwnsVMContext;
@@ -33,16 +33,16 @@ protected:
   /// Create a new code generation action.  If the optional \p _VMContext
   /// parameter is supplied, the action uses it without taking ownership,
   /// otherwise it creates a fresh LLVM context and takes ownership.
-  CodeGenAction(unsigned _Act, llvm::LLVMContext *_VMContext = nullptr);
+  CodeGenAction(unsigned _Act, llvm::LLVMContext *_VMContext = 0);
 
-  bool hasIRSupport() const override;
+  virtual bool hasIRSupport() const;
 
-  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
-                                                 StringRef InFile) override;
+  virtual ASTConsumer *CreateASTConsumer(CompilerInstance &CI,
+                                         StringRef InFile);
 
-  void ExecuteAction() override;
+  virtual void ExecuteAction();
 
-  void EndSourceFileAction() override;
+  virtual void EndSourceFileAction();
 
 public:
   ~CodeGenAction();
@@ -52,9 +52,9 @@ public:
   /// the action will load it from the specified file.
   void setLinkModule(llvm::Module *Mod) { LinkModule = Mod; }
 
-  /// Take the generated LLVM module, for use after the action has been run.
-  /// The result may be null on failure.
-  std::unique_ptr<llvm::Module> takeModule();
+  /// takeModule - Take the generated LLVM module, for use after the action has
+  /// been run. The result may be null on failure.
+  llvm::Module *takeModule();
 
   /// Take the LLVM context used by this action.
   llvm::LLVMContext *takeLLVMContext();
@@ -65,37 +65,37 @@ public:
 class EmitAssemblyAction : public CodeGenAction {
   virtual void anchor();
 public:
-  EmitAssemblyAction(llvm::LLVMContext *_VMContext = nullptr);
+  EmitAssemblyAction(llvm::LLVMContext *_VMContext = 0);
 };
 
 class EmitBCAction : public CodeGenAction {
   virtual void anchor();
 public:
-  EmitBCAction(llvm::LLVMContext *_VMContext = nullptr);
+  EmitBCAction(llvm::LLVMContext *_VMContext = 0);
 };
 
 class EmitLLVMAction : public CodeGenAction {
   virtual void anchor();
 public:
-  EmitLLVMAction(llvm::LLVMContext *_VMContext = nullptr);
+  EmitLLVMAction(llvm::LLVMContext *_VMContext = 0);
 };
 
 class EmitLLVMOnlyAction : public CodeGenAction {
   virtual void anchor();
 public:
-  EmitLLVMOnlyAction(llvm::LLVMContext *_VMContext = nullptr);
+  EmitLLVMOnlyAction(llvm::LLVMContext *_VMContext = 0);
 };
 
 class EmitCodeGenOnlyAction : public CodeGenAction {
   virtual void anchor();
 public:
-  EmitCodeGenOnlyAction(llvm::LLVMContext *_VMContext = nullptr);
+  EmitCodeGenOnlyAction(llvm::LLVMContext *_VMContext = 0);
 };
 
 class EmitObjAction : public CodeGenAction {
   virtual void anchor();
 public:
-  EmitObjAction(llvm::LLVMContext *_VMContext = nullptr);
+  EmitObjAction(llvm::LLVMContext *_VMContext = 0);
 };
 
 }

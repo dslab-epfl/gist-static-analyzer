@@ -1,7 +1,4 @@
-// RUN: %clang_cc1 -emit-llvm %s -o - | FileCheck %s
-// RUN: %clang_cc1 -fno-inline -emit-llvm %s -o - | FileCheck %s
-
-// CHECK-NOT: foo
+// RUN: %clang_cc1 -emit-llvm %s -o - | grep call | not grep foo
 
 void bar() {
 }

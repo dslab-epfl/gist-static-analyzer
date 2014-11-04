@@ -5,28 +5,24 @@ Code Reviews with Phabricator
 .. contents::
   :local:
 
-If you prefer to use a web user interface for code reviews, you can now submit
-your patches for Clang and LLVM at `LLVM's Phabricator`_ instance.
-
-While Phabricator is a useful tool for some, the relevant -commits mailing list
-is the system of record for all LLVM code review. The mailing list should be
-added as a subscriber on all reviews, and Phabricator users should be prepared
-to respond to free-form comments in mail sent to the commits list.
+If you prefer to use a web user interface for code reviews,
+you can now submit your patches for Clang and LLVM at
+`LLVM's Phabricator`_.
 
 Sign up
 -------
 
-To get started with Phabricator, navigate to `http://reviews.llvm.org`_ and
-click the power icon in the top right. You can register with a GitHub account,
-a Google account, or you can create your own profile.
-
-Make *sure* that the email address registered with Phabricator is subscribed
-to the relevant -commits mailing list. If your are not subscribed to the commit
-list, all mail sent by Phabricator on your behalf will be held for moderation.
+There are two options to get an account on Phabricator. You can sign up
+immediately with one of the supported OAuth account types if you're comfortable
+with OAuth, but you can also email chandlerc@gmail.com to request an account to
+be created manually without using OAuth. We're working to get support in
+Phabricator to directly create new accounts, but currently this is a manual
+process.
 
 Note that if you use your Subversion user name as Phabricator user name,
 Phabricator will automatically connect your submits to your Phabricator user in
 the `Code Repository Browser`_.
+
 
 Requesting a review via the command line
 ----------------------------------------
@@ -60,7 +56,7 @@ to upload your patch):
 To upload a new patch:
 
 * Click *Differential*.
-* Click *Create Diff*.
+* Click *Create Revision*.
 * Paste the text diff or upload the patch file.
   Note that TODO
 * Leave the drop down on *Create a new Revision...* and click *Continue*.
@@ -72,7 +68,7 @@ To upload a new patch:
 To submit an updated patch:
 
 * Click *Differential*.
-* Click *Create Diff*.
+* Click *Create Revision*.
 * Paste the updated diff.
 * Select the review you want to from the *Attach To* dropdown and click
   *Continue*.
@@ -92,48 +88,13 @@ diffs between different versions of the patch as it was reviewed in the
 *Revision Update History*. Most features are self descriptive - explore, and
 if you have a question, drop by on #llvm in IRC to get help.
 
-Note that as e-mail is the system of reference for code reviews, and some
-people prefer it over a web interface, we do not generate automated mail
-when a review changes state, for example by clicking "Accept Revision" in
-the web interface. Thus, please type LGTM into the comment box to accept
-a change from Phabricator.
-
-Committing a change
--------------------
-
-Arcanist can manage the commit transparently. It will retrieve the description,
-reviewers, the ``Differential Revision``, etc from the review and commit it to the repository.
-
-::
-
-  arc patch D<Revision>
-  arc commit --revision D<Revision>
-
-
-When committing an LLVM change that has been reviewed using
-Phabricator, the convention is for the commit message to end with the
-line:
-
-::
-
-  Differential Revision: <URL>
-
-where ``<URL>`` is the URL for the code review, starting with
-``http://reviews.llvm.org/``.
-
-Note that Arcanist will add this automatically.
-
-This allows people reading the version history to see the review for
-context.  This also allows Phabricator to detect the commit, close the
-review, and add a link from the review to the commit.
-
 Status
 ------
 
-Please let us know whether you like it and what could be improved!
+Currently, we're testing Phabricator for use with Clang/LLVM. Please let us
+know whether you like it and what could be improved!
 
-.. _LLVM's Phabricator: http://reviews.llvm.org
-.. _`http://reviews.llvm.org`: http://reviews.llvm.org
-.. _Code Repository Browser: http://reviews.llvm.org/diffusion/
+.. _LLVM's Phabricator: http://llvm-reviews.chandlerc.com
+.. _Code Repository Browser: http://llvm-reviews.chandlerc.com/diffusion/
 .. _Arcanist Quick Start: http://www.phabricator.com/docs/phabricator/article/Arcanist_Quick_Start.html
 .. _Arcanist User Guide: http://www.phabricator.com/docs/phabricator/article/Arcanist_User_Guide.html

@@ -12,12 +12,3 @@ namespace PR12866 {
     (void)sizeof(bar::member);
   }
 }
-
-namespace PR20021 {
-class C {
-  union {
-    static_assert(true, "");
-    int i;
-  };
-};
-}

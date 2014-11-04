@@ -118,7 +118,7 @@ namespace IncompleteClassTypeAddr {
   constexpr S (*p2)[] = &sArr; // ok
 
   struct S {
-    constexpr S *operator&() const { return nullptr; }
+    constexpr S *operator&() { return nullptr; }
   };
   constexpr S *q = &s; // ok
   static_assert(!q, "");
@@ -138,7 +138,7 @@ namespace UndefinedBehavior {
     case (int)(unsigned)(long long)4.4e9: // ok
     case (int)(float)1e300: // expected-error {{constant expression}} expected-note {{value 1.0E+300 is outside the range of representable values of type 'float'}} expected-error {{duplicate case value '2147483647'}} expected-note {{previous case defined here}}
     case (int)((float)1e37 / 1e30): // ok
-    case (int)(__fp16)65536: // expected-error {{constant expression}} expected-note {{value 65536 is outside the range of representable values of type '__fp16'}} expected-error {{duplicate case value '2147483647'}}
+    case (int)(__fp16)65536: // expected-error {{constant expression}} expected-note {{value 65536 is outside the range of representable values of type 'half'}} expected-error {{duplicate case value '2147483647'}}
       break;
     }
   }
@@ -202,12 +202,10 @@ namespace UndefinedBehavior {
     static_assert((A*)nb == 0, "");
     static_assert((B*)na == 0, "");
     constexpr const int &nf = nb->n; // expected-error {{constant expression}} expected-note {{cannot access field of null pointer}}
-    constexpr const int *np1 = (int*)nullptr + 0; // ok
-    constexpr const int *np2 = &(*(int(*)[4])nullptr)[0]; // ok
-    constexpr const int *np3 = &(*(int(*)[4])nullptr)[2]; // expected-error {{constant expression}} expected-note {{cannot perform pointer arithmetic on null pointer}}
+    constexpr const int &np = (*(int(*)[4])nullptr)[2]; // expected-error {{constant expression}} expected-note {{cannot access array element of null pointer}}
 
     struct C {
-      constexpr int f() const { return 0; }
+      constexpr int f() { return 0; }
     } constexpr c = C();
     constexpr int k1 = c.f(); // ok
     constexpr int k2 = ((C*)nullptr)->f(); // expected-error {{constant expression}} expected-note {{cannot call member function on null pointer}}
@@ -277,7 +275,9 @@ namespace UndefinedBehavior {
 
 // - a lambda-expression (5.1.2);
 struct Lambda {
-  int n : []{ return 1; }(); // expected-error {{constant expression}} expected-error {{integral constant expression}} expected-note {{non-literal type}}
+  // FIXME: clang crashes when trying to parse this! Revisit this check once
+  // lambdas are fully implemented.
+  //int n : []{ return 1; }();
 };
 
 // - an lvalue-to-rvalue conversion (4.1) unless it is applied to
@@ -322,7 +322,7 @@ namespace LValueToRValue {
   //   constant expression;
   constexpr volatile S f() { return S(); }
   static_assert(f().i, ""); // ok! there's no lvalue-to-rvalue conversion here!
-  static_assert(((volatile const S&&)(S)0).i, ""); // expected-error {{constant expression}} expected-note {{read of volatile-qualified type}}
+  static_assert(((volatile const S&&)(S)0).i, ""); // expected-error {{constant expression}}
 }
 
 // DR1312: The proposed wording for this defect has issues, so we ignore this
@@ -481,19 +481,17 @@ namespace UnspecifiedRelations {
   public:
     constexpr A() : a(0), b(0) {}
     int a;
-    constexpr bool cmp() const { return &a < &b; } // expected-note {{comparison of address of fields 'a' and 'b' of 'A' with differing access specifiers (public vs private) has unspecified value}}
+    constexpr bool cmp() { return &a < &b; } // expected-error {{constexpr function never produces a constant expression}} expected-note {{comparison of address of fields 'a' and 'b' of 'A' with differing access specifiers (public vs private) has unspecified value}}
   private:
     int b;
   };
-  static_assert(A().cmp(), ""); // expected-error {{constant expression}} expected-note {{in call}}
   class B {
   public:
     A a;
-    constexpr bool cmp() const { return &a.a < &b.a; } // expected-note {{comparison of address of fields 'a' and 'b' of 'B' with differing access specifiers (public vs protected) has unspecified value}}
+    constexpr bool cmp() { return &a.a < &b.a; } // expected-error {{constexpr function never produces a constant expression}} expected-note {{comparison of address of fields 'a' and 'b' of 'B' with differing access specifiers (public vs protected) has unspecified value}}
   protected:
     A b;
   };
-  static_assert(B().cmp(), ""); // expected-error {{constant expression}} expected-note {{in call}}
 
   // If two pointers point to different base sub-objects of the same object, or
   // one points to a base subobject and the other points to a member, the result
@@ -596,16 +594,3 @@ static const bool or_value = and_or<true>::or_value;
 
 static_assert(and_value == false, "");
 static_assert(or_value == true, "");
-
-namespace rdar13090123 {
-  typedef __INTPTR_TYPE__ intptr_t;
-
-  constexpr intptr_t f(intptr_t x) {
-    return (((x) >> 21) * 8); // expected-note{{subexpression not valid in a constant expression}}
-  }
-
-  extern "C" int foo;
-
-  constexpr intptr_t i = f((intptr_t)&foo - 10); // expected-error{{constexpr variable 'i' must be initialized by a constant expression}} \
-  // expected-note{{in call to 'f((char*)&foo + -10)'}}
-}

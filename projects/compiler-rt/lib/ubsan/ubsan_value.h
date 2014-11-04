@@ -14,19 +14,18 @@
 #ifndef UBSAN_VALUE_H
 #define UBSAN_VALUE_H
 
-// For now, only support Linux, FreeBSD and Darwin. Other platforms should
-// be easy to add, and probably work as-is.
-#if !defined(__linux__) && !defined(__FreeBSD__) && !defined(__APPLE__)
+// For now, only support linux. Other platforms should be easy to add, and
+// probably work as-is.
+#if !defined(__linux__)
 #error "UBSan not supported for this platform!"
 #endif
 
-#include "sanitizer_common/sanitizer_atomic.h"
 #include "sanitizer_common/sanitizer_common.h"
 
 // FIXME: Move this out to a config header.
-#if __SIZEOF_INT128__
-__extension__ typedef __int128 s128;
-__extension__ typedef unsigned __int128 u128;
+#if defined(__clang__) || __SIZEOF_INT128__
+typedef __int128 s128;
+typedef unsigned __int128 u128;
 #define HAVE_INT128_T 1
 #else
 #define HAVE_INT128_T 0
@@ -47,6 +46,7 @@ typedef u64 UIntMax;
 /// \brief Largest floating-point type we support.
 typedef long double FloatMax;
 
+
 /// \brief A description of a source location. This corresponds to Clang's
 /// \c PresumedLoc type.
 class SourceLocation {
@@ -61,21 +61,6 @@ public:
 
   /// \brief Determine whether the source location is known.
   bool isInvalid() const { return !Filename; }
-
-  /// \brief Atomically acquire a copy, disabling original in-place.
-  /// Exactly one call to acquire() returns a copy that isn't disabled.
-  SourceLocation acquire() {
-    u32 OldColumn = __sanitizer::atomic_exchange(
-                        (__sanitizer::atomic_uint32_t *)&Column, ~u32(0),
-                        __sanitizer::memory_order_relaxed);
-    return SourceLocation(Filename, Line, OldColumn);
-  }
-
-  /// \brief Determine if this Location has been disabled.
-  /// Disabled SourceLocations are invalid to use.
-  bool isDisabled() {
-    return Column == ~u32(0);
-  }
 
   /// \brief Get the presumed filename for the source location.
   const char *getFilename() const { return Filename; }
@@ -108,8 +93,7 @@ public:
     /// integer otherwise.
     TK_Integer = 0x0000,
     /// A floating-point type. Low 16 bits are bit width. The value
-    /// representation is that of bitcasting the floating-point value to an
-    /// integer type.
+    /// representation is a pointer to the floating-point value.
     TK_Float = 0x0001,
     /// Any other type. The value representation is unspecified.
     TK_Unknown = 0xffff
@@ -160,14 +144,6 @@ class Value {
     CHECK(getType().isIntegerTy());
     const unsigned InlineBits = sizeof(ValueHandle) * 8;
     const unsigned Bits = getType().getIntegerBitWidth();
-    return Bits <= InlineBits;
-  }
-
-  /// Is \c Val a (zero-extended) integer representation of a float?
-  bool isInlineFloat() const {
-    CHECK(getType().isFloatTy());
-    const unsigned InlineBits = sizeof(ValueHandle) * 8;
-    const unsigned Bits = getType().getFloatBitWidth();
     return Bits <= InlineBits;
   }
 

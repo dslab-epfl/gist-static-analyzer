@@ -10,7 +10,6 @@ entry:
 	store i32 0, i32* %tmp
 	%tmp1 = load i32* %tmp		; <i32> [#uses=1]
 	store i32 %tmp1, i32* %retval
-	call void @llvm.va_start(i8* null)
 	br label %return
 
 return:		; preds = %entry
@@ -21,5 +20,3 @@ return:		; preds = %entry
 ; OABI: add sp, sp, #12
 ; OABI: add sp, sp, #12
 }
-
-declare void @llvm.va_start(i8*) nounwind

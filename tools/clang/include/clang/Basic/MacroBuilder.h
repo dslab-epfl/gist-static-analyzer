@@ -15,7 +15,6 @@
 #ifndef LLVM_CLANG_BASIC_MACROBUILDER_H
 #define LLVM_CLANG_BASIC_MACROBUILDER_H
 
-#include "clang/Basic/LLVM.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/raw_ostream.h"
 

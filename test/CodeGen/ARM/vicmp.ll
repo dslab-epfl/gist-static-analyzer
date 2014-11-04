@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm -mattr=+neon %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm -mattr=+neon | FileCheck %s
 
 ; This tests icmp operations that do not map directly to NEON instructions.
 ; Not-equal (ne) operations are implemented by VCEQ/VMVN.  Less-than (lt/ult)
@@ -7,7 +7,7 @@
 ; the other operations.
 
 define <8 x i8> @vcnei8(<8 x i8>* %A, <8 x i8>* %B) nounwind {
-;CHECK-LABEL: vcnei8:
+;CHECK: vcnei8:
 ;CHECK: vceq.i8
 ;CHECK-NEXT: vmvn
 	%tmp1 = load <8 x i8>* %A
@@ -18,7 +18,7 @@ define <8 x i8> @vcnei8(<8 x i8>* %A, <8 x i8>* %B) nounwind {
 }
 
 define <4 x i16> @vcnei16(<4 x i16>* %A, <4 x i16>* %B) nounwind {
-;CHECK-LABEL: vcnei16:
+;CHECK: vcnei16:
 ;CHECK: vceq.i16
 ;CHECK-NEXT: vmvn
 	%tmp1 = load <4 x i16>* %A
@@ -29,7 +29,7 @@ define <4 x i16> @vcnei16(<4 x i16>* %A, <4 x i16>* %B) nounwind {
 }
 
 define <2 x i32> @vcnei32(<2 x i32>* %A, <2 x i32>* %B) nounwind {
-;CHECK-LABEL: vcnei32:
+;CHECK: vcnei32:
 ;CHECK: vceq.i32
 ;CHECK-NEXT: vmvn
 	%tmp1 = load <2 x i32>* %A
@@ -40,7 +40,7 @@ define <2 x i32> @vcnei32(<2 x i32>* %A, <2 x i32>* %B) nounwind {
 }
 
 define <16 x i8> @vcneQi8(<16 x i8>* %A, <16 x i8>* %B) nounwind {
-;CHECK-LABEL: vcneQi8:
+;CHECK: vcneQi8:
 ;CHECK: vceq.i8
 ;CHECK-NEXT: vmvn
 	%tmp1 = load <16 x i8>* %A
@@ -51,7 +51,7 @@ define <16 x i8> @vcneQi8(<16 x i8>* %A, <16 x i8>* %B) nounwind {
 }
 
 define <8 x i16> @vcneQi16(<8 x i16>* %A, <8 x i16>* %B) nounwind {
-;CHECK-LABEL: vcneQi16:
+;CHECK: vcneQi16:
 ;CHECK: vceq.i16
 ;CHECK-NEXT: vmvn
 	%tmp1 = load <8 x i16>* %A
@@ -62,7 +62,7 @@ define <8 x i16> @vcneQi16(<8 x i16>* %A, <8 x i16>* %B) nounwind {
 }
 
 define <4 x i32> @vcneQi32(<4 x i32>* %A, <4 x i32>* %B) nounwind {
-;CHECK-LABEL: vcneQi32:
+;CHECK: vcneQi32:
 ;CHECK: vceq.i32
 ;CHECK-NEXT: vmvn
 	%tmp1 = load <4 x i32>* %A
@@ -73,7 +73,7 @@ define <4 x i32> @vcneQi32(<4 x i32>* %A, <4 x i32>* %B) nounwind {
 }
 
 define <16 x i8> @vcltQs8(<16 x i8>* %A, <16 x i8>* %B) nounwind {
-;CHECK-LABEL: vcltQs8:
+;CHECK: vcltQs8:
 ;CHECK: vcgt.s8
 	%tmp1 = load <16 x i8>* %A
 	%tmp2 = load <16 x i8>* %B
@@ -83,7 +83,7 @@ define <16 x i8> @vcltQs8(<16 x i8>* %A, <16 x i8>* %B) nounwind {
 }
 
 define <4 x i16> @vcles16(<4 x i16>* %A, <4 x i16>* %B) nounwind {
-;CHECK-LABEL: vcles16:
+;CHECK: vcles16:
 ;CHECK: vcge.s16
 	%tmp1 = load <4 x i16>* %A
 	%tmp2 = load <4 x i16>* %B
@@ -93,7 +93,7 @@ define <4 x i16> @vcles16(<4 x i16>* %A, <4 x i16>* %B) nounwind {
 }
 
 define <4 x i16> @vcltu16(<4 x i16>* %A, <4 x i16>* %B) nounwind {
-;CHECK-LABEL: vcltu16:
+;CHECK: vcltu16:
 ;CHECK: vcgt.u16
 	%tmp1 = load <4 x i16>* %A
 	%tmp2 = load <4 x i16>* %B
@@ -103,7 +103,7 @@ define <4 x i16> @vcltu16(<4 x i16>* %A, <4 x i16>* %B) nounwind {
 }
 
 define <4 x i32> @vcleQu32(<4 x i32>* %A, <4 x i32>* %B) nounwind {
-;CHECK-LABEL: vcleQu32:
+;CHECK: vcleQu32:
 ;CHECK: vcge.u32
 	%tmp1 = load <4 x i32>* %A
 	%tmp2 = load <4 x i32>* %B

@@ -1,9 +1,9 @@
-; RUN: llc < %s -mtriple=x86_64-apple-darwin -no-integrated-as | FileCheck %s
+; RUN: llc < %s -mtriple=x86_64-apple-darwin | FileCheck %s
 ; pr5391
 
 define void @t() nounwind ssp {
 entry:
-; CHECK-LABEL: t:
+; CHECK: t:
 ; CHECK: movl %ecx, %eax
 ; CHECK: %eax = foo (%eax, %ecx)
   %b = alloca i32                                 ; <i32*> [#uses=2]
@@ -21,7 +21,7 @@ return:                                           ; preds = %entry
 
 define void @t2() nounwind ssp {
 entry:
-; CHECK-LABEL: t2:
+; CHECK: t2:
 ; CHECK: movl
 ; CHECK: [[D2:%e.x]] = foo
 ; CHECK: ([[D2]],

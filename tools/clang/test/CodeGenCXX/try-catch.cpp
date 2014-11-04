@@ -11,11 +11,3 @@ void f() {
   } catch (const X x) {
   }
 }
-
-void h() {
-  try {
-    throw "ABC";
-    // CHECK: @_ZTIPKc to i8
-  } catch (char const(&)[4]) {
-  }
-}

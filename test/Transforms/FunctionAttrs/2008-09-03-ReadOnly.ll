@@ -1,13 +1,9 @@
-; RUN: opt < %s -basicaa -functionattrs -S | FileCheck %s
+; RUN: opt < %s -basicaa -functionattrs -S | grep readonly | count 2
 
-; CHECK: define i32 @f() #0
 define i32 @f() {
 entry:
-  %tmp = call i32 @e( )
-  ret i32 %tmp
+	%tmp = call i32 @e( )		; <i32> [#uses=1]
+	ret i32 %tmp
 }
 
-; CHECK: declare i32 @e() #0
 declare i32 @e() readonly
-
-; CHECK: attributes #0 = { readonly }

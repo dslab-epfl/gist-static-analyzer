@@ -14,17 +14,17 @@
 #ifndef LLVM_CLANG_AST_CXXINHERITANCE_H
 #define LLVM_CLANG_AST_CXXINHERITANCE_H
 
+#include "clang/AST/DeclarationName.h"
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/DeclCXX.h"
-#include "clang/AST/DeclarationName.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/TypeOrdering.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
-#include <cassert>
 #include <list>
 #include <map>
+#include <cassert>
 
 namespace clang {
   
@@ -177,8 +177,8 @@ public:
                         bool RecordPaths = true,
                         bool DetectVirtual = true)
     : FindAmbiguities(FindAmbiguities), RecordPaths(RecordPaths),
-      DetectVirtual(DetectVirtual), DetectedVirtual(nullptr),
-      DeclsFound(nullptr), NumDeclsFound(0) { }
+      DetectVirtual(DetectVirtual), DetectedVirtual(0), DeclsFound(0),
+      NumDeclsFound(0) { }
   
   ~CXXBasePaths() { delete [] DeclsFound; }
   
@@ -190,8 +190,8 @@ public:
   CXXBasePath&       front()       { return Paths.front(); }
   const CXXBasePath& front() const { return Paths.front(); }
   
-  typedef llvm::iterator_range<decl_iterator> decl_range;
-  decl_range found_decls();
+  decl_iterator found_decls_begin();
+  decl_iterator found_decls_end();
   
   /// \brief Determine whether the path from the most-derived type to the
   /// given base type is ambiguous (i.e., it refers to multiple subobjects of
@@ -232,8 +232,7 @@ public:
 /// \brief Uniquely identifies a virtual method within a class
 /// hierarchy by the method itself and a class subobject number.
 struct UniqueVirtualMethod {
-  UniqueVirtualMethod()
-    : Method(nullptr), Subobject(0), InVirtualSubobject(nullptr) { }
+  UniqueVirtualMethod() : Method(0), Subobject(0), InVirtualSubobject(0) { }
 
   UniqueVirtualMethod(CXXMethodDecl *Method, unsigned Subobject,
                       const CXXRecordDecl *InVirtualSubobject)
@@ -288,9 +287,9 @@ public:
 
   // Iterate over the set of overriding virtual methods in a given
   // subobject.
-  typedef SmallVectorImpl<UniqueVirtualMethod>::iterator
+  typedef SmallVector<UniqueVirtualMethod, 4>::iterator 
     overriding_iterator;
-  typedef SmallVectorImpl<UniqueVirtualMethod>::const_iterator
+  typedef SmallVector<UniqueVirtualMethod, 4>::const_iterator
     overriding_const_iterator;
 
   // Add a new overriding method for a particular subobject.

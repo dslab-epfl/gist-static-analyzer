@@ -1,12 +1,11 @@
-; RUN: llc < %s -O0 -march=x86-64 -mcpu=corei7 -verify-machineinstrs | FileCheck %s --check-prefix X64
-; RUN: llc < %s -O0 -march=x86 -mcpu=corei7 -verify-machineinstrs | FileCheck %s --check-prefix X32
-; RUN: llc < %s -O0 -march=x86 -mcpu=corei7 -mattr=-cmov -verify-machineinstrs | FileCheck %s --check-prefix NOCMOV
+; RUN: llc < %s -O0 -march=x86-64 -mcpu=corei7 | FileCheck %s --check-prefix X64
+; RUN: llc < %s -O0 -march=x86 -mcpu=corei7 | FileCheck %s --check-prefix X32
 
 @sc32 = external global i32
 
 define void @atomic_fetch_add32() nounwind {
-; X64-LABEL:   atomic_fetch_add32:
-; X32-LABEL:   atomic_fetch_add32:
+; X64:   atomic_fetch_add32
+; X32:   atomic_fetch_add32
 entry:
 ; 32-bit
   %t1 = atomicrmw add  i32* @sc32, i32 1 acquire
@@ -35,8 +34,8 @@ entry:
 }
 
 define void @atomic_fetch_sub32() nounwind {
-; X64-LABEL:   atomic_fetch_sub32:
-; X32-LABEL:   atomic_fetch_sub32:
+; X64:   atomic_fetch_sub32
+; X32:   atomic_fetch_sub32
   %t1 = atomicrmw sub  i32* @sc32, i32 1 acquire
 ; X64:       lock
 ; X64:       decl
@@ -63,8 +62,8 @@ define void @atomic_fetch_sub32() nounwind {
 }
 
 define void @atomic_fetch_and32() nounwind {
-; X64-LABEL:   atomic_fetch_and32:
-; X32-LABEL:   atomic_fetch_and32:
+; X64:   atomic_fetch_and32
+; X32:   atomic_fetch_and32
   %t1 = atomicrmw and  i32* @sc32, i32 3 acquire
 ; X64:       lock
 ; X64:       andl $3
@@ -88,8 +87,8 @@ define void @atomic_fetch_and32() nounwind {
 }
 
 define void @atomic_fetch_or32() nounwind {
-; X64-LABEL:   atomic_fetch_or32:
-; X32-LABEL:   atomic_fetch_or32:
+; X64:   atomic_fetch_or32
+; X32:   atomic_fetch_or32
   %t1 = atomicrmw or   i32* @sc32, i32 3 acquire
 ; X64:       lock
 ; X64:       orl $3
@@ -113,8 +112,8 @@ define void @atomic_fetch_or32() nounwind {
 }
 
 define void @atomic_fetch_xor32() nounwind {
-; X64-LABEL:   atomic_fetch_xor32:
-; X32-LABEL:   atomic_fetch_xor32:
+; X64:   atomic_fetch_xor32
+; X32:   atomic_fetch_xor32
   %t1 = atomicrmw xor  i32* @sc32, i32 3 acquire
 ; X64:       lock
 ; X64:       xorl $3
@@ -138,8 +137,8 @@ define void @atomic_fetch_xor32() nounwind {
 }
 
 define void @atomic_fetch_nand32(i32 %x) nounwind {
-; X64-LABEL:   atomic_fetch_nand32:
-; X32-LABEL:   atomic_fetch_nand32:
+; X64:   atomic_fetch_nand32
+; X32:   atomic_fetch_nand32
   %t1 = atomicrmw nand i32* @sc32, i32 %x acquire
 ; X64:       andl
 ; X64:       notl
@@ -155,113 +154,70 @@ define void @atomic_fetch_nand32(i32 %x) nounwind {
 }
 
 define void @atomic_fetch_max32(i32 %x) nounwind {
-; X64-LABEL: atomic_fetch_max32:
-; X32-LABEL: atomic_fetch_max32:
-
   %t1 = atomicrmw max  i32* @sc32, i32 %x acquire
-; X64:       subl
+; X64:       cmpl
 ; X64:       cmov
 ; X64:       lock
 ; X64:       cmpxchgl
 
-; X32:       subl
+; X32:       cmpl
 ; X32:       cmov
 ; X32:       lock
 ; X32:       cmpxchgl
-
-; NOCMOV:    subl
-; NOCMOV:    jge
-; NOCMOV:    lock
-; NOCMOV:    cmpxchgl
   ret void
 ; X64:       ret
 ; X32:       ret
-; NOCMOV:    ret
 }
 
 define void @atomic_fetch_min32(i32 %x) nounwind {
-; X64-LABEL: atomic_fetch_min32:
-; X32-LABEL: atomic_fetch_min32:
-; NOCMOV-LABEL: atomic_fetch_min32:
-
   %t1 = atomicrmw min  i32* @sc32, i32 %x acquire
-; X64:       subl
+; X64:       cmpl
 ; X64:       cmov
 ; X64:       lock
 ; X64:       cmpxchgl
 
-; X32:       subl
+; X32:       cmpl
 ; X32:       cmov
 ; X32:       lock
 ; X32:       cmpxchgl
-
-; NOCMOV:    subl
-; NOCMOV:    jle
-; NOCMOV:    lock
-; NOCMOV:    cmpxchgl
   ret void
 ; X64:       ret
 ; X32:       ret
-; NOCMOV:    ret
 }
 
 define void @atomic_fetch_umax32(i32 %x) nounwind {
-; X64-LABEL: atomic_fetch_umax32:
-; X32-LABEL: atomic_fetch_umax32:
-; NOCMOV-LABEL: atomic_fetch_umax32:
-
   %t1 = atomicrmw umax i32* @sc32, i32 %x acquire
-; X64:       subl
+; X64:       cmpl
 ; X64:       cmov
 ; X64:       lock
 ; X64:       cmpxchgl
 
-; X32:       subl
+; X32:       cmpl
 ; X32:       cmov
 ; X32:       lock
 ; X32:       cmpxchgl
-
-; NOCMOV:    subl
-; NOCMOV:    ja
-; NOCMOV:    lock
-; NOCMOV:    cmpxchgl
   ret void
 ; X64:       ret
 ; X32:       ret
-; NOCMOV:    ret
 }
 
 define void @atomic_fetch_umin32(i32 %x) nounwind {
-; X64-LABEL: atomic_fetch_umin32:
-; X32-LABEL: atomic_fetch_umin32:
-; NOCMOV-LABEL: atomic_fetch_umin32:
-
   %t1 = atomicrmw umin i32* @sc32, i32 %x acquire
-; X64:       subl
+; X64:       cmpl
 ; X64:       cmov
 ; X64:       lock
 ; X64:       cmpxchgl
-
-; X32:       subl
+; X32:       cmpl
 ; X32:       cmov
 ; X32:       lock
 ; X32:       cmpxchgl
-
-; NOCMOV:    subl
-; NOCMOV:    jb
-; NOCMOV:    lock
-; NOCMOV:    cmpxchgl
   ret void
 ; X64:       ret
 ; X32:       ret
-; NOCMOV:    ret
 }
 
 define void @atomic_fetch_cmpxchg32() nounwind {
-; X64-LABEL: atomic_fetch_cmpxchg32:
-; X32-LABEL: atomic_fetch_cmpxchg32:
-
-  %t1 = cmpxchg i32* @sc32, i32 0, i32 1 acquire acquire
+  %t1 = cmpxchg i32* @sc32, i32 0, i32 1 acquire
 ; X64:       lock
 ; X64:       cmpxchgl
 ; X32:       lock
@@ -272,9 +228,6 @@ define void @atomic_fetch_cmpxchg32() nounwind {
 }
 
 define void @atomic_fetch_store32(i32 %x) nounwind {
-; X64-LABEL: atomic_fetch_store32:
-; X32-LABEL: atomic_fetch_store32:
-
   store atomic i32 %x, i32* @sc32 release, align 4
 ; X64-NOT:   lock
 ; X64:       movl
@@ -286,9 +239,6 @@ define void @atomic_fetch_store32(i32 %x) nounwind {
 }
 
 define void @atomic_fetch_swap32(i32 %x) nounwind {
-; X64-LABEL: atomic_fetch_swap32:
-; X32-LABEL: atomic_fetch_swap32:
-
   %t1 = atomicrmw xchg i32* @sc32, i32 %x acquire
 ; X64-NOT:   lock
 ; X64:       xchgl

@@ -14,53 +14,6 @@ typedef struct {} Z;
 -(void)foo:(Z)a: (char*)b : (Z)c : (double) d {}
 @end
 
-// CHECK: private global [14 x i8] c"v16@0:8{?=}16
-// CHECK: private global [26 x i8] c"v32@0:8{?=}16*16{?=}24d24
+// CHECK: internal global [14 x i8] c"v16@0:8{?=}16
+// CHECK: internal global [26 x i8] c"v32@0:8{?=}16*16{?=}24d24
 
-
-// rdar://13190095
-@interface NSObject @end
-
-@class BABugExample;
-typedef BABugExample BABugExampleRedefinition;
-
-@interface BABugExample : NSObject {
-    BABugExampleRedefinition *_property; // .asciz   "^{BABugExample=^{BABugExample}}"
-}
-@property (copy) BABugExampleRedefinition *property;
-@end
-
-@implementation BABugExample
-@synthesize property = _property;
-@end
-
-// CHECK: private global [24 x i8] c"^{BABugExample=@}16
-
-// rdar://14408244
-@class SCNCamera;
-typedef SCNCamera C3DCamera;
-typedef struct
-{
-    C3DCamera *presentationInstance;
-}  C3DCameraStorage;
-
-@interface SCNCamera
-@end
-
-@implementation SCNCamera
-{
-    C3DCameraStorage _storage;
-}
-@end
-// CHECK: private global [39 x i8] c"{?=\22presentationInstance\22^{SCNCamera}}\00"
-
-// rdar://16655340
-int i;
-typeof(@encode(typeof(i))) e = @encode(typeof(i));
-const char * Test()
-{
-    return e;
-}
-// CHECK: @e = global [2 x i8] c"i\00", align 1
-// CHECK: define i8* @Test()
-// CHECK: ret i8* getelementptr inbounds ([2 x i8]* @e, i32 0, i32 0)

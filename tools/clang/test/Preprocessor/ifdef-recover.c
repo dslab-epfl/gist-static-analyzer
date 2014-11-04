@@ -1,22 +1,15 @@
-/* RUN: %clang_cc1 -E -verify %s
+/* RUN: %clang_cc1 -E %s 2>&1 >/dev/null | grep error: | count 3
  */
 
-/* expected-error@+1 {{macro name missing}} */
 #ifdef
+
 #endif
 
-/* expected-error@+1 {{macro name must be an identifier}} */
-#ifdef !
-#endif
-
-/* expected-error@+1 {{macro name missing}} */
-#if defined
-#endif
-
+/* End of function-like macro invocation in #ifdef */
 /* PR1936 */
-/* expected-error@+2 {{unterminated function-like macro invocation}} expected-error@+2 {{expected value in expression}} expected-note@+1 {{macro 'f' defined here}} */
 #define f(x) x
 #if f(2
 #endif
 
 int x;
+

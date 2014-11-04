@@ -1,9 +1,5 @@
 // RUN: %clang_cc1  -fsyntax-only -verify %s
 // rdar://11062080
-// RUN: %clang_cc1  -fsyntax-only -triple i386-apple-macosx10.9.0 -fobjc-runtime=macosx-fragile-10.9.0 -fobjc-subscripting-legacy-runtime -verify %s
-// rdar://15363492
-
-#define nil ((void *)0)
 
 @interface NSNumber
 + (NSNumber *)numberWithChar:(char)value;
@@ -17,7 +13,6 @@ typedef long NSInteger;
 @interface NSDictionary
 + (id)dictionaryWithObjects:(const id [])objects forKeys:(const id <NSCopying> [])keys count:(NSUInteger)cnt;
 - (void)setObject:(id)object forKeyedSubscript:(id)key;
-- (id)objectForKeyedSubscript:(id)key;
 @end
 
 @interface NSString<NSCopying>
@@ -28,23 +23,11 @@ typedef long NSInteger;
 - (void)setObject:(id)object atIndexedSubscript:(NSInteger)index;
 @end
 
-void *pvoid;
 int main() {
 	NSDictionary *dict = @{ @"name":@666 };
         dict[@"name"] = @666;
 
         dict["name"] = @666; // expected-error {{indexing expression is invalid because subscript type 'char *' is not an Objective-C pointer}}
-
-        // rdar://18254621
-        [@{@"foo" : @"bar"} objectForKeyedSubscript:nil];
-        (void)@{@"foo" : @"bar"}[nil];
-        [@{@"foo" : @"bar"} objectForKeyedSubscript:pvoid];
-        (void)@{@"foo" : @"bar"}[pvoid];
-
-	[@{@"foo" : @"bar"} setObject:nil forKeyedSubscript:@"gorf"];
-        @{@"foo" : @"bar"}[nil] = @"gorf";
-	[@{@"foo" : @"bar"} setObject:pvoid forKeyedSubscript:@"gorf"];
-        @{@"foo" : @"bar"}[pvoid] = @"gorf";
 
 	return 0;
 }

@@ -1,4 +1,3 @@
-; REQUIRES: asserts
 ; RUN: llc < %s -march=ppc32 -stats 2>&1 | \
 ; RUN:   grep "Number of machine instrs printed" | grep 12
 

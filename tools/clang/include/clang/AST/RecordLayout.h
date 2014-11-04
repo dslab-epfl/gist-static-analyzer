@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_AST_RECORDLAYOUT_H
-#define LLVM_CLANG_AST_RECORDLAYOUT_H
+#ifndef LLVM_CLANG_AST_LAYOUTINFO_H
+#define LLVM_CLANG_AST_LAYOUTINFO_H
 
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/DeclCXX.h"
@@ -66,10 +66,6 @@ private:
   // Alignment - Alignment of record in characters.
   CharUnits Alignment;
 
-  /// RequiredAlignment - The required alignment of the object.  In the MS-ABI
-  /// the __declspec(align()) trumps #pramga pack and must always be obeyed.
-  CharUnits RequiredAlignment;
-
   /// FieldOffsets - Array of field offsets in bits.
   uint64_t *FieldOffsets;
 
@@ -82,9 +78,9 @@ private:
     /// the size of the object without virtual bases.
     CharUnits NonVirtualSize;
 
-    /// NonVirtualAlignment - The non-virtual alignment (in chars) of an object,
+    /// NonVirtualAlign - The non-virtual alignment (in chars) of an object,
     /// which is the alignment of the object without virtual bases.
-    CharUnits NonVirtualAlignment;
+    CharUnits NonVirtualAlign;
 
     /// SizeOfLargestEmptySubobject - The size of the largest empty subobject
     /// (either a base or a member). Will be zero if the class doesn't contain
@@ -97,27 +93,10 @@ private:
     /// HasOwnVFPtr - Does this class provide a virtual function table
     /// (vtable in Itanium, vftbl in Microsoft) that is independent from
     /// its base classes?
-    bool HasOwnVFPtr : 1;
-
-    /// HasVFPtr - Does this class have a vftable that could be extended by
-    /// a derived class.  The class may have inherited this pointer from
-    /// a primary base class.
-    bool HasExtendableVFPtr : 1;
-
-    /// HasZeroSizedSubObject - True if this class contains a zero sized member
-    /// or base or a base with a zero sized member or base.  Only used for
-    /// MS-ABI.
-    bool HasZeroSizedSubObject : 1;
-
-    /// \brief True if this class is zero sized or first base is zero sized or
-    /// has this property.  Only used for MS-ABI.
-    bool LeadsWithZeroSizedBase : 1;
-
+    bool HasOwnVFPtr; // TODO: stash this somewhere more efficient
+    
     /// PrimaryBase - The primary base info for this record.
     llvm::PointerIntPair<const CXXRecordDecl *, 1, bool> PrimaryBase;
-
-    /// BaseSharingVBPtr - The base we share vbptr with.
-    const CXXRecordDecl *BaseSharingVBPtr;
     
     /// FIXME: This should really use a SmallPtrMap, once we have one in LLVM :)
     typedef llvm::DenseMap<const CXXRecordDecl *, CharUnits> BaseOffsetsMapTy;
@@ -136,7 +115,6 @@ private:
   friend class ASTContext;
 
   ASTRecordLayout(const ASTContext &Ctx, CharUnits size, CharUnits alignment,
-                  CharUnits requiredAlignment,
                   CharUnits datasize, const uint64_t *fieldoffsets,
                   unsigned fieldcount);
 
@@ -144,18 +122,13 @@ private:
   typedef CXXRecordLayoutInfo::BaseOffsetsMapTy BaseOffsetsMapTy;
   ASTRecordLayout(const ASTContext &Ctx,
                   CharUnits size, CharUnits alignment,
-                  CharUnits requiredAlignment,
-                  bool hasOwnVFPtr, bool hasExtendableVFPtr,
-                  CharUnits vbptroffset,
+                  bool hasOwnVFPtr, CharUnits vbptroffset,
                   CharUnits datasize,
                   const uint64_t *fieldoffsets, unsigned fieldcount,
-                  CharUnits nonvirtualsize, CharUnits nonvirtualalignment,
+                  CharUnits nonvirtualsize, CharUnits nonvirtualalign,
                   CharUnits SizeOfLargestEmptySubobject,
                   const CXXRecordDecl *PrimaryBase,
                   bool IsPrimaryBaseVirtual,
-                  const CXXRecordDecl *BaseSharingVBPtr,
-                  bool HasZeroSizedSubObject,
-                  bool LeadsWithZeroSizedBase,
                   const BaseOffsetsMapTy& BaseOffsets,
                   const VBaseOffsetsMapTy& VBaseOffsets);
 
@@ -199,10 +172,10 @@ public:
 
   /// getNonVirtualSize - Get the non-virtual alignment (in chars) of an object,
   /// which is the alignment of the object without virtual bases.
-  CharUnits getNonVirtualAlignment() const {
+  CharUnits getNonVirtualAlign() const {
     assert(CXXInfo && "Record layout does not have C++ specific info!");
 
-    return CXXInfo->NonVirtualAlignment;
+    return CXXInfo->NonVirtualAlign;
   }
 
   /// getPrimaryBase - Get the primary base for this record.
@@ -253,55 +226,11 @@ public:
     return CXXInfo->HasOwnVFPtr;
   }
 
-  /// hasVFPtr - Does this class have a virtual function table pointer
-  /// that can be extended by a derived class?  This is synonymous with
-  /// this class having a VFPtr at offset zero.
-  bool hasExtendableVFPtr() const {
-    assert(CXXInfo && "Record layout does not have C++ specific info!");
-    return CXXInfo->HasExtendableVFPtr;
-  }
-  
-  /// hasOwnVBPtr - Does this class provide its own virtual-base
-  /// table pointer, rather than inheriting one from a primary base
-  /// class?
-  ///
-  /// This implies that the ABI has no primary base class, meaning
-  /// that it has no base classes that are suitable under the conditions
-  /// of the ABI.
-  bool hasOwnVBPtr() const {
-    assert(CXXInfo && "Record layout does not have C++ specific info!");
-    return hasVBPtr() && !CXXInfo->BaseSharingVBPtr;
-  }
-
-  /// hasVBPtr - Does this class have a virtual function table pointer.
-  bool hasVBPtr() const {
-    assert(CXXInfo && "Record layout does not have C++ specific info!");
-    return !CXXInfo->VBPtrOffset.isNegative();
-  }
-
-  CharUnits getRequiredAlignment() const {
-    return RequiredAlignment;
-  }
-
-  bool hasZeroSizedSubObject() const {
-    return CXXInfo && CXXInfo->HasZeroSizedSubObject;
-  }
-
-  bool leadsWithZeroSizedBase() const {
-    assert(CXXInfo && "Record layout does not have C++ specific info!");
-    return CXXInfo->LeadsWithZeroSizedBase;
-  }
-
   /// getVBPtrOffset - Get the offset for virtual base table pointer.
   /// This is only meaningful with the Microsoft ABI.
   CharUnits getVBPtrOffset() const {
     assert(CXXInfo && "Record layout does not have C++ specific info!");
     return CXXInfo->VBPtrOffset;
-  }
-
-  const CXXRecordDecl *getBaseSharingVBPtr() const {
-    assert(CXXInfo && "Record layout does not have C++ specific info!");
-    return CXXInfo->BaseSharingVBPtr;
   }
 
   const VBaseOffsetsMapTy &getVBaseOffsetsMap() const {

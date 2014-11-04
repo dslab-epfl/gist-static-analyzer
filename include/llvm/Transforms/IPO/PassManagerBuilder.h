@@ -12,23 +12,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_TRANSFORMS_IPO_PASSMANAGERBUILDER_H
-#define LLVM_TRANSFORMS_IPO_PASSMANAGERBUILDER_H
+#ifndef LLVM_SUPPORT_PASSMANAGERBUILDER_H
+#define LLVM_SUPPORT_PASSMANAGERBUILDER_H
 
 #include <vector>
 
 namespace llvm {
-class Pass;
-class TargetLibraryInfo;
-class TargetMachine;
-
-// The old pass manager infrastructure is hidden in a legacy namespace now.
-namespace legacy {
-class FunctionPassManager;
-class PassManagerBase;
-}
-using legacy::FunctionPassManager;
-using legacy::PassManagerBase;
+  class TargetLibraryInfo;
+  class PassManagerBase;
+  class Pass;
+  class FunctionPassManager;
 
 /// PassManagerBuilder - This class is used to set up a standard optimization
 /// sequence for languages like C and C++, allowing some APIs to customize the
@@ -56,6 +49,7 @@ using legacy::PassManagerBase;
 ///   ...
 class PassManagerBuilder {
 public:
+
   /// Extensions are passed the builder itself (so they can see how it is
   /// configured) as well as the pass manager to add stuff to.
   typedef void (*ExtensionFn)(const PassManagerBuilder &Builder,
@@ -86,12 +80,7 @@ public:
     /// EP_EnabledOnOptLevel0 - This extension point allows adding passes that
     /// should not be disabled by O0 optimization level. The passes will be
     /// inserted after the inlining pass.
-    EP_EnabledOnOptLevel0,
-
-    /// EP_Peephole - This extension point allows adding passes that perform
-    /// peephole optimizations similar to the instruction combiner. These passes
-    /// will be inserted after each instance of the instruction combiner pass.
-    EP_Peephole,
+    EP_EnabledOnOptLevel0
   };
 
   /// The Optimization Level - Specify the basic optimization level.
@@ -111,19 +100,11 @@ public:
   /// added to the per-module passes.
   Pass *Inliner;
 
-  bool DisableTailCalls;
+  bool DisableSimplifyLibCalls;
   bool DisableUnitAtATime;
   bool DisableUnrollLoops;
-  bool BBVectorize;
-  bool SLPVectorize;
+  bool Vectorize;
   bool LoopVectorize;
-  bool RerollLoops;
-  bool LoadCombine;
-  bool DisableGVNLoadPRE;
-  bool VerifyInput;
-  bool VerifyOutput;
-  bool StripDebug;
-  bool MergeFunctions;
 
 private:
   /// ExtensionList - This is list of all of the extensions that are registered.
@@ -141,9 +122,8 @@ public:
 private:
   void addExtensionsToPM(ExtensionPointTy ETy, PassManagerBase &PM) const;
   void addInitialAliasAnalysisPasses(PassManagerBase &PM) const;
-  void addLTOOptimizationPasses(PassManagerBase &PM);
-
 public:
+
   /// populateFunctionPassManager - This fills in the function pass manager,
   /// which is expected to be run on each function immediately as it is
   /// generated.  The idea is to reduce the size of the IR in memory.
@@ -151,7 +131,8 @@ public:
 
   /// populateModulePassManager - This sets up the primary pass manager.
   void populateModulePassManager(PassManagerBase &MPM);
-  void populateLTOPassManager(PassManagerBase &PM, TargetMachine *TM = nullptr);
+  void populateLTOPassManager(PassManagerBase &PM, bool Internalize,
+                              bool RunInliner, bool DisableGVNLoadPRE = false);
 };
 
 /// Registers a function for adding a standard set of passes.  This should be

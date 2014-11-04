@@ -17,10 +17,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Hexagon.h"
-#include "HexagonMachineFunctionInfo.h"
-#include "HexagonSubtarget.h"
 #include "HexagonTargetMachine.h"
+#include "HexagonSubtarget.h"
+#include "HexagonMachineFunctionInfo.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/LatencyPriorityQueue.h"
 #include "llvm/CodeGen/MachineDominators.h"
@@ -31,39 +30,31 @@
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/ScheduleHazardRecognizer.h"
 #include "llvm/CodeGen/SchedulerRegistry.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/MathExtras.h"
-#include "llvm/Target/TargetInstrInfo.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetRegisterInfo.h"
 
 using namespace llvm;
-
-
-namespace llvm {
-  void initializeHexagonExpandPredSpillCodePass(PassRegistry&);
-}
 
 
 namespace {
 
 class HexagonExpandPredSpillCode : public MachineFunctionPass {
-    const HexagonTargetMachine& QTM;
+    HexagonTargetMachine& QTM;
     const HexagonSubtarget &QST;
 
  public:
     static char ID;
-    HexagonExpandPredSpillCode(const HexagonTargetMachine& TM) :
-      MachineFunctionPass(ID), QTM(TM), QST(*TM.getSubtargetImpl()) {
-      PassRegistry &Registry = *PassRegistry::getPassRegistry();
-      initializeHexagonExpandPredSpillCodePass(Registry);
-    }
+    HexagonExpandPredSpillCode(HexagonTargetMachine& TM) :
+      MachineFunctionPass(ID), QTM(TM), QST(*TM.getSubtargetImpl()) {}
 
-    const char *getPassName() const override {
+    const char *getPassName() const {
       return "Hexagon Expand Predicate Spill Code";
     }
-    bool runOnMachineFunction(MachineFunction &Fn) override;
+    bool runOnMachineFunction(MachineFunction &Fn);
 };
 
 
@@ -72,7 +63,7 @@ char HexagonExpandPredSpillCode::ID = 0;
 
 bool HexagonExpandPredSpillCode::runOnMachineFunction(MachineFunction &Fn) {
 
-  const HexagonInstrInfo *TII = QTM.getSubtargetImpl()->getInstrInfo();
+  const HexagonInstrInfo *TII = QTM.getInstrInfo();
 
   // Loop over all of the basic blocks.
   for (MachineFunction::iterator MBBb = Fn.begin(), MBBe = Fn.end();
@@ -86,10 +77,8 @@ bool HexagonExpandPredSpillCode::runOnMachineFunction(MachineFunction &Fn) {
       if (Opc == Hexagon::STriw_pred) {
         // STriw_pred [R30], ofst, SrcReg;
         unsigned FP = MI->getOperand(0).getReg();
-        assert(
-            FP ==
-                QTM.getSubtargetImpl()->getRegisterInfo()->getFrameRegister() &&
-            "Not a Frame Pointer, Nor a Spill Slot");
+        assert(FP == QTM.getRegisterInfo()->getFrameRegister() &&
+               "Not a Frame Pointer, Nor a Spill Slot");
         assert(MI->getOperand(1).isImm() && "Not an offset");
         int Offset = MI->getOperand(1).getImm();
         int SrcReg = MI->getOperand(2).getReg();
@@ -135,10 +124,8 @@ bool HexagonExpandPredSpillCode::runOnMachineFunction(MachineFunction &Fn) {
         assert(Hexagon::PredRegsRegClass.contains(DstReg) &&
                "Not a predicate register");
         unsigned FP = MI->getOperand(1).getReg();
-        assert(
-            FP ==
-                QTM.getSubtargetImpl()->getRegisterInfo()->getFrameRegister() &&
-            "Not a Frame Pointer, Nor a Spill Slot");
+        assert(FP == QTM.getRegisterInfo()->getFrameRegister() &&
+               "Not a Frame Pointer, Nor a Spill Slot");
         assert(MI->getOperand(2).isImm() && "Not an offset");
         int Offset = MI->getOperand(2).getImm();
         if (!TII->isValidOffset(Hexagon::LDriw, Offset)) {
@@ -187,19 +174,6 @@ bool HexagonExpandPredSpillCode::runOnMachineFunction(MachineFunction &Fn) {
 //                         Public Constructor Functions
 //===----------------------------------------------------------------------===//
 
-static void initializePassOnce(PassRegistry &Registry) {
-  const char *Name = "Hexagon Expand Predicate Spill Code";
-  PassInfo *PI = new PassInfo(Name, "hexagon-spill-pred",
-                              &HexagonExpandPredSpillCode::ID,
-                              nullptr, false, false);
-  Registry.registerPass(*PI, true);
-}
-
-void llvm::initializeHexagonExpandPredSpillCodePass(PassRegistry &Registry) {
-  CALL_ONCE_INITIALIZATION(initializePassOnce)
-}
-
-FunctionPass*
-llvm::createHexagonExpandPredSpillCode(const HexagonTargetMachine &TM) {
+FunctionPass *llvm::createHexagonExpandPredSpillCode(HexagonTargetMachine &TM) {
   return new HexagonExpandPredSpillCode(TM);
 }

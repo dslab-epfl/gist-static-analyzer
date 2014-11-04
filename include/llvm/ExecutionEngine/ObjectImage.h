@@ -14,8 +14,8 @@
 #ifndef LLVM_EXECUTIONENGINE_OBJECTIMAGE_H
 #define LLVM_EXECUTIONENGINE_OBJECTIMAGE_H
 
-#include "llvm/ExecutionEngine/ObjectBuffer.h"
 #include "llvm/Object/ObjectFile.h"
+#include "llvm/ExecutionEngine/ObjectBuffer.h"
 
 namespace llvm {
 
@@ -25,35 +25,21 @@ namespace llvm {
 class ObjectImage {
   ObjectImage() LLVM_DELETED_FUNCTION;
   ObjectImage(const ObjectImage &other) LLVM_DELETED_FUNCTION;
-  virtual void anchor();
 
 protected:
-  std::unique_ptr<ObjectBuffer> Buffer;
+  OwningPtr<ObjectBuffer> Buffer;
 
 public:
-  ObjectImage(std::unique_ptr<ObjectBuffer> Input) : Buffer(std::move(Input)) {}
+  ObjectImage(ObjectBuffer *Input) : Buffer(Input) {}
   virtual ~ObjectImage() {}
 
   virtual object::symbol_iterator begin_symbols() const = 0;
   virtual object::symbol_iterator end_symbols() const = 0;
-  iterator_range<object::symbol_iterator> symbols() const {
-    return iterator_range<object::symbol_iterator>(begin_symbols(),
-                                                   end_symbols());
-  }
 
   virtual object::section_iterator begin_sections() const = 0;
   virtual object::section_iterator end_sections() const  = 0;
-  iterator_range<object::section_iterator> sections() const {
-    return iterator_range<object::section_iterator>(begin_sections(),
-                                                    end_sections());
-  }
 
   virtual /* Triple::ArchType */ unsigned getArch() const = 0;
-
-  // Return the name associated with this ObjectImage.
-  // This is usually the name of the file or MemoryBuffer that the the
-  // ObjectBuffer was constructed from.
-  StringRef getImageName() const { return Buffer->getBufferIdentifier(); }
 
   // Subclasses can override these methods to update the image with loaded
   // addresses for sections and common symbols
@@ -64,8 +50,6 @@ public:
 
   virtual StringRef getData() const = 0;
 
-  virtual object::ObjectFile* getObjectFile() const = 0;
-
   // Subclasses can override these methods to provide JIT debugging support
   virtual void registerWithDebugger() = 0;
   virtual void deregisterWithDebugger() = 0;
@@ -73,4 +57,5 @@ public:
 
 } // end namespace llvm
 
-#endif // LLVM_EXECUTIONENGINE_OBJECTIMAGE_H
+#endif // LLVM_RUNTIMEDYLD_OBJECT_IMAGE_H
+

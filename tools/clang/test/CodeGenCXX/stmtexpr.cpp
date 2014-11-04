@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -Wno-unused-value -triple %itanium_abi_triple -emit-llvm -o - %s | FileCheck %s
+// RUN: %clang_cc1 -Wno-unused-value -emit-llvm -o - %s | FileCheck %s
 // rdar: //8540501
 extern "C" int printf(...);
 extern "C" void abort();
@@ -73,10 +73,3 @@ int* foo5() {
   return (({ a; }));
 }
 
-// <rdar://problem/14074868>
-// Make sure this doesn't crash.
-int foo5(bool b) {
-  int y = 0;
-  y = ({ A a(1); if (b) goto G; a.i; });
-  G: return y;
-}

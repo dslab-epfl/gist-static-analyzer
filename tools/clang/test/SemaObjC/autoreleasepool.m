@@ -7,7 +7,7 @@ void autoreleasepool_pop(void*);
 
 @implementation AUTORP
 - (void) unregisterTask:(id) task {
-  goto L;	// expected-error {{cannot jump}}
+  goto L;	// expected-error {{goto into protected scope}}
 
   @autoreleasepool { // expected-note {{jump bypasses auto release push of @autoreleasepool block}}
         void *tmp = objc_autoreleasepool_push();

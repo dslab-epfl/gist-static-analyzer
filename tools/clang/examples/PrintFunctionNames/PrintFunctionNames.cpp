@@ -13,8 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Frontend/FrontendPluginRegistry.h"
-#include "clang/AST/AST.h"
 #include "clang/AST/ASTConsumer.h"
+#include "clang/AST/AST.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace clang;
@@ -36,9 +36,8 @@ public:
 
 class PrintFunctionNamesAction : public PluginASTAction {
 protected:
-  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
-                                                 llvm::StringRef) {
-    return llvm::make_unique<PrintFunctionsConsumer>();
+  ASTConsumer *CreateASTConsumer(CompilerInstance &CI, llvm::StringRef) {
+    return new PrintFunctionsConsumer();
   }
 
   bool ParseArgs(const CompilerInstance &CI,
@@ -49,9 +48,9 @@ protected:
       // Example error handling.
       if (args[i] == "-an-error") {
         DiagnosticsEngine &D = CI.getDiagnostics();
-        unsigned DiagID = D.getCustomDiagID(DiagnosticsEngine::Error,
-                                            "invalid argument '%0'");
-        D.Report(DiagID) << args[i];
+        unsigned DiagID = D.getCustomDiagID(
+          DiagnosticsEngine::Error, "invalid argument '" + args[i] + "'");
+        D.Report(DiagID);
         return false;
       }
     }

@@ -8,19 +8,20 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Basic/SourceManager.h"
+#include "clang/Basic/FileManager.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticOptions.h"
-#include "clang/Basic/FileManager.h"
 #include "clang/Basic/LangOptions.h"
-#include "clang/Basic/TargetInfo.h"
 #include "clang/Basic/TargetOptions.h"
+#include "clang/Basic/TargetInfo.h"
+#include "clang/Lex/ModuleLoader.h"
 #include "clang/Lex/HeaderSearch.h"
 #include "clang/Lex/HeaderSearchOptions.h"
-#include "clang/Lex/ModuleLoader.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Lex/PreprocessorOptions.h"
 #include "llvm/ADT/SmallString.h"
-#include "llvm/Config/llvm-config.h"
+#include "llvm/Config/config.h"
+
 #include "gtest/gtest.h"
 
 using namespace llvm;
@@ -38,7 +39,7 @@ protected:
       SourceMgr(Diags, FileMgr),
       TargetOpts(new TargetOptions) {
     TargetOpts->Triple = "x86_64-apple-darwin11.1.0";
-    Target = TargetInfo::CreateTargetInfo(Diags, TargetOpts);
+    Target = TargetInfo::CreateTargetInfo(Diags, *TargetOpts);
   }
 
   FileSystemOptions FileMgrOpts;
@@ -47,45 +48,33 @@ protected:
   DiagnosticsEngine Diags;
   SourceManager SourceMgr;
   LangOptions LangOpts;
-  std::shared_ptr<TargetOptions> TargetOpts;
+  IntrusiveRefCntPtr<TargetOptions> TargetOpts;
   IntrusiveRefCntPtr<TargetInfo> Target;
 };
 
 class VoidModuleLoader : public ModuleLoader {
-  ModuleLoadResult loadModule(SourceLocation ImportLoc, 
-                              ModuleIdPath Path,
-                              Module::NameVisibilityKind Visibility,
-                              bool IsInclusionDirective) override {
-    return ModuleLoadResult();
+  virtual Module *loadModule(SourceLocation ImportLoc, ModuleIdPath Path,
+                             Module::NameVisibilityKind Visibility,
+                             bool IsInclusionDirective) {
+    return 0;
   }
-
-  void makeModuleVisible(Module *Mod,
-                         Module::NameVisibilityKind Visibility,
-                         SourceLocation ImportLoc,
-                         bool Complain) override { }
-
-  GlobalModuleIndex *loadGlobalModuleIndex(SourceLocation TriggerLoc) override
-    { return nullptr; }
-  bool lookupMissingImports(StringRef Name, SourceLocation TriggerLoc) override
-    { return 0; };
 };
 
 TEST_F(SourceManagerTest, isBeforeInTranslationUnit) {
   const char *source =
     "#define M(x) [x]\n"
     "M(foo)";
-  std::unique_ptr<MemoryBuffer> Buf = MemoryBuffer::getMemBuffer(source);
-  FileID mainFileID = SourceMgr.createFileID(std::move(Buf));
-  SourceMgr.setMainFileID(mainFileID);
+  MemoryBuffer *buf = MemoryBuffer::getMemBuffer(source);
+  FileID mainFileID = SourceMgr.createMainFileIDForMemBuffer(buf);
 
   VoidModuleLoader ModLoader;
-  HeaderSearch HeaderInfo(new HeaderSearchOptions, SourceMgr, Diags, LangOpts, 
+  HeaderSearch HeaderInfo(new HeaderSearchOptions, FileMgr, Diags, LangOpts, 
                           &*Target);
-  Preprocessor PP(new PreprocessorOptions(), Diags, LangOpts, SourceMgr,
-                  HeaderInfo, ModLoader,
-                  /*IILookup =*/nullptr,
-                  /*OwnsHeaderSearch =*/false);
-  PP.Initialize(*Target);
+  Preprocessor PP(new PreprocessorOptions(), Diags, LangOpts, Target.getPtr(),
+                  SourceMgr, HeaderInfo, ModLoader,
+                  /*IILookup =*/ 0,
+                  /*OwnsHeaderSearch =*/false,
+                  /*DelayInitialization =*/ false);
   PP.EnterMainSourceFile();
 
   std::vector<Token> toks;
@@ -127,9 +116,8 @@ TEST_F(SourceManagerTest, getColumnNumber) {
     "int x;\n"
     "int y;";
 
-  std::unique_ptr<MemoryBuffer> Buf = MemoryBuffer::getMemBuffer(Source);
-  FileID MainFileID = SourceMgr.createFileID(std::move(Buf));
-  SourceMgr.setMainFileID(MainFileID);
+  MemoryBuffer *Buf = MemoryBuffer::getMemBuffer(Source);
+  FileID MainFileID = SourceMgr.createMainFileIDForMemBuffer(Buf);
 
   bool Invalid;
 
@@ -168,7 +156,7 @@ TEST_F(SourceManagerTest, getColumnNumber) {
   EXPECT_TRUE(Invalid);
 
   // Test with no invalid flag.
-  EXPECT_EQ(1U, SourceMgr.getColumnNumber(MainFileID, 0, nullptr));
+  EXPECT_EQ(1U, SourceMgr.getColumnNumber(MainFileID, 0, NULL));
 }
 
 #if defined(LLVM_ON_UNIX)
@@ -186,23 +174,22 @@ TEST_F(SourceManagerTest, getMacroArgExpandedLocation) {
     "#define CONCAT(X, Y) X##Y\n"
     "CONCAT(1,1)\n";
 
-  std::unique_ptr<MemoryBuffer> HeaderBuf = MemoryBuffer::getMemBuffer(header);
-  std::unique_ptr<MemoryBuffer> MainBuf = MemoryBuffer::getMemBuffer(main);
-  FileID mainFileID = SourceMgr.createFileID(std::move(MainBuf));
-  SourceMgr.setMainFileID(mainFileID);
+  MemoryBuffer *headerBuf = MemoryBuffer::getMemBuffer(header);
+  MemoryBuffer *mainBuf = MemoryBuffer::getMemBuffer(main);
+  FileID mainFileID = SourceMgr.createMainFileIDForMemBuffer(mainBuf);
 
   const FileEntry *headerFile = FileMgr.getVirtualFile("/test-header.h",
-                                                 HeaderBuf->getBufferSize(), 0);
-  SourceMgr.overrideFileContents(headerFile, std::move(HeaderBuf));
+                                                 headerBuf->getBufferSize(), 0);
+  SourceMgr.overrideFileContents(headerFile, headerBuf);
 
   VoidModuleLoader ModLoader;
-  HeaderSearch HeaderInfo(new HeaderSearchOptions, SourceMgr, Diags, LangOpts, 
+  HeaderSearch HeaderInfo(new HeaderSearchOptions, FileMgr, Diags, LangOpts, 
                           &*Target);
-  Preprocessor PP(new PreprocessorOptions(), Diags, LangOpts, SourceMgr,
-                  HeaderInfo, ModLoader,
-                  /*IILookup =*/nullptr,
-                  /*OwnsHeaderSearch =*/false);
-  PP.Initialize(*Target);
+  Preprocessor PP(new PreprocessorOptions(), Diags, LangOpts, Target.getPtr(),
+                  SourceMgr, HeaderInfo, ModLoader,
+                  /*IILookup =*/ 0,
+                  /*OwnsHeaderSearch =*/false,
+                  /*DelayInitialization =*/ false);
   PP.EnterMainSourceFile();
 
   std::vector<Token> toks;
@@ -258,14 +245,13 @@ class MacroTracker : public PPCallbacks {
 public:
   explicit MacroTracker(std::vector<MacroAction> &Macros) : Macros(Macros) { }
   
-  virtual void MacroDefined(const Token &MacroNameTok,
-                            const MacroDirective *MD) {
-    Macros.push_back(MacroAction(MD->getLocation(),
+  virtual void MacroDefined(const Token &MacroNameTok, const MacroInfo *MI) {
+    Macros.push_back(MacroAction(MI->getDefinitionLoc(),
                                  MacroNameTok.getIdentifierInfo()->getName(),
                                  true));
   }
-  virtual void MacroExpands(const Token &MacroNameTok, const MacroDirective *MD,
-                            SourceRange Range, const MacroArgs *Args) {
+  virtual void MacroExpands(const Token &MacroNameTok, const MacroInfo* MI,
+                            SourceRange Range) {
     Macros.push_back(MacroAction(MacroNameTok.getLocation(),
                                  MacroNameTok.getIdentifierInfo()->getName(),
                                  false));
@@ -285,25 +271,25 @@ TEST_F(SourceManagerTest, isBeforeInTranslationUnitWithMacroInInclude) {
     "#define INC2 </test-header.h>\n"
     "#include M(INC2)\n";
 
-  std::unique_ptr<MemoryBuffer> HeaderBuf = MemoryBuffer::getMemBuffer(header);
-  std::unique_ptr<MemoryBuffer> MainBuf = MemoryBuffer::getMemBuffer(main);
-  SourceMgr.setMainFileID(SourceMgr.createFileID(std::move(MainBuf)));
+  MemoryBuffer *headerBuf = MemoryBuffer::getMemBuffer(header);
+  MemoryBuffer *mainBuf = MemoryBuffer::getMemBuffer(main);
+  SourceMgr.createMainFileIDForMemBuffer(mainBuf);
 
   const FileEntry *headerFile = FileMgr.getVirtualFile("/test-header.h",
-                                                 HeaderBuf->getBufferSize(), 0);
-  SourceMgr.overrideFileContents(headerFile, std::move(HeaderBuf));
+                                                 headerBuf->getBufferSize(), 0);
+  SourceMgr.overrideFileContents(headerFile, headerBuf);
 
   VoidModuleLoader ModLoader;
-  HeaderSearch HeaderInfo(new HeaderSearchOptions, SourceMgr, Diags, LangOpts, 
+  HeaderSearch HeaderInfo(new HeaderSearchOptions, FileMgr, Diags, LangOpts, 
                           &*Target);
-  Preprocessor PP(new PreprocessorOptions(), Diags, LangOpts, SourceMgr,
-                  HeaderInfo, ModLoader,
-                  /*IILookup =*/nullptr,
-                  /*OwnsHeaderSearch =*/false);
-  PP.Initialize(*Target);
+  Preprocessor PP(new PreprocessorOptions(), Diags, LangOpts, Target.getPtr(),
+                  SourceMgr, HeaderInfo, ModLoader,
+                  /*IILookup =*/ 0,
+                  /*OwnsHeaderSearch =*/false,
+                  /*DelayInitialization =*/ false);
 
   std::vector<MacroAction> Macros;
-  PP.addPPCallbacks(llvm::make_unique<MacroTracker>(Macros));
+  PP.addPPCallbacks(new MacroTracker(Macros));
 
   PP.EnterMainSourceFile();
 

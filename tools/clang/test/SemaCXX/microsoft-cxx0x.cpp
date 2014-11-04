@@ -6,7 +6,7 @@ struct A {
      unsigned int a;
 };
 int b = 3;
-A var = {  b }; // expected-warning {{ cannot be narrowed }} expected-note {{insert an explicit cast to silence this issue}}
+A var = {  b }; // expected-warning {{ cannot be narrowed }} expected-note {{override}}
 
 
 namespace PR13433 {

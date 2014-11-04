@@ -71,10 +71,20 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_X86_DISASSEMBLER_X86DISASSEMBLER_H
-#define LLVM_LIB_TARGET_X86_DISASSEMBLER_X86DISASSEMBLER_H
+#ifndef X86DISASSEMBLER_H
+#define X86DISASSEMBLER_H
+
+#define INSTRUCTION_SPECIFIER_FIELDS \
+  uint16_t operands;
+
+#define INSTRUCTION_IDS               \
+  uint16_t instructionIDs;
 
 #include "X86DisassemblerDecoderCommon.h"
+
+#undef INSTRUCTION_SPECIFIER_FIELDS
+#undef INSTRUCTION_IDS
+
 #include "llvm/MC/MCDisassembler.h"
 
 namespace llvm {
@@ -85,26 +95,35 @@ class MCSubtargetInfo;
 class MemoryObject;
 class raw_ostream;
 
+struct EDInstInfo;
+
 namespace X86Disassembler {
 
 /// X86GenericDisassembler - Generic disassembler for all X86 platforms.
 ///   All each platform class should have to do is subclass the constructor, and
 ///   provide a different disassemblerMode value.
 class X86GenericDisassembler : public MCDisassembler {
-  std::unique_ptr<const MCInstrInfo> MII;
+  const MCInstrInfo *MII;
 public:
   /// Constructor     - Initializes the disassembler.
   ///
-  X86GenericDisassembler(const MCSubtargetInfo &STI, MCContext &Ctx,
-                         std::unique_ptr<const MCInstrInfo> MII);
+  /// @param mode     - The X86 architecture mode to decode for.
+  X86GenericDisassembler(const MCSubtargetInfo &STI, DisassemblerMode mode,
+                         const MCInstrInfo *MII);
+private:
+  ~X86GenericDisassembler();
 public:
 
   /// getInstruction - See MCDisassembler.
-  DecodeStatus getInstruction(MCInst &instr, uint64_t &size,
-                              const MemoryObject &region, uint64_t address,
+  DecodeStatus getInstruction(MCInst &instr,
+                              uint64_t &size,
+                              const MemoryObject &region,
+                              uint64_t address,
                               raw_ostream &vStream,
-                              raw_ostream &cStream) const override;
+                              raw_ostream &cStream) const;
 
+  /// getEDInfo - See MCDisassembler.
+  const EDInstInfo *getEDInfo() const;
 private:
   DisassemblerMode              fMode;
 };

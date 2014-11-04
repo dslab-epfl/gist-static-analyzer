@@ -1,4 +1,4 @@
-//===- llvm/Support/Unix/Host.inc -------------------------------*- C++ -*-===//
+ //===- llvm/Support/Unix/Host.inc -------------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -22,6 +22,7 @@
 #include <sys/utsname.h>
 #include <cctype>
 #include <string>
+#include <cstdlib> // ::getenv
 
 using namespace llvm;
 
@@ -38,8 +39,7 @@ std::string sys::getDefaultTargetTriple() {
   StringRef TargetTripleString(LLVM_DEFAULT_TARGET_TRIPLE);
   std::pair<StringRef, StringRef> ArchSplit = TargetTripleString.split('-');
 
-  // Normalize the arch, since the target triple may not actually match the
-  // target.
+  // Normalize the arch, since the target triple may not actually match the target.
   std::string Arch = ArchSplit.first;
 
   std::string Triple(Arch);
@@ -59,5 +59,5 @@ std::string sys::getDefaultTargetTriple() {
     Triple += getOSVersion();
   }
 
-  return Triple::normalize(Triple);
+  return Triple;
 }

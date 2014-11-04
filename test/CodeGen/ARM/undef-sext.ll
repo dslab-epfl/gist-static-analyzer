@@ -4,7 +4,7 @@
 
 define i32 @t(i32* %a) nounwind {
 entry:
-; CHECK-LABEL: t:
+; CHECK: t:
 ; CHECK: ldr r0, [r0]
 ; CHECK: bx lr
   %0 = sext i16 undef to i32

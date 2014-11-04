@@ -1,13 +1,11 @@
-; RUN: llc -mtriple=arm-eabi -mcpu=cortex-a8 -mattr=+vfp2 -enable-unsafe-fp-math %s -o - \
-; RUN:  | FileCheck %s
-
+; RUN: llc < %s -march=arm -mcpu=cortex-a8 -mattr=+vfp2 -enable-unsafe-fp-math | FileCheck %s
 ; rdar://7461510
 ; rdar://10964603
 
 ; Disable this optimization unless we know one of them is zero.
 define arm_apcscc i32 @t1(float* %a, float* %b) nounwind {
 entry:
-; CHECK-LABEL: t1:
+; CHECK: t1:
 ; CHECK: vldr [[S0:s[0-9]+]],
 ; CHECK: vldr [[S1:s[0-9]+]],
 ; CHECK: vcmpe.f32 [[S1]], [[S0]]
@@ -31,12 +29,13 @@ bb2:
 ; +0.0 == -0.0
 define arm_apcscc i32 @t2(double* %a, double* %b) nounwind {
 entry:
-; CHECK-LABEL: t2:
+; CHECK: t2:
 ; CHECK-NOT: vldr
-; CHECK: ldrd [[REG1:(r[0-9]+)]], [[REG2:(r[0-9]+)]], [r0]
+; CHECK: ldr [[REG1:(r[0-9]+)]], [r0]
+; CHECK: ldr [[REG2:(r[0-9]+)]], [r0, #4]
 ; CHECK-NOT: b LBB
-; CHECK: bfc [[REG2]], #31, #1
 ; CHECK: cmp [[REG1]], #0
+; CHECK: bfc [[REG2]], #31, #1
 ; CHECK: cmpeq [[REG2]], #0
 ; CHECK-NOT: vcmpe.f32
 ; CHECK-NOT: vmrs
@@ -56,7 +55,7 @@ bb2:
 
 define arm_apcscc i32 @t3(float* %a, float* %b) nounwind {
 entry:
-; CHECK-LABEL: t3:
+; CHECK: t3:
 ; CHECK-NOT: vldr
 ; CHECK: ldr [[REG3:(r[0-9]+)]], [r0]
 ; CHECK: mvn [[REG4:(r[0-9]+)]], #-2147483648

@@ -7,17 +7,17 @@
 //
 //===----------------------------------------------------------------------===//
 #include "clang/Frontend/ASTUnit.h"
+#include "clang/Frontend/CompilerInstance.h"
+#include "clang/Frontend/FrontendActions.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/ASTDiagnostic.h"
 #include "clang/AST/ASTImporter.h"
 #include "clang/Basic/Diagnostic.h"
-#include "clang/Frontend/CompilerInstance.h"
-#include "clang/Frontend/FrontendActions.h"
 
 using namespace clang;
 
-std::unique_ptr<ASTConsumer>
-ASTMergeAction::CreateASTConsumer(CompilerInstance &CI, StringRef InFile) {
+ASTConsumer *ASTMergeAction::CreateASTConsumer(CompilerInstance &CI,
+                                               StringRef InFile) {
   return AdaptedAction->CreateASTConsumer(CI, InFile);
 }
 
@@ -34,7 +34,7 @@ bool ASTMergeAction::BeginSourceFileAction(CompilerInstance &CI,
 void ASTMergeAction::ExecuteAction() {
   CompilerInstance &CI = getCompilerInstance();
   CI.getDiagnostics().getClient()->BeginSourceFile(
-                                             CI.getASTContext().getLangOpts());
+                                         CI.getASTContext().getLangOpts());
   CI.getDiagnostics().SetArgToStringFn(&FormatASTNodeDiagnosticArgument,
                                        &CI.getASTContext());
   IntrusiveRefCntPtr<DiagnosticIDs>
@@ -42,11 +42,10 @@ void ASTMergeAction::ExecuteAction() {
   for (unsigned I = 0, N = ASTFiles.size(); I != N; ++I) {
     IntrusiveRefCntPtr<DiagnosticsEngine>
         Diags(new DiagnosticsEngine(DiagIDs, &CI.getDiagnosticOpts(),
-                                    new ForwardingDiagnosticConsumer(
-                                          *CI.getDiagnostics().getClient()),
-                                    /*ShouldOwnClient=*/true));
-    std::unique_ptr<ASTUnit> Unit = ASTUnit::LoadFromASTFile(
-        ASTFiles[I], Diags, CI.getFileSystemOpts(), false);
+                                    CI.getDiagnostics().getClient(),
+                                    /*ShouldOwnClient=*/false));
+    ASTUnit *Unit = ASTUnit::LoadFromASTFile(ASTFiles[I], Diags,
+                                             CI.getFileSystemOpts(), false);
     if (!Unit)
       continue;
 
@@ -57,15 +56,19 @@ void ASTMergeAction::ExecuteAction() {
                          /*MinimalImport=*/false);
 
     TranslationUnitDecl *TU = Unit->getASTContext().getTranslationUnitDecl();
-    for (auto *D : TU->decls()) {
+    for (DeclContext::decl_iterator D = TU->decls_begin(), 
+                                 DEnd = TU->decls_end();
+         D != DEnd; ++D) {
       // Don't re-import __va_list_tag, __builtin_va_list.
-      if (const auto *ND = dyn_cast<NamedDecl>(D))
+      if (NamedDecl *ND = dyn_cast<NamedDecl>(*D))
         if (IdentifierInfo *II = ND->getIdentifier())
           if (II->isStr("__va_list_tag") || II->isStr("__builtin_va_list"))
             continue;
       
-      Importer.Import(D);
+      Importer.Import(*D);
     }
+
+    delete Unit;
   }
 
   AdaptedAction->ExecuteAction();

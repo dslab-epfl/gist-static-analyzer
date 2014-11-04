@@ -1,4 +1,4 @@
-clang_tablegen(AttrParserStringSwitches.inc -gen-clang-attr-parser-string-switches
+clang_tablegen(AttrLateParsed.inc -gen-clang-attr-late-parsed-list
   -I ${CMAKE_CURRENT_SOURCE_DIR}/../../
   SOURCE ../Basic/Attr.td
-  TARGET ClangAttrParserStringSwitches)
+  TARGET ClangAttrLateParsed)

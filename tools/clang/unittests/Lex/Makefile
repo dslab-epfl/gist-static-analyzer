@@ -9,8 +9,7 @@
 
 CLANG_LEVEL = ../..
 TESTNAME = Lex
-LINK_COMPONENTS := mcparser support mc bitreader
-USEDLIBS = clangParse.a clangSema.a clangAnalysis.a clangEdit.a \
-	clangSerialization.a clangAST.a clangLex.a clangBasic.a 
+LINK_COMPONENTS := support mc
+USEDLIBS = clangLex.a clangBasic.a
 
 include $(CLANG_LEVEL)/unittests/Makefile

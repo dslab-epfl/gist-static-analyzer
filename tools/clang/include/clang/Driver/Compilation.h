@@ -7,25 +7,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_DRIVER_COMPILATION_H
-#define LLVM_CLANG_DRIVER_COMPILATION_H
+#ifndef CLANG_DRIVER_COMPILATION_H_
+#define CLANG_DRIVER_COMPILATION_H_
 
 #include "clang/Driver/Job.h"
 #include "clang/Driver/Util.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/Path.h"
 
-namespace llvm {
-namespace opt {
-  class DerivedArgList;
-  class InputArgList;
-}
-}
-
 namespace clang {
 namespace driver {
+  class DerivedArgList;
   class Driver;
-  class JobAction;
+  class InputArgList;
   class JobList;
   class ToolChain;
 
@@ -39,11 +33,11 @@ class Compilation {
   const ToolChain &DefaultToolChain;
 
   /// The original (untranslated) input argument list.
-  llvm::opt::InputArgList *Args;
+  InputArgList *Args;
 
   /// The driver translated arguments. Note that toolchains may perform their
   /// own argument translation.
-  llvm::opt::DerivedArgList *TranslatedArgs;
+  DerivedArgList *TranslatedArgs;
 
   /// The list of actions.
   ActionList Actions;
@@ -53,40 +47,36 @@ class Compilation {
 
   /// Cache of translated arguments for a particular tool chain and bound
   /// architecture.
-  llvm::DenseMap<std::pair<const ToolChain *, const char *>,
-                 llvm::opt::DerivedArgList *> TCArgs;
+  llvm::DenseMap<std::pair<const ToolChain*, const char*>,
+                 DerivedArgList*> TCArgs;
 
   /// Temporary files which should be removed on exit.
-  llvm::opt::ArgStringList TempFiles;
+  ArgStringList TempFiles;
 
   /// Result files which should be removed on failure.
-  ArgStringMap ResultFiles;
+  ArgStringList ResultFiles;
 
   /// Result files which are generated correctly on failure, and which should
   /// only be removed if we crash.
-  ArgStringMap FailureResultFiles;
+  ArgStringList FailureResultFiles;
 
   /// Redirection for stdout, stderr, etc.
-  const StringRef **Redirects;
-
-  /// Whether we're compiling for diagnostic purposes.
-  bool ForDiagnostics;
+  const llvm::sys::Path **Redirects;
 
 public:
   Compilation(const Driver &D, const ToolChain &DefaultToolChain,
-              llvm::opt::InputArgList *Args,
-              llvm::opt::DerivedArgList *TranslatedArgs);
+              InputArgList *Args, DerivedArgList *TranslatedArgs);
   ~Compilation();
 
   const Driver &getDriver() const { return TheDriver; }
 
   const ToolChain &getDefaultToolChain() const { return DefaultToolChain; }
 
-  const llvm::opt::InputArgList &getInputArgs() const { return *Args; }
+  const InputArgList &getInputArgs() const { return *Args; }
 
-  const llvm::opt::DerivedArgList &getArgs() const { return *TranslatedArgs; }
+  const DerivedArgList &getArgs() const { return *TranslatedArgs; }
 
-  llvm::opt::DerivedArgList &getArgs() { return *TranslatedArgs; }
+  DerivedArgList &getArgs() { return *TranslatedArgs; }
 
   ActionList &getActions() { return Actions; }
   const ActionList &getActions() const { return Actions; }
@@ -94,13 +84,13 @@ public:
   JobList &getJobs() { return Jobs; }
   const JobList &getJobs() const { return Jobs; }
 
-  void addCommand(std::unique_ptr<Command> C) { Jobs.addJob(std::move(C)); }
+  void addCommand(Command *C) { Jobs.addJob(C); }
 
-  const llvm::opt::ArgStringList &getTempFiles() const { return TempFiles; }
+  const ArgStringList &getTempFiles() const { return TempFiles; }
 
-  const ArgStringMap &getResultFiles() const { return ResultFiles; }
+  const ArgStringList &getResultFiles() const { return ResultFiles; }
 
-  const ArgStringMap &getFailureResultFiles() const {
+  const ArgStringList &getFailureResultFiles() const {
     return FailureResultFiles;
   }
 
@@ -111,8 +101,8 @@ public:
   /// tool chain \p TC (or the default tool chain, if TC is not specified).
   ///
   /// \param BoundArch - The bound architecture name, or 0.
-  const llvm::opt::DerivedArgList &getArgsForToolChain(const ToolChain *TC,
-                                                       const char *BoundArch);
+  const DerivedArgList &getArgsForToolChain(const ToolChain *TC,
+                                            const char *BoundArch);
 
   /// addTempFile - Add a file to remove on exit, and returns its
   /// argument.
@@ -123,40 +113,41 @@ public:
 
   /// addResultFile - Add a file to remove on failure, and returns its
   /// argument.
-  const char *addResultFile(const char *Name, const JobAction *JA) {
-    ResultFiles[JA] = Name;
+  const char *addResultFile(const char *Name) {
+    ResultFiles.push_back(Name);
     return Name;
   }
 
   /// addFailureResultFile - Add a file to remove if we crash, and returns its
   /// argument.
-  const char *addFailureResultFile(const char *Name, const JobAction *JA) {
-    FailureResultFiles[JA] = Name;
+  const char *addFailureResultFile(const char *Name) {
+    FailureResultFiles.push_back(Name);
     return Name;
   }
-
-  /// CleanupFile - Delete a given file.
-  ///
-  /// \param IssueErrors - Report failures as errors.
-  /// \return Whether the file was removed successfully.
-  bool CleanupFile(const char *File, bool IssueErrors = false) const;
 
   /// CleanupFileList - Remove the files in the given list.
   ///
   /// \param IssueErrors - Report failures as errors.
   /// \return Whether all files were removed successfully.
-  bool CleanupFileList(const llvm::opt::ArgStringList &Files,
-                       bool IssueErrors = false) const;
+  bool CleanupFileList(const ArgStringList &Files,
+                       bool IssueErrors=false) const;
 
-  /// CleanupFileMap - Remove the files in the given map.
+  /// PrintJob - Print one job in -### format.
   ///
-  /// \param JA - If specified, only delete the files associated with this
-  /// JobAction.  Otherwise, delete all files in the map.
-  /// \param IssueErrors - Report failures as errors.
-  /// \return Whether all files were removed successfully.
-  bool CleanupFileMap(const ArgStringMap &Files,
-                      const JobAction *JA,
-                      bool IssueErrors = false) const;
+  /// \param OS - The stream to print on.
+  /// \param J - The job to print.
+  /// \param Terminator - A string to print at the end of the line.
+  /// \param Quote - Should separate arguments be quoted.
+  void PrintJob(raw_ostream &OS, const Job &J,
+                const char *Terminator, bool Quote) const;
+
+  /// PrintDiagnosticJob - Print one job in -### format, but with the 
+  /// superfluous options removed, which are not necessary for 
+  /// reproducing the crash.
+  ///
+  /// \param OS - The stream to print on.
+  /// \param J - The job to print.
+  void PrintDiagnosticJob(raw_ostream &OS, const Job &J) const;
 
   /// ExecuteCommand - Execute an actual command.
   ///
@@ -167,18 +158,15 @@ public:
 
   /// ExecuteJob - Execute a single job.
   ///
-  /// \param FailingCommands - For non-zero results, this will be a vector of
-  /// failing commands and their associated result code.
-  void ExecuteJob(const Job &J,
-     SmallVectorImpl< std::pair<int, const Command *> > &FailingCommands) const;
+  /// \param FailingCommand - For non-zero results, this will be set to the
+  /// Command which failed.
+  /// \return The accumulated result code of the job.
+  int ExecuteJob(const Job &J, const Command *&FailingCommand) const;
 
   /// initCompilationForDiagnostics - Remove stale state and suppress output
   /// so compilation can be reexecuted to generate additional diagnostic
   /// information (e.g., preprocessed source(s)).
   void initCompilationForDiagnostics();
-
-  /// Return true if we're compiling for diagnostics.
-  bool isForDiagnostics() { return ForDiagnostics; }
 };
 
 } // end namespace driver

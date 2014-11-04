@@ -1,4 +1,4 @@
-//===--- TransRetainReleaseDealloc.cpp - Transformations to ARC mode ------===//
+//===--- TransRetainReleaseDealloc.cpp - Tranformations to ARC mode -------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -24,7 +24,6 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/Sema/SemaDiagnostic.h"
-#include "llvm/ADT/StringSwitch.h"
 
 using namespace clang;
 using namespace arcmt;
@@ -38,13 +37,13 @@ class RetainReleaseDeallocRemover :
   MigrationPass &Pass;
 
   ExprSet Removables;
-  std::unique_ptr<ParentMap> StmtMap;
+  OwningPtr<ParentMap> StmtMap;
 
   Selector DelegateSel, FinalizeSel;
 
 public:
   RetainReleaseDeallocRemover(MigrationPass &pass)
-    : Body(nullptr), Pass(pass) {
+    : Body(0), Pass(pass) {
     DelegateSel =
         Pass.Ctx.Selectors.getNullarySelector(&Pass.Ctx.Idents.get("delegate"));
     FinalizeSel =
@@ -70,7 +69,7 @@ public:
           // An unused autorelease is badness. If we remove it the receiver
           // will likely die immediately while previously it was kept alive
           // by the autorelease pool. This is bad practice in general, leave it
-          // and emit an error to force the user to restructure their code.
+          // and emit an error to force the user to restructure his code.
           Pass.TA.reportError("it is not safe to remove an unused 'autorelease' "
               "message; its receiver may be destroyed immediately",
               E->getLocStart(), E->getSourceRange());
@@ -118,7 +117,7 @@ public:
       return true;
     case ObjCMessageExpr::SuperInstance: {
       Transaction Trans(Pass.TA);
-      clearDiagnostics(E->getSelectorLoc(0));
+      clearDiagnostics(E->getSuperLoc());
       if (tryRemoving(E))
         return true;
       Pass.TA.replace(E->getSourceRange(), "self");
@@ -132,7 +131,7 @@ public:
     if (!rec) return true;
 
     Transaction Trans(Pass.TA);
-    clearDiagnostics(E->getSelectorLoc(0));
+    clearDiagnostics(rec->getExprLoc());
 
     ObjCMessageExpr *Msg = E;
     Expr *RecContainer = Msg;
@@ -162,26 +161,13 @@ public:
 private:
   /// \brief Checks for idioms where an unused -autorelease is common.
   ///
-  /// Returns true for this idiom which is common in property
+  /// Currently only returns true for this idiom which is common in property
   /// setters:
   ///
   ///   [backingValue autorelease];
   ///   backingValue = [newValue retain]; // in general a +1 assign
   ///
-  /// For these as well:
-  ///
-  ///   [[var retain] autorelease];
-  ///   return var;
-  ///
   bool isCommonUnusedAutorelease(ObjCMessageExpr *E) {
-    if (isPlusOneAssignBeforeOrAfterAutorelease(E))
-      return true;
-    if (isReturnedAfterAutorelease(E))
-      return true;
-    return false;
-  }
-
-  bool isReturnedAfterAutorelease(ObjCMessageExpr *E) {
     Expr *Rec = E->getInstanceReceiver();
     if (!Rec)
       return false;
@@ -189,68 +175,6 @@ private:
     Decl *RefD = getReferencedDecl(Rec);
     if (!RefD)
       return false;
-
-    Stmt *nextStmt = getNextStmt(E);
-    if (!nextStmt)
-      return false;
-
-    // Check for "return <variable>;".
-
-    if (ReturnStmt *RetS = dyn_cast<ReturnStmt>(nextStmt))
-      return RefD == getReferencedDecl(RetS->getRetValue());
-
-    return false;
-  }
-
-  bool isPlusOneAssignBeforeOrAfterAutorelease(ObjCMessageExpr *E) {
-    Expr *Rec = E->getInstanceReceiver();
-    if (!Rec)
-      return false;
-
-    Decl *RefD = getReferencedDecl(Rec);
-    if (!RefD)
-      return false;
-
-    Stmt *prevStmt, *nextStmt;
-    std::tie(prevStmt, nextStmt) = getPreviousAndNextStmt(E);
-
-    return isPlusOneAssignToVar(prevStmt, RefD) ||
-           isPlusOneAssignToVar(nextStmt, RefD);
-  }
-
-  bool isPlusOneAssignToVar(Stmt *S, Decl *RefD) {
-    if (!S)
-      return false;
-
-    // Check for "RefD = [+1 retained object];".
-
-    if (BinaryOperator *Bop = dyn_cast<BinaryOperator>(S)) {
-      if (RefD != getReferencedDecl(Bop->getLHS()))
-        return false;
-      if (isPlusOneAssign(Bop))
-        return true;
-      return false;
-    }
-
-    if (DeclStmt *DS = dyn_cast<DeclStmt>(S)) {
-      if (DS->isSingleDecl() && DS->getSingleDecl() == RefD) {
-        if (VarDecl *VD = dyn_cast<VarDecl>(RefD))
-          return isPlusOne(VD->getInit());
-      }
-      return false;
-    }
-
-    return false;
-  }
-
-  Stmt *getNextStmt(Expr *E) {
-    return getPreviousAndNextStmt(E).second;
-  }
-
-  std::pair<Stmt *, Stmt *> getPreviousAndNextStmt(Expr *E) {
-    Stmt *prevStmt = nullptr, *nextStmt = nullptr;
-    if (!E)
-      return std::make_pair(prevStmt, nextStmt);
 
     Stmt *OuterS = E, *InnerS;
     do {
@@ -262,52 +186,43 @@ private:
                       isa<ExprWithCleanups>(OuterS)));
     
     if (!OuterS)
-      return std::make_pair(prevStmt, nextStmt);
+      return false;
+
+    // Find next statement after the -autorelease.
 
     Stmt::child_iterator currChildS = OuterS->child_begin();
     Stmt::child_iterator childE = OuterS->child_end();
-    Stmt::child_iterator prevChildS = childE;
     for (; currChildS != childE; ++currChildS) {
       if (*currChildS == InnerS)
         break;
-      prevChildS = currChildS;
     }
-
-    if (prevChildS != childE) {
-      prevStmt = *prevChildS;
-      if (prevStmt)
-        prevStmt = prevStmt->IgnoreImplicit();
-    }
-
     if (currChildS == childE)
-      return std::make_pair(prevStmt, nextStmt);
+      return false;
     ++currChildS;
     if (currChildS == childE)
-      return std::make_pair(prevStmt, nextStmt);
+      return false;
 
-    nextStmt = *currChildS;
-    if (nextStmt)
-      nextStmt = nextStmt->IgnoreImplicit();
+    Stmt *nextStmt = *currChildS;
+    if (!nextStmt)
+      return false;
+    nextStmt = nextStmt->IgnoreImplicit();
 
-    return std::make_pair(prevStmt, nextStmt);
+    // Check for "RefD = [+1 retained object];".
+    
+    if (BinaryOperator *Bop = dyn_cast<BinaryOperator>(nextStmt)) {
+      if (RefD != getReferencedDecl(Bop->getLHS()))
+        return false;
+      if (isPlusOneAssign(Bop))
+        return true;
+    }
+    return false;
   }
 
   Decl *getReferencedDecl(Expr *E) {
     if (!E)
-      return nullptr;
+      return 0;
 
     E = E->IgnoreParenCasts();
-    if (ObjCMessageExpr *ME = dyn_cast<ObjCMessageExpr>(E)) {
-      switch (ME->getMethodFamily()) {
-      case OMF_copy:
-      case OMF_autorelease:
-      case OMF_release:
-      case OMF_retain:
-        return getReferencedDecl(ME->getInstanceReceiver());
-      default:
-        return nullptr;
-      }
-    }
     if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E))
       return DRE->getDecl();
     if (MemberExpr *ME = dyn_cast<MemberExpr>(E))
@@ -315,7 +230,7 @@ private:
     if (ObjCIvarRefExpr *IRE = dyn_cast<ObjCIvarRefExpr>(E))
       return IRE->getDecl();
 
-    return nullptr;
+    return 0;
   }
 
   /// \brief Check if the retain/release is due to a GCD/XPC macro that are
@@ -345,7 +260,7 @@ private:
     if (!isGCDOrXPC)
       return;
 
-    StmtExpr *StmtE = nullptr;
+    StmtExpr *StmtE = 0;
     Stmt *S = Msg;
     while (S) {
       if (StmtExpr *SE = dyn_cast<StmtExpr>(S)) {

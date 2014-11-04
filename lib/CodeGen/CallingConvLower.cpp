@@ -14,24 +14,25 @@
 
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
-#include "llvm/IR/DataLayout.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/TargetLowering.h"
 #include "llvm/Target/TargetRegisterInfo.h"
-#include "llvm/Target/TargetSubtargetInfo.h"
+#include "llvm/DataLayout.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetLowering.h"
 using namespace llvm;
 
 CCState::CCState(CallingConv::ID CC, bool isVarArg, MachineFunction &mf,
-                 SmallVectorImpl<CCValAssign> &locs, LLVMContext &C)
-    : CallingConv(CC), IsVarArg(isVarArg), MF(mf),
-      TRI(*MF.getSubtarget().getRegisterInfo()), Locs(locs), Context(C),
-      CallOrPrologue(Unknown) {
+                 const TargetMachine &tm, SmallVector<CCValAssign, 16> &locs,
+                 LLVMContext &C)
+  : CallingConv(CC), IsVarArg(isVarArg), MF(mf), TM(tm),
+    TRI(*TM.getRegisterInfo()), Locs(locs), Context(C),
+    CallOrPrologue(Unknown) {
   // No stack is used.
   StackOffset = 0;
 
-  clearByValRegsInfo();
+  clearFirstByValReg();
   UsedRegs.resize((TRI.getNumRegs()+31)/32);
 }
 
@@ -49,8 +50,7 @@ void CCState::HandleByVal(unsigned ValNo, MVT ValVT,
   if (MinAlign > (int)Align)
     Align = MinAlign;
   MF.getFrameInfo()->ensureMaxAlignment(Align);
-  MF.getSubtarget().getTargetLowering()->HandleByVal(this, Size, Align);
-  Size = unsigned(RoundUpToAlignment(Size, MinAlign));
+  TM.getTargetLowering()->HandleByVal(this, Size, Align);
   unsigned Offset = AllocateStack(Size, Align);
   addLoc(CCValAssign::getMem(ValNo, ValVT, Offset, LocVT, LocInfo));
 }
@@ -74,9 +74,9 @@ CCState::AnalyzeFormalArguments(const SmallVectorImpl<ISD::InputArg> &Ins,
     if (Fn(i, ArgVT, ArgVT, CCValAssign::Full, ArgFlags, *this)) {
 #ifndef NDEBUG
       dbgs() << "Formal argument #" << i << " has unhandled type "
-             << EVT(ArgVT).getEVTString() << '\n';
+             << EVT(ArgVT).getEVTString();
 #endif
-      llvm_unreachable(nullptr);
+      llvm_unreachable(0);
     }
   }
 }
@@ -106,9 +106,9 @@ void CCState::AnalyzeReturn(const SmallVectorImpl<ISD::OutputArg> &Outs,
     if (Fn(i, VT, VT, CCValAssign::Full, ArgFlags, *this)) {
 #ifndef NDEBUG
       dbgs() << "Return operand #" << i << " has unhandled type "
-             << EVT(VT).getEVTString() << '\n';
+             << EVT(VT).getEVTString();
 #endif
-      llvm_unreachable(nullptr);
+      llvm_unreachable(0);
     }
   }
 }
@@ -124,9 +124,9 @@ void CCState::AnalyzeCallOperands(const SmallVectorImpl<ISD::OutputArg> &Outs,
     if (Fn(i, ArgVT, ArgVT, CCValAssign::Full, ArgFlags, *this)) {
 #ifndef NDEBUG
       dbgs() << "Call operand #" << i << " has unhandled type "
-             << EVT(ArgVT).getEVTString() << '\n';
+             << EVT(ArgVT).getEVTString();
 #endif
-      llvm_unreachable(nullptr);
+      llvm_unreachable(0);
     }
   }
 }
@@ -143,9 +143,9 @@ void CCState::AnalyzeCallOperands(SmallVectorImpl<MVT> &ArgVTs,
     if (Fn(i, ArgVT, ArgVT, CCValAssign::Full, ArgFlags, *this)) {
 #ifndef NDEBUG
       dbgs() << "Call operand #" << i << " has unhandled type "
-             << EVT(ArgVT).getEVTString() << '\n';
+             << EVT(ArgVT).getEVTString();
 #endif
-      llvm_unreachable(nullptr);
+      llvm_unreachable(0);
     }
   }
 }
@@ -160,9 +160,9 @@ void CCState::AnalyzeCallResult(const SmallVectorImpl<ISD::InputArg> &Ins,
     if (Fn(i, VT, VT, CCValAssign::Full, Flags, *this)) {
 #ifndef NDEBUG
       dbgs() << "Call result #" << i << " has unhandled type "
-             << EVT(VT).getEVTString() << '\n';
+             << EVT(VT).getEVTString() << "\n";
 #endif
-      llvm_unreachable(nullptr);
+      llvm_unreachable(0);
     }
   }
 }
@@ -173,8 +173,8 @@ void CCState::AnalyzeCallResult(MVT VT, CCAssignFn Fn) {
   if (Fn(0, VT, VT, CCValAssign::Full, ISD::ArgFlagsTy(), *this)) {
 #ifndef NDEBUG
     dbgs() << "Call result has unhandled type "
-           << EVT(VT).getEVTString() << '\n';
+           << EVT(VT).getEVTString();
 #endif
-    llvm_unreachable(nullptr);
+    llvm_unreachable(0);
   }
 }

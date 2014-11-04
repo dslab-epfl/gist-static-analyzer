@@ -145,13 +145,13 @@ int test_for_range_false(int k) {
 
 int test_for_range_true(int k) {
   int arr[3] = { 1, 2, 3 };
-  int x; // expected-note {{variable}}
-  for (int &a : arr) { // expected-warning {{variable 'x' is used uninitialized whenever 'for' loop is entered}}
+  int x;
+  for (int &a : arr) { // no-warning
     goto label;
   }
   x = 0;
 label:
-  return x; // expected-note {{uninitialized use}}
+  return x;
 }
 
 
@@ -192,7 +192,7 @@ int test_logical_and_false(int k) {
   return x; // expected-note {{uninitialized use}}
 }
 
-// CHECK: fix-it:"{{.*}}":{189:3-191:10}:""
+// CHECK: fix-it:"{{.*}}":{189:3-191:9}:""
 // CHECK: fix-it:"{{.*}}":{188:8-188:8}:" = 0"
 
 
@@ -232,7 +232,7 @@ int test_logical_or_true(int k) {
   return x; // expected-note {{uninitialized use}}
 }
 
-// CHECK: fix-it:"{{.*}}":{229:3-231:10}:""
+// CHECK: fix-it:"{{.*}}":{229:3-231:9}:""
 // CHECK: fix-it:"{{.*}}":{228:8-228:8}:" = 0"
 
 
@@ -356,14 +356,14 @@ int test_no_false_positive_2() {
 }
 
 
-
-
-
+// FIXME: In this case, the variable is used uninitialized whenever the
+// function's entry block is reached. Produce a diagnostic saying that
+// the variable is uninitialized the first time it is used.
 void test_null_pred_succ() {
-  int x; // expected-note {{variable}} expected-warning {{used uninitialized whenever function 'test_null_pred_succ' is called}}
+  int x;
   if (0)
     foo: x = 0;
-  if (x) // expected-note {{use}}
+  if (x)
     goto foo;
 }
 
@@ -385,45 +385,3 @@ int PR13360(bool b) {
 
 // CHECK: fix-it:"{{.*}}":{376:3-380:10}:""
 // CHECK: fix-it:"{{.*}}":{375:8-375:8}:" = 0"
-
-void test_jump_init() {
-goto later;
-  int x; // expected-note {{variable}} expected-warning {{used uninitialized whenever function 'test_jump_init'}}
-later:
-  while (x) x = 0; // expected-note {{use}}
-}
-
-void PR16054() {
-  int x; // expected-note {{variable}} expected-warning {{used uninitialized whenever function 'PR16054}}
-  while (x != 0) { // expected-note {{use}}
-    (void)&x;
-  }
-}
-
-void test_loop_uninit() {
-  for (int n = 0; n < 10; ++n) {
-    int k; // expected-warning {{variable 'k' is used uninitialized whenever its declaration is reached}} expected-note {{variable}}
-    do {
-      k = k + 1; // expected-note {{use}}
-    } while (k != 5);
-  }
-}
-
-// FIXME: We should warn here, because the variable is used uninitialized
-// the first time we encounter the use.
-void test_loop_with_assignment() {
-  double d;
-  for (int n = 0; n < 10; ++n) {
-    d = d + n;
-  }
-}
-
-// FIXME: We should warn here, because the variable is used uninitialized
-// the first time we encounter the use.
-void test_loop_with_ref_bind() {
-  double d;
-  for (int n = 0; n < 10; ++n) {
-    d += n;
-    const double &r = d;
-  }
-}

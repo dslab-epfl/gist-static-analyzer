@@ -9,16 +9,8 @@ public:
   ~X();
 };
 
-template<typename T> struct Y {
-  Y();
-  static Y f() {
-    Y y;
-    return y;
-  }
-};
-
-// CHECK-LABEL: define void @_Z5test0v
-// CHECK-EH-LABEL: define void @_Z5test0v
+// CHECK: define void @_Z5test0v
+// CHECK-EH: define void @_Z5test0v
 X test0() {
   X x;
   // CHECK:          call {{.*}} @_ZN1XC1Ev
@@ -29,8 +21,8 @@ X test0() {
   return x;
 }
 
-// CHECK-LABEL: define void @_Z5test1b(
-// CHECK-EH-LABEL: define void @_Z5test1b(
+// CHECK: define void @_Z5test1b(
+// CHECK-EH: define void @_Z5test1b(
 X test1(bool B) {
   // CHECK:      tail call {{.*}} @_ZN1XC1Ev
   // CHECK-NEXT: ret void
@@ -42,8 +34,8 @@ X test1(bool B) {
   // CHECK-EH-NEXT: ret void
 }
 
-// CHECK-LABEL: define void @_Z5test2b
-// CHECK-EH-LABEL: define void @_Z5test2b
+// CHECK: define void @_Z5test2b
+// CHECK-EH: define void @_Z5test2b
 X test2(bool B) {
   // No NRVO.
 
@@ -108,32 +100,26 @@ X test2(bool B) {
   // CHECK-EH:      resume { i8*, i32 }
 
   // %terminate.lpad: terminate landing pad.
-  // CHECK-EH:      [[T0:%.*]] = landingpad { i8*, i32 } personality i8* bitcast (i32 (...)* @__gxx_personality_v0 to i8*)
+  // CHECK-EH:      landingpad { i8*, i32 } personality i8* bitcast (i32 (...)* @__gxx_personality_v0 to i8*)
   // CHECK-EH-NEXT:   catch i8* null
-  // CHECK-EH-NEXT: [[T1:%.*]] = extractvalue { i8*, i32 } [[T0]], 0
-  // CHECK-EH-NEXT: call void @__clang_call_terminate(i8* [[T1]]) [[NR_NUW:#[0-9]+]]
+  // CHECK-EH-NEXT: call void @_ZSt9terminatev()
   // CHECK-EH-NEXT: unreachable
 
 }
 
-// CHECK-LABEL: define void @_Z5test3b
 X test3(bool B) {
-  // CHECK: tail call {{.*}} @_ZN1XC1Ev
-  // CHECK-NOT: call {{.*}} @_ZN1XC1ERKS_
-  // CHECK: call {{.*}} @_ZN1XC1Ev
-  // CHECK: call {{.*}} @_ZN1XC1ERKS_
-  if (B) {
+  // FIXME: We don't manage to apply NRVO here, although we could.
+  {
     X y;
     return y;
   }
-  // FIXME: we should NRVO this variable too.
   X x;
   return x;
 }
 
 extern "C" void exit(int) throw();
 
-// CHECK-LABEL: define void @_Z5test4b
+// CHECK: define void @_Z5test4b
 X test4(bool B) {
   {
     // CHECK: tail call {{.*}} @_ZN1XC1Ev
@@ -148,7 +134,7 @@ X test4(bool B) {
 }
 
 #ifdef __EXCEPTIONS
-// CHECK-EH-LABEL: define void @_Z5test5
+// CHECK-EH: define void @_Z5test5
 void may_throw();
 X test5() {
   try {
@@ -163,46 +149,13 @@ X test5() {
 #endif
 
 // rdar://problem/10430868
-// CHECK-LABEL: define void @_Z5test6v
+// CHECK: define void @_Z5test6v
 X test6() {
   X a __attribute__((aligned(8)));
   return a;
   // CHECK:      [[A:%.*]] = alloca [[X:%.*]], align 8
   // CHECK-NEXT: call {{.*}} @_ZN1XC1Ev([[X]]* [[A]])
-  // CHECK-NEXT: call {{.*}} @_ZN1XC1ERKS_([[X]]* {{%.*}}, [[X]]* dereferenceable({{[0-9]+}}) [[A]])
+  // CHECK-NEXT: call {{.*}} @_ZN1XC1ERKS_([[X]]* {{%.*}}, [[X]]* [[A]])
   // CHECK-NEXT: call {{.*}} @_ZN1XD1Ev([[X]]* [[A]])
   // CHECK-NEXT: ret void
 }
-
-// CHECK-LABEL: define void @_Z5test7b
-X test7(bool b) {
-  // CHECK: tail call {{.*}} @_ZN1XC1Ev
-  // CHECK-NEXT: ret
-  if (b) {
-    X x;
-    return x;
-  }
-  return X();
-}
-
-// CHECK-LABEL: define void @_Z5test8b
-X test8(bool b) {
-  // CHECK: tail call {{.*}} @_ZN1XC1Ev
-  // CHECK-NEXT: ret
-  if (b) {
-    X x;
-    return x;
-  } else {
-    X y;
-    return y;
-  }
-}
-
-Y<int> test9() {
-  Y<int>::f();
-}
-
-// CHECK-LABEL: define linkonce_odr void @_ZN1YIiE1fEv
-// CHECK: tail call {{.*}} @_ZN1YIiEC1Ev
-
-// CHECK-EH: attributes [[NR_NUW]] = { noreturn nounwind }

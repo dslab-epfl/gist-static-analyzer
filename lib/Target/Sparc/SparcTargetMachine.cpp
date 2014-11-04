@@ -12,8 +12,8 @@
 
 #include "SparcTargetMachine.h"
 #include "Sparc.h"
-#include "llvm/CodeGen/Passes.h"
 #include "llvm/PassManager.h"
+#include "llvm/CodeGen/Passes.h"
 #include "llvm/Support/TargetRegistry.h"
 using namespace llvm;
 
@@ -32,8 +32,11 @@ SparcTargetMachine::SparcTargetMachine(const Target &T, StringRef TT,
                                        CodeGenOpt::Level OL,
                                        bool is64bit)
   : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
-    Subtarget(TT, CPU, FS, *this, is64bit) {
-  initAsmInfo();
+    Subtarget(TT, CPU, FS, is64bit),
+    DL(Subtarget.getDataLayout()),
+    InstrInfo(Subtarget),
+    TLInfo(*this), TSInfo(*this),
+    FrameLowering(Subtarget), STTI(&TLInfo), VTTI(&TLInfo) {
 }
 
 namespace {
@@ -47,8 +50,8 @@ public:
     return getTM<SparcTargetMachine>();
   }
 
-  bool addInstSelector() override;
-  bool addPreEmitPass() override;
+  virtual bool addInstSelector();
+  virtual bool addPreEmitPass();
 };
 } // namespace
 
@@ -65,6 +68,7 @@ bool SparcPassConfig::addInstSelector() {
 /// passes immediately before machine code is emitted.  This should return
 /// true if -print-machineinstrs should print out the code after the passes.
 bool SparcPassConfig::addPreEmitPass(){
+  addPass(createSparcFPMoverPass(getSparcTargetMachine()));
   addPass(createSparcDelaySlotFillerPass(getSparcTargetMachine()));
   return true;
 }

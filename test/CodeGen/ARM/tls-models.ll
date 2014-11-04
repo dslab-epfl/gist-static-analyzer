@@ -21,10 +21,10 @@ entry:
   ret i32* @external_gd
 
   ; Non-PIC code can use initial-exec, PIC code has to use general dynamic.
-  ; CHECK-NONPIC-LABEL:   f1:
-  ; CHECK-NONPIC:   external_gd(GOTTPOFF)
-  ; CHECK-PIC-LABEL:      f1:
-  ; CHECK-PIC:      external_gd(TLSGD)
+  ; CHECK-NONPIC:   f1:
+  ; CHECK-NONPIC:   external_gd(gottpoff)
+  ; CHECK-PIC:      f1:
+  ; CHECK-PIC:      external_gd(tlsgd)
 }
 
 define i32* @f2() {
@@ -33,10 +33,10 @@ entry:
 
   ; Non-PIC code can use local exec, PIC code can use local dynamic,
   ; but that is not implemented, so falls back to general dynamic.
-  ; CHECK-NONPIC-LABEL:   f2:
-  ; CHECK-NONPIC:   internal_gd(TPOFF)
-  ; CHECK-PIC-LABEL:      f2:
-  ; CHECK-PIC:      internal_gd(TLSGD)
+  ; CHECK-NONPIC:   f2:
+  ; CHECK-NONPIC:   internal_gd(tpoff)
+  ; CHECK-PIC:      f2:
+  ; CHECK-PIC:      internal_gd(tlsgd)
 }
 
 
@@ -48,10 +48,10 @@ entry:
 
   ; Non-PIC code can use initial exec, PIC should use local dynamic,
   ; but that is not implemented, so falls back to general dynamic.
-  ; CHECK-NONPIC-LABEL:   f3:
-  ; CHECK-NONPIC:   external_ld(GOTTPOFF)
-  ; CHECK-PIC-LABEL:      f3:
-  ; CHECK-PIC:      external_ld(TLSGD)
+  ; CHECK-NONPIC:   f3:
+  ; CHECK-NONPIC:   external_ld(gottpoff)
+  ; CHECK-PIC:      f3:
+  ; CHECK-PIC:      external_ld(tlsgd)
 }
 
 define i32* @f4() {
@@ -60,10 +60,10 @@ entry:
 
   ; Non-PIC code can use local exec, PIC code can use local dynamic,
   ; but that is not implemented, so it falls back to general dynamic.
-  ; CHECK-NONPIC-LABEL:   f4:
-  ; CHECK-NONPIC:   internal_ld(TPOFF)
-  ; CHECK-PIC-LABEL:      f4:
-  ; CHECK-PIC:      internal_ld(TLSGD)
+  ; CHECK-NONPIC:   f4:
+  ; CHECK-NONPIC:   internal_ld(tpoff)
+  ; CHECK-PIC:      f4:
+  ; CHECK-PIC:      internal_ld(tlsgd)
 }
 
 
@@ -74,10 +74,10 @@ entry:
   ret i32* @external_ie
 
   ; Non-PIC and PIC code will use initial exec as specified.
-  ; CHECK-NONPIC-LABEL:   f5:
-  ; CHECK-NONPIC:   external_ie(GOTTPOFF)
-  ; CHECK-PIC-LABEL:      f5:
-  ; CHECK-PIC:      external_ie(GOTTPOFF)
+  ; CHECK-NONPIC:   f5:
+  ; CHECK-NONPIC:   external_ie(gottpoff)
+  ; CHECK-PIC:      f5:
+  ; CHECK-PIC:      external_ie(gottpoff)
 }
 
 define i32* @f6() {
@@ -85,10 +85,10 @@ entry:
   ret i32* @internal_ie
 
   ; Non-PIC code can use local exec, PIC code use initial exec as specified.
-  ; CHECK-NONPIC-LABEL:   f6:
-  ; CHECK-NONPIC:   internal_ie(TPOFF)
-  ; CHECK-PIC-LABEL:      f6:
-  ; CHECK-PIC:      internal_ie(GOTTPOFF)
+  ; CHECK-NONPIC:   f6:
+  ; CHECK-NONPIC:   internal_ie(tpoff)
+  ; CHECK-PIC:      f6:
+  ; CHECK-PIC:      internal_ie(gottpoff)
 }
 
 
@@ -99,10 +99,10 @@ entry:
   ret i32* @external_le
 
   ; Non-PIC and PIC code will use local exec as specified.
-  ; CHECK-NONPIC-LABEL:   f7:
-  ; CHECK-NONPIC:   external_le(TPOFF)
-  ; CHECK-PIC-LABEL:      f7:
-  ; CHECK-PIC:      external_le(TPOFF)
+  ; CHECK-NONPIC:   f7:
+  ; CHECK-NONPIC:   external_le(tpoff)
+  ; CHECK-PIC:      f7:
+  ; CHECK-PIC:      external_le(tpoff)
 }
 
 define i32* @f8() {
@@ -110,8 +110,8 @@ entry:
   ret i32* @internal_le
 
   ; Non-PIC and PIC code will use local exec as specified.
-  ; CHECK-NONPIC-LABEL:   f8:
-  ; CHECK-NONPIC:   internal_le(TPOFF)
-  ; CHECK-PIC-LABEL:      f8:
-  ; CHECK-PIC:      internal_le(TPOFF)
+  ; CHECK-NONPIC:   f8:
+  ; CHECK-NONPIC:   internal_le(tpoff)
+  ; CHECK-PIC:      f8:
+  ; CHECK-PIC:      internal_le(tpoff)
 }

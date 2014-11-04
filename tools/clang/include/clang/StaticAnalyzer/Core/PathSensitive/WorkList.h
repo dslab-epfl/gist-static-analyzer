@@ -12,18 +12,20 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_STATICANALYZER_CORE_PATHSENSITIVE_WORKLIST_H
-#define LLVM_CLANG_STATICANALYZER_CORE_PATHSENSITIVE_WORKLIST_H
+#ifndef LLVM_CLANG_GR_WORKLIST
+#define LLVM_CLANG_GR_WORKLIST
 
 #include "clang/StaticAnalyzer/Core/PathSensitive/BlockCounter.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/ExplodedGraph.h"
-#include <cassert>
+#include <cstddef>
 
 namespace clang {
   
 class CFGBlock;
 
 namespace ento {
+
+class ExplodedNode;
+class ExplodedNodeImpl;
 
 class WorkListUnit {
   ExplodedNode *node;
@@ -42,7 +44,7 @@ public:
   explicit WorkListUnit(ExplodedNode *N, BlockCounter C)
   : node(N),
     counter(C),
-    block(nullptr),
+    block(NULL),
     blockIdx(0) {}
 
   /// Returns the node associated with the worklist unit.

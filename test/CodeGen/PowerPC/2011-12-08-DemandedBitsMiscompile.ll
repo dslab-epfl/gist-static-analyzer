@@ -9,7 +9,7 @@ entry:
   store i64 %z2, i64* %xx, align 4
   ret void
 
-; CHECK-LABEL: test:
+; CHECK: test:
 ; CHECK: sldi {{.*}}, {{.*}}, 32
 ; Note: it's okay if someday CodeGen gets smart enough to optimize out
 ; the shift.

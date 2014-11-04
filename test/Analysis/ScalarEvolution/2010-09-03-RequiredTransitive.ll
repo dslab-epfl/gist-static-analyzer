@@ -1,9 +1,7 @@
-; RUN: opt -indvars -scalar-evolution -analyze < %s | FileCheck %s
+; RUN: opt -indvars -scalar-evolution -analyze %s
 ; This test checks if the SCEV analysis is printed out at all.
 ; It failed once as the RequiredTransitive option was not implemented
 ; correctly.
-
-; CHECK: Classifying expressions for: @main
 
 define i32 @main() nounwind {
 entry:

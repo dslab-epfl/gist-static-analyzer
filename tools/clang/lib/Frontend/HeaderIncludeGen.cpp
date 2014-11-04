@@ -24,42 +24,40 @@ class HeaderIncludesCallback : public PPCallbacks {
   bool OwnsOutputFile;
   bool ShowAllHeaders;
   bool ShowDepth;
-  bool MSStyle;
 
 public:
   HeaderIncludesCallback(const Preprocessor *PP, bool ShowAllHeaders_,
                          raw_ostream *OutputFile_, bool OwnsOutputFile_,
-                         bool ShowDepth_, bool MSStyle_)
+                         bool ShowDepth_)
     : SM(PP->getSourceManager()), OutputFile(OutputFile_),
       CurrentIncludeDepth(0), HasProcessedPredefines(false),
       OwnsOutputFile(OwnsOutputFile_), ShowAllHeaders(ShowAllHeaders_),
-      ShowDepth(ShowDepth_), MSStyle(MSStyle_) {}
+      ShowDepth(ShowDepth_) {}
 
   ~HeaderIncludesCallback() {
     if (OwnsOutputFile)
       delete OutputFile;
   }
 
-  void FileChanged(SourceLocation Loc, FileChangeReason Reason,
-                   SrcMgr::CharacteristicKind FileType,
-                   FileID PrevFID) override;
+  virtual void FileChanged(SourceLocation Loc, FileChangeReason Reason,
+                           SrcMgr::CharacteristicKind FileType,
+                           FileID PrevFID);
 };
 }
 
 void clang::AttachHeaderIncludeGen(Preprocessor &PP, bool ShowAllHeaders,
-                                   StringRef OutputPath, bool ShowDepth,
-                                   bool MSStyle) {
-  raw_ostream *OutputFile = MSStyle ? &llvm::outs() : &llvm::errs();
+                                   StringRef OutputPath, bool ShowDepth) {
+  raw_ostream *OutputFile = &llvm::errs();
   bool OwnsOutputFile = false;
 
   // Open the output file, if used.
   if (!OutputPath.empty()) {
-    std::error_code EC;
+    std::string Error;
     llvm::raw_fd_ostream *OS = new llvm::raw_fd_ostream(
-        OutputPath.str(), EC, llvm::sys::fs::F_Append | llvm::sys::fs::F_Text);
-    if (EC) {
-      PP.getDiagnostics().Report(clang::diag::warn_fe_cc_print_header_failure)
-          << EC.message();
+      OutputPath.str().c_str(), Error, llvm::raw_fd_ostream::F_Append);
+    if (!Error.empty()) {
+      PP.getDiagnostics().Report(
+        clang::diag::warn_fe_cc_print_header_failure) << Error;
       delete OS;
     } else {
       OS->SetUnbuffered();
@@ -69,12 +67,9 @@ void clang::AttachHeaderIncludeGen(Preprocessor &PP, bool ShowAllHeaders,
     }
   }
 
-  PP.addPPCallbacks(llvm::make_unique<HeaderIncludesCallback>(&PP,
-                                                              ShowAllHeaders,
-                                                              OutputFile,
-                                                              OwnsOutputFile,
-                                                              ShowDepth,
-                                                              MSStyle));
+  PP.addPPCallbacks(new HeaderIncludesCallback(&PP, ShowAllHeaders,
+                                               OutputFile, OwnsOutputFile,
+                                               ShowDepth));
 }
 
 void HeaderIncludesCallback::FileChanged(SourceLocation Loc,
@@ -114,25 +109,18 @@ void HeaderIncludesCallback::FileChanged(SourceLocation Loc,
   if (ShowHeader && Reason == PPCallbacks::EnterFile) {
     // Write to a temporary string to avoid unnecessary flushing on errs().
     SmallString<512> Filename(UserLoc.getFilename());
-    if (!MSStyle)
-      Lexer::Stringify(Filename);
+    Lexer::Stringify(Filename);
 
     SmallString<256> Msg;
-    if (MSStyle)
-      Msg += "Note: including file:";
-
     if (ShowDepth) {
       // The main source file is at depth 1, so skip one dot.
       for (unsigned i = 1; i != CurrentIncludeDepth; ++i)
-        Msg += MSStyle ? ' ' : '.';
-
-      if (!MSStyle)
-        Msg += ' ';
+        Msg += '.';
+      Msg += ' ';
     }
     Msg += Filename;
     Msg += '\n';
 
     OutputFile->write(Msg.data(), Msg.size());
-    OutputFile->flush();
   }
 }

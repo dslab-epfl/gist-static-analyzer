@@ -13,14 +13,10 @@
 
 #include "clang/Basic/Version.h"
 #include "clang/Basic/LLVM.h"
-#include "clang/Config/config.h"
 #include "llvm/Support/raw_ostream.h"
-#include <cstdlib>
+#include "llvm/Config/config.h"
 #include <cstring>
-
-#ifdef HAVE_SVN_VERSION_INC
-#  include "SVNVersion.inc"
-#endif
+#include <cstdlib>
 
 namespace clang {
 
@@ -36,7 +32,7 @@ std::string getClangRepositoryPath() {
 
   // If the SVN_REPOSITORY is empty, try to use the SVN keyword. This helps us
   // pick up a tag in an SVN export, for example.
-  StringRef SVNRepository("$URL: http://llvm.org/svn/llvm-project/cfe/trunk/lib/Basic/Version.cpp $");
+  static StringRef SVNRepository("$URL: http://llvm.org/svn/llvm-project/cfe/tags/RELEASE_32/final/lib/Basic/Version.cpp $");
   if (URL.empty()) {
     URL = SVNRepository.slice(SVNRepository.find(':'),
                               SVNRepository.find("/lib/Basic"));
@@ -102,11 +98,11 @@ std::string getClangFullRepositoryVersion() {
       OS << Revision;
     }
     OS << ')';
-  }
+  }  
   // Support LLVM in a separate repository.
   std::string LLVMRev = getLLVMRevision();
   if (!LLVMRev.empty() && LLVMRev != Revision) {
-    OS << " (";
+    OS << " (";    
     std::string LLVMRepo = getLLVMRepositoryPath();
     if (!LLVMRepo.empty())
       OS << LLVMRepo << ' ';
@@ -116,21 +112,17 @@ std::string getClangFullRepositoryVersion() {
 }
 
 std::string getClangFullVersion() {
-  return getClangToolFullVersion("clang");
-}
-
-std::string getClangToolFullVersion(StringRef ToolName) {
   std::string buf;
   llvm::raw_string_ostream OS(buf);
 #ifdef CLANG_VENDOR
   OS << CLANG_VENDOR;
 #endif
-  OS << ToolName << " version " CLANG_VERSION_STRING " "
+  OS << "clang version " CLANG_VERSION_STRING " "
      << getClangFullRepositoryVersion();
 
   // If vendor supplied, include the base LLVM version as well.
 #ifdef CLANG_VENDOR
-  OS << " (based on " << BACKEND_PACKAGE_STRING << ")";
+  OS << " (based on LLVM " << PACKAGE_VERSION << ")";
 #endif
 
   return OS.str();

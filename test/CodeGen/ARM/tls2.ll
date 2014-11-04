@@ -6,10 +6,10 @@
 @i = external thread_local global i32		; <i32*> [#uses=2]
 
 define i32 @f() {
-; CHECK-NONPIC-LABEL: f:
+; CHECK-NONPIC: f:
 ; CHECK-NONPIC: ldr {{r.}}, [pc, {{r.}}]
-; CHECK-NONPIC: i(GOTTPOFF)
-; CHECK-PIC-LABEL: f:
+; CHECK-NONPIC: i(gottpoff)
+; CHECK-PIC: f:
 ; CHECK-PIC: __tls_get_addr
 entry:
 	%tmp1 = load i32* @i		; <i32> [#uses=1]
@@ -17,10 +17,10 @@ entry:
 }
 
 define i32* @g() {
-; CHECK-NONPIC-LABEL: g:
+; CHECK-NONPIC: g:
 ; CHECK-NONPIC: ldr {{r.}}, [pc, {{r.}}]
-; CHECK-NONPIC: i(GOTTPOFF)
-; CHECK-PIC-LABEL: g:
+; CHECK-NONPIC: i(gottpoff)
+; CHECK-PIC: g:
 ; CHECK-PIC: __tls_get_addr
 entry:
 	ret i32* @i

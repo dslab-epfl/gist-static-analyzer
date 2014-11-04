@@ -1,13 +1,12 @@
 ; RUN: opt < %s -functionattrs -S | FileCheck %s
 @g = global i32* null		; <i32**> [#uses=1]
 
-; CHECK: define i32* @c1(i32* readnone %q)
+; CHECK: define i32* @c1(i32* %q)
 define i32* @c1(i32* %q) {
 	ret i32* %q
 }
 
 ; CHECK: define void @c2(i32* %q)
-; It would also be acceptable to mark %q as readnone. Update @c3 too.
 define void @c2(i32* %q) {
 	store i32* %q, i32** @g
 	ret void
@@ -46,7 +45,7 @@ define i1 @c5(i32* %q, i32 %bitno) {
 
 declare void @throw_if_bit_set(i8*, i8) readonly
 
-; CHECK: define i1 @c6(i8* readonly %q, i8 %bit)
+; CHECK: define i1 @c6(i8* %q, i8 %bit)
 define i1 @c6(i8* %q, i8 %bit) {
 	invoke void @throw_if_bit_set(i8* %q, i8 %bit)
 		to label %ret0 unwind label %ret1
@@ -68,7 +67,7 @@ define i1* @lookup_bit(i32* %q, i32 %bitno) readnone nounwind {
 	ret i1* %lookup
 }
 
-; CHECK: define i1 @c7(i32* readonly %q, i32 %bitno)
+; CHECK: define i1 @c7(i32* %q, i32 %bitno)
 define i1 @c7(i32* %q, i32 %bitno) {
 	%ptr = call i1* @lookup_bit(i32* %q, i32 %bitno)
 	%val = load i1* %ptr
@@ -91,21 +90,6 @@ l:
 	ret i32 %val
 }
 
-; CHECK: define i32 @nc1_addrspace(i32* %q, i32 addrspace(1)* nocapture %p, i1 %b)
-define i32 @nc1_addrspace(i32* %q, i32 addrspace(1)* %p, i1 %b) {
-e:
-	br label %l
-l:
-	%x = phi i32 addrspace(1)* [ %p, %e ]
-	%y = phi i32* [ %q, %e ]
-	%tmp = addrspacecast i32 addrspace(1)* %x to i32*		; <i32*> [#uses=2]
-	%tmp2 = select i1 %b, i32* %tmp, i32* %y
-	%val = load i32* %tmp2		; <i32> [#uses=1]
-	store i32 0, i32* %tmp
-	store i32* %y, i32** @g
-	ret i32 %val
-}
-
 ; CHECK: define void @nc2(i32* nocapture %p, i32* %q)
 define void @nc2(i32* %p, i32* %q) {
 	%1 = call i32 @nc1(i32* %q, i32* %p, i1 0)		; <i32> [#uses=0]
@@ -119,7 +103,7 @@ define void @nc3(void ()* %p) {
 }
 
 declare void @external(i8*) readonly nounwind
-; CHECK: define void @nc4(i8* nocapture readonly %p)
+; CHECK: define void @nc4(i8* nocapture %p)
 define void @nc4(i8* %p) {
 	call void @external(i8* %p)
 	ret void
@@ -132,29 +116,28 @@ define void @nc5(void (i8*)* %f, i8* %p) {
 	ret void
 }
 
-; CHECK: define void @test1_1(i8* nocapture readnone %x1_1, i8* %y1_1)
-; It would be acceptable to add readnone to %y1_1 and %y1_2.
+; CHECK: define void @test1_1(i8* nocapture %x1_1, i8* %y1_1)
 define void @test1_1(i8* %x1_1, i8* %y1_1) {
   call i8* @test1_2(i8* %x1_1, i8* %y1_1)
   store i32* null, i32** @g
   ret void
 }
 
-; CHECK: define i8* @test1_2(i8* nocapture readnone %x1_2, i8* %y1_2)
+; CHECK: define i8* @test1_2(i8* nocapture %x1_2, i8* %y1_2)
 define i8* @test1_2(i8* %x1_2, i8* %y1_2) {
   call void @test1_1(i8* %x1_2, i8* %y1_2)
   store i32* null, i32** @g
   ret i8* %y1_2
 }
 
-; CHECK: define void @test2(i8* nocapture readnone %x2)
+; CHECK: define void @test2(i8* nocapture %x2)
 define void @test2(i8* %x2) {
   call void @test2(i8* %x2)
   store i32* null, i32** @g
   ret void
 }
 
-; CHECK: define void @test3(i8* nocapture readnone %x3, i8* nocapture readnone %y3, i8* nocapture readnone %z3)
+; CHECK: define void @test3(i8* nocapture %x3, i8* nocapture %y3, i8* nocapture %z3)
 define void @test3(i8* %x3, i8* %y3, i8* %z3) {
   call void @test3(i8* %z3, i8* %y3, i8* %x3)
   store i32* null, i32** @g
@@ -168,7 +151,7 @@ define void @test4_1(i8* %x4_1) {
   ret void
 }
 
-; CHECK: define i8* @test4_2(i8* nocapture readnone %x4_2, i8* readnone %y4_2, i8* nocapture readnone %z4_2)
+; CHECK: define i8* @test4_2(i8* nocapture %x4_2, i8* %y4_2, i8* nocapture %z4_2)
 define i8* @test4_2(i8* %x4_2, i8* %y4_2, i8* %z4_2) {
   call void @test4_1(i8* null)
   store i32* null, i32** @g

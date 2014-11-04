@@ -13,12 +13,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_HEXAGON_HEXAGONCALLINGCONVLOWER_H
-#define LLVM_LIB_TARGET_HEXAGON_HEXAGONCALLINGCONVLOWER_H
+#ifndef LLVM_Hexagon_CODEGEN_CALLINGCONVLOWER_H
+#define LLVM_Hexagon_CODEGEN_CALLINGCONVLOWER_H
 
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/CodeGen/CallingConvLower.h"
+#include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
+#include "llvm/CodeGen/CallingConvLower.h"
 
 //
 // Need to handle varargs.
@@ -28,7 +29,7 @@ namespace llvm {
   class TargetMachine;
   class Hexagon_CCState;
   class SDNode;
-  struct EVT;
+
 
 /// Hexagon_CCAssignFn - This function assigns a location for Val, updating
 /// State to reflect the change.
@@ -47,14 +48,15 @@ class Hexagon_CCState {
   CallingConv::ID CallingConv;
   bool IsVarArg;
   const TargetMachine &TM;
-  SmallVectorImpl<CCValAssign> &Locs;
+  const TargetRegisterInfo &TRI;
+  SmallVector<CCValAssign, 16> &Locs;
   LLVMContext &Context;
 
   unsigned StackOffset;
   SmallVector<uint32_t, 16> UsedRegs;
 public:
   Hexagon_CCState(CallingConv::ID CC, bool isVarArg, const TargetMachine &TM,
-                  SmallVectorImpl<CCValAssign> &locs, LLVMContext &c);
+                SmallVector<CCValAssign, 16> &locs, LLVMContext &c);
 
   void addLoc(const CCValAssign &V) {
     Locs.push_back(V);

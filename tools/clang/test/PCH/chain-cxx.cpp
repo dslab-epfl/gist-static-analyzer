@@ -6,9 +6,6 @@
 // With PCH
 // RUN: %clang_cc1 -fsyntax-only -verify %s -chain-include %s -chain-include %s
 
-// With modules
-// RUN: %clang_cc1 -fsyntax-only -verify -fmodules %s -chain-include %s -chain-include %s
-
 // expected-no-diagnostics
 
 #ifndef HEADER1

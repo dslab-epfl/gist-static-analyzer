@@ -11,7 +11,7 @@ let Component = "Comment" in {
 let CategoryName = "Documentation Issue" in {
 
 // HTML parsing errors.  These are under -Wdocumentation to make sure the user
-// knows that we didn't parse something as they might expect.
+// knows that we didn't parse something as he might expect.
 
 def warn_doc_html_start_tag_expected_quoted_string : Warning<
   "expected quoted string after equals sign">,
@@ -41,25 +41,21 @@ def warn_doc_html_start_end_mismatch : Warning<
 def note_doc_html_end_tag : Note<
   "end tag">;
 
-def warn_doc_html_missing_end_tag : Warning<
-  "HTML tag '%0' requires an end tag">,
-  InGroup<DocumentationHTML>, DefaultIgnore;
-
 // Commands
 
 def warn_doc_block_command_empty_paragraph : Warning<
-  "empty paragraph passed to '%select{\\|@}0%1' command">,
+  "empty paragraph passed to '\\%0' command">,
   InGroup<Documentation>, DefaultIgnore;
 
 def warn_doc_block_command_duplicate : Warning<
-  "duplicated command '%select{\\|@}0%1'">,
+  "duplicated command '\\%0'">,
   InGroup<Documentation>, DefaultIgnore;
 
 def note_doc_block_command_previous : Note<
-  "previous command '%select{\\|@}0%1' here">;
+  "previous command '\\%0' here">;
 
 def note_doc_block_command_previous_alias : Note<
-  "previous command '%select{\\|@}0%1' (an alias of '\\%2') here">;
+  "previous command '\\%0' (an alias of '\\%1') here">;
 
 // \param command
 
@@ -73,29 +69,10 @@ def warn_doc_param_spaces_in_direction : Warning<
   InGroup<DocumentationPedantic>, DefaultIgnore;
 
 def warn_doc_param_not_attached_to_a_function_decl : Warning<
-  "'%select{\\|@}0param' command used in a comment that is not attached to "
+  "'\\param' command used in a comment that is not attached to "
   "a function declaration">,
   InGroup<Documentation>, DefaultIgnore;
 
-def warn_doc_function_method_decl_mismatch : Warning<
-  "'%select{\\|@}0%select{function|functiongroup|method|methodgroup|callback}1' "
-  "command should be used in a comment attached to "
-  "%select{a function|a function|an Objective-C method|an Objective-C method|"
-  "a pointer to function}2 declaration">,
-  InGroup<Documentation>, DefaultIgnore;
-  
-def warn_doc_api_container_decl_mismatch : Warning<
-  "'%select{\\|@}0%select{class|interface|protocol|struct|union}1' "
-  "command should not be used in a comment attached to a "
-  "non-%select{class|interface|protocol|struct|union}2 declaration">,
-  InGroup<Documentation>, DefaultIgnore;
-  
-def warn_doc_container_decl_mismatch : Warning<
-  "'%select{\\|@}0%select{classdesign|coclass|dependency|helper"
-  "|helperclass|helps|instancesize|ownership|performance|security|superclass}1' "
-  "command should not be used in a comment attached to a non-container declaration">,
-  InGroup<Documentation>, DefaultIgnore;
-  
 def warn_doc_param_duplicate : Warning<
   "parameter '%0' is already documented">,
   InGroup<Documentation>, DefaultIgnore;
@@ -110,10 +87,10 @@ def warn_doc_param_not_found : Warning<
 def note_doc_param_name_suggestion : Note<
   "did you mean '%0'?">;
 
-// tparam command
+// \tparam command
 
 def warn_doc_tparam_not_attached_to_a_template_decl : Warning<
-  "'%select{\\|@}0tparam' command used in a comment that is not attached to "
+  "'\\tparam' command used in a comment that is not attached to "
   "a template declaration">,
   InGroup<Documentation>, DefaultIgnore;
 
@@ -134,14 +111,14 @@ def note_doc_tparam_name_suggestion : Note<
 // \returns command
 
 def warn_doc_returns_not_attached_to_a_function_decl : Warning<
-  "'%select{\\|@}0%1' command used in a comment that is not attached to "
+  "'\\%0' command used in a comment that is not attached to "
   "a function or method declaration">,
   InGroup<Documentation>, DefaultIgnore;
 
 def warn_doc_returns_attached_to_a_void_function : Warning<
-  "'%select{\\|@}0%1' command used in a comment that is attached to a "
+  "'\\%0' command used in a comment that is attached to a "
   "%select{function returning void|constructor|destructor|"
-  "method returning void}2">,
+  "method returning void}1">,
   InGroup<Documentation>, DefaultIgnore;
 
 // \deprecated command
@@ -157,15 +134,7 @@ def note_add_deprecation_attr : Note<
 // verbatim block commands
 
 def warn_verbatim_block_end_without_start : Warning<
-  "'%select{\\|@}0%1' command does not terminate a verbatim text block">,
-  InGroup<Documentation>, DefaultIgnore;
-
-def warn_unknown_comment_command_name : Warning<
-  "unknown command tag name">,
-  InGroup<DocumentationUnknownCommand>, DefaultIgnore;
-
-def warn_correct_comment_command_name : Warning<
-  "unknown command tag name '%0'; did you mean '%1'?">,
+  "'\\%0' command does not terminate a verbatim text block">,
   InGroup<Documentation>, DefaultIgnore;
 
 } // end of documentation issue category

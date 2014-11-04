@@ -11,8 +11,8 @@
 #define LLVM_CLANG_ARCMIGRATE_ARCMT_H
 
 #include "clang/ARCMigrate/FileRemapper.h"
-#include "clang/Basic/SourceLocation.h"
 #include "clang/Frontend/CompilerInvocation.h"
+#include "clang/Basic/SourceLocation.h"
 
 namespace clang {
   class ASTContext;
@@ -97,8 +97,6 @@ class MigrationProcess {
   FileRemapper Remapper;
 
 public:
-  bool HadARCErrors;
-
   MigrationProcess(const CompilerInvocation &CI, DiagnosticConsumer *diagClient,
                    StringRef outputDir = StringRef());
 
@@ -113,7 +111,7 @@ public:
     virtual void remove(CharSourceRange range) { }
   };
 
-  bool applyTransform(TransformFn trans, RewriteListener *listener = nullptr);
+  bool applyTransform(TransformFn trans, RewriteListener *listener = 0);
 
   FileRemapper &getRemapper() { return Remapper; }
 };

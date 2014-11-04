@@ -7,13 +7,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_FRONTEND_LOGDIAGNOSTICPRINTER_H
-#define LLVM_CLANG_FRONTEND_LOGDIAGNOSTICPRINTER_H
+#ifndef LLVM_CLANG_FRONTEND_LOG_DIAGNOSTIC_PRINTER_H_
+#define LLVM_CLANG_FRONTEND_LOG_DIAGNOSTIC_PRINTER_H_
 
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/SourceLocation.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/SmallVector.h"
 
 namespace clang {
 class DiagnosticOptions;
@@ -39,20 +39,14 @@ class LogDiagnosticPrinter : public DiagnosticConsumer {
     /// The level of the diagnostic.
     DiagnosticsEngine::Level DiagnosticLevel;
   };
-
-  void EmitDiagEntry(llvm::raw_ostream &OS,
-                     const LogDiagnosticPrinter::DiagEntry &DE);
-
-  // Conditional ownership (when StreamOwner is non-null, it's keeping OS
-  // alive). We might want to replace this with a wrapper for conditional
-  // ownership eventually - it seems to pop up often enough.
+  
   raw_ostream &OS;
-  std::unique_ptr<raw_ostream> StreamOwner;
   const LangOptions *LangOpts;
-  IntrusiveRefCntPtr<DiagnosticOptions> DiagOpts;
+  llvm::IntrusiveRefCntPtr<DiagnosticOptions> DiagOpts;
 
   SourceLocation LastWarningLoc;
   FullSourceLoc LastLoc;
+  unsigned OwnsOutputStream : 1;
 
   SmallVector<DiagEntry, 8> Entries;
 
@@ -61,20 +55,23 @@ class LogDiagnosticPrinter : public DiagnosticConsumer {
 
 public:
   LogDiagnosticPrinter(raw_ostream &OS, DiagnosticOptions *Diags,
-                       std::unique_ptr<raw_ostream> StreamOwner);
+                       bool OwnsOutputStream = false);
+  virtual ~LogDiagnosticPrinter();
 
   void setDwarfDebugFlags(StringRef Value) {
     DwarfDebugFlags = Value;
   }
 
-  void BeginSourceFile(const LangOptions &LO, const Preprocessor *PP) override {
+  void BeginSourceFile(const LangOptions &LO, const Preprocessor *PP) {
     LangOpts = &LO;
   }
 
-  void EndSourceFile() override;
+  void EndSourceFile();
 
-  void HandleDiagnostic(DiagnosticsEngine::Level DiagLevel,
-                        const Diagnostic &Info) override;
+  virtual void HandleDiagnostic(DiagnosticsEngine::Level DiagLevel,
+                                const Diagnostic &Info);
+  
+  DiagnosticConsumer *clone(DiagnosticsEngine &Diags) const;
 };
 
 } // end namespace clang

@@ -9,7 +9,7 @@
 
 LEVEL = ../..
 TESTNAME = Bitcode
-LINK_COMPONENTS := AsmParser BitReader BitWriter Core Support
+LINK_COMPONENTS := bitreader bitwriter
 
 include $(LEVEL)/Makefile.config
 include $(LLVM_SRC_ROOT)/unittests/Makefile.unittest

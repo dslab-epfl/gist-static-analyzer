@@ -11,48 +11,28 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_SPARC_SPARCFRAMELOWERING_H
-#define LLVM_LIB_TARGET_SPARC_SPARCFRAMELOWERING_H
+#ifndef SPARC_FRAMEINFO_H
+#define SPARC_FRAMEINFO_H
 
 #include "Sparc.h"
+#include "SparcSubtarget.h"
 #include "llvm/Target/TargetFrameLowering.h"
 
 namespace llvm {
+  class SparcSubtarget;
 
-class SparcSubtarget;
 class SparcFrameLowering : public TargetFrameLowering {
 public:
-  explicit SparcFrameLowering(const SparcSubtarget &ST);
+  explicit SparcFrameLowering(const SparcSubtarget &/*sti*/)
+    : TargetFrameLowering(TargetFrameLowering::StackGrowsDown, 8, 0) {
+  }
 
   /// emitProlog/emitEpilog - These methods insert prolog and epilog code into
   /// the function.
-  void emitPrologue(MachineFunction &MF) const override;
-  void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const override;
+  void emitPrologue(MachineFunction &MF) const;
+  void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const;
 
-  void
-  eliminateCallFramePseudoInstr(MachineFunction &MF,
-                                MachineBasicBlock &MBB,
-                                MachineBasicBlock::iterator I) const override;
-
-  bool hasReservedCallFrame(const MachineFunction &MF) const override;
-  bool hasFP(const MachineFunction &MF) const override;
-  void processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
-                                     RegScavenger *RS = nullptr) const override;
-
-private:
-  // Remap input registers to output registers for leaf procedure.
-  void remapRegsForLeafProc(MachineFunction &MF) const;
-
-  // Returns true if MF is a leaf procedure.
-  bool isLeafProc(MachineFunction &MF) const;
-
-
-  // Emits code for adjusting SP in function prologue/epilogue.
-  void emitSPAdjustment(MachineFunction &MF,
-                        MachineBasicBlock &MBB,
-                        MachineBasicBlock::iterator MBBI,
-                        int NumBytes, unsigned ADDrr, unsigned ADDri) const;
-
+  bool hasFP(const MachineFunction &MF) const { return false; }
 };
 
 } // End llvm namespace

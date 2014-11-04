@@ -10,8 +10,8 @@
 // This file declares  Sparc specific per-machine-function information.
 //
 //===----------------------------------------------------------------------===//
-#ifndef LLVM_LIB_TARGET_SPARC_SPARCMACHINEFUNCTIONINFO_H
-#define LLVM_LIB_TARGET_SPARC_SPARCMACHINEFUNCTIONINFO_H
+#ifndef SPARCMACHINEFUNCTIONINFO_H
+#define SPARCMACHINEFUNCTIONINFO_H
 
 #include "llvm/CodeGen/MachineFunction.h"
 
@@ -28,16 +28,11 @@ namespace llvm {
     /// SRetReturnReg - Holds the virtual register into which the sret
     /// argument is passed.
     unsigned SRetReturnReg;
-
-    /// IsLeafProc - True if the function is a leaf procedure.
-    bool IsLeafProc;
   public:
     SparcMachineFunctionInfo()
-      : GlobalBaseReg(0), VarArgsFrameOffset(0), SRetReturnReg(0),
-        IsLeafProc(false) {}
+      : GlobalBaseReg(0), VarArgsFrameOffset(0), SRetReturnReg(0) {}
     explicit SparcMachineFunctionInfo(MachineFunction &MF)
-      : GlobalBaseReg(0), VarArgsFrameOffset(0), SRetReturnReg(0),
-        IsLeafProc(false) {}
+      : GlobalBaseReg(0), VarArgsFrameOffset(0), SRetReturnReg(0) {}
 
     unsigned getGlobalBaseReg() const { return GlobalBaseReg; }
     void setGlobalBaseReg(unsigned Reg) { GlobalBaseReg = Reg; }
@@ -47,9 +42,6 @@ namespace llvm {
 
     unsigned getSRetReturnReg() const { return SRetReturnReg; }
     void setSRetReturnReg(unsigned Reg) { SRetReturnReg = Reg; }
-
-    void setLeafProc(bool rhs) { IsLeafProc = rhs; }
-    bool isLeafProc() const { return IsLeafProc; }
   };
 }
 

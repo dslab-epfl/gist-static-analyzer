@@ -12,11 +12,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_BITCODE_BITSTREAMWRITER_H
-#define LLVM_BITCODE_BITSTREAMWRITER_H
+#ifndef BITSTREAM_WRITER_H
+#define BITSTREAM_WRITER_H
 
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Bitcode/BitCodes.h"
 #include <vector>
 
@@ -40,12 +40,12 @@ class BitstreamWriter {
   unsigned BlockInfoCurBID;
 
   /// CurAbbrevs - Abbrevs installed at in this block.
-  std::vector<IntrusiveRefCntPtr<BitCodeAbbrev>> CurAbbrevs;
+  std::vector<BitCodeAbbrev*> CurAbbrevs;
 
   struct Block {
     unsigned PrevCodeSize;
     unsigned StartSizeWord;
-    std::vector<IntrusiveRefCntPtr<BitCodeAbbrev>> PrevAbbrevs;
+    std::vector<BitCodeAbbrev*> PrevAbbrevs;
     Block(unsigned PCS, unsigned SSW) : PrevCodeSize(PCS), StartSizeWord(SSW) {}
   };
 
@@ -56,7 +56,7 @@ class BitstreamWriter {
   /// These describe abbreviations that all blocks of the specified ID inherit.
   struct BlockInfo {
     unsigned BlockID;
-    std::vector<IntrusiveRefCntPtr<BitCodeAbbrev>> Abbrevs;
+    std::vector<BitCodeAbbrev*> Abbrevs;
   };
   std::vector<BlockInfo> BlockInfoRecords;
 
@@ -97,8 +97,18 @@ public:
     : Out(O), CurBit(0), CurValue(0), CurCodeSize(2) {}
 
   ~BitstreamWriter() {
-    assert(CurBit == 0 && "Unflushed data remaining");
+    assert(CurBit == 0 && "Unflused data remaining");
     assert(BlockScope.empty() && CurAbbrevs.empty() && "Block imbalance");
+
+    // Free the BlockInfoRecords.
+    while (!BlockInfoRecords.empty()) {
+      BlockInfo &Info = BlockInfoRecords.back();
+      // Free blockinfo abbrev info.
+      for (unsigned i = 0, e = static_cast<unsigned>(Info.Abbrevs.size());
+           i != e; ++i)
+        Info.Abbrevs[i]->dropRef();
+      BlockInfoRecords.pop_back();
+    }
   }
 
   /// \brief Retrieve the current position in the stream, in bits.
@@ -194,7 +204,7 @@ public:
          i != e; ++i)
       if (BlockInfoRecords[i].BlockID == BlockID)
         return &BlockInfoRecords[i];
-    return nullptr;
+    return 0;
   }
 
   void EnterSubblock(unsigned BlockID, unsigned CodeLen) {
@@ -221,13 +231,22 @@ public:
     // If there is a blockinfo for this BlockID, add all the predefined abbrevs
     // to the abbrev list.
     if (BlockInfo *Info = getBlockInfo(BlockID)) {
-      CurAbbrevs.insert(CurAbbrevs.end(), Info->Abbrevs.begin(),
-                        Info->Abbrevs.end());
+      for (unsigned i = 0, e = static_cast<unsigned>(Info->Abbrevs.size());
+           i != e; ++i) {
+        CurAbbrevs.push_back(Info->Abbrevs[i]);
+        Info->Abbrevs[i]->addRef();
+      }
     }
   }
 
   void ExitBlock() {
     assert(!BlockScope.empty() && "Block scope imbalance!");
+
+    // Delete all abbrevs.
+    for (unsigned i = 0, e = static_cast<unsigned>(CurAbbrevs.size());
+         i != e; ++i)
+      CurAbbrevs[i]->dropRef();
+
     const Block &B = BlockScope.back();
 
     // Block tail:
@@ -244,7 +263,7 @@ public:
 
     // Restore the inner block's code size and abbrev table.
     CurCodeSize = B.PrevCodeSize;
-    CurAbbrevs = std::move(B.PrevAbbrevs);
+    BlockScope.back().PrevAbbrevs.swap(CurAbbrevs);
     BlockScope.pop_back();
   }
 
@@ -254,7 +273,7 @@ public:
 
 private:
   /// EmitAbbreviatedLiteral - Emit a literal value according to its abbrev
-  /// record.  This is a no-op, since the abbrev specifies the literal to use.
+  /// record.  This is a no-op, since the abbrev specifies the literal to use. 
   template<typename uintty>
   void EmitAbbreviatedLiteral(const BitCodeAbbrevOp &Op, uintty V) {
     assert(Op.isLiteral() && "Not a literal");
@@ -263,13 +282,13 @@ private:
     assert(V == Op.getLiteralValue() &&
            "Invalid abbrev for record!");
   }
-
+  
   /// EmitAbbreviatedField - Emit a single scalar field value with the specified
   /// encoding.
   template<typename uintty>
   void EmitAbbreviatedField(const BitCodeAbbrevOp &Op, uintty V) {
     assert(!Op.isLiteral() && "Literals should use EmitAbbreviatedLiteral!");
-
+    
     // Encode the value as we are commanded.
     switch (Op.getEncoding()) {
     default: llvm_unreachable("Unknown encoding!");
@@ -286,7 +305,7 @@ private:
       break;
     }
   }
-
+  
   /// EmitRecordWithAbbrevImpl - This is the core implementation of the record
   /// emission code.  If BlobData is non-null, then it specifies an array of
   /// data that should be emitted as part of the Blob or Array operand that is
@@ -298,7 +317,7 @@ private:
     unsigned BlobLen = (unsigned) Blob.size();
     unsigned AbbrevNo = Abbrev-bitc::FIRST_APPLICATION_ABBREV;
     assert(AbbrevNo < CurAbbrevs.size() && "Invalid abbrev #!");
-    const BitCodeAbbrev *Abbv = CurAbbrevs[AbbrevNo].get();
+    BitCodeAbbrev *Abbv = CurAbbrevs[AbbrevNo];
 
     EmitCode(Abbrev);
 
@@ -322,13 +341,13 @@ private:
                  "Blob data and record entries specified for array!");
           // Emit a vbr6 to indicate the number of elements present.
           EmitVBR(static_cast<uint32_t>(BlobLen), 6);
-
+          
           // Emit each field.
           for (unsigned i = 0; i != BlobLen; ++i)
             EmitAbbreviatedField(EltEnc, (unsigned char)BlobData[i]);
-
+          
           // Know that blob data is consumed for assertion below.
-          BlobData = nullptr;
+          BlobData = 0;
         } else {
           // Emit a vbr6 to indicate the number of elements present.
           EmitVBR(static_cast<uint32_t>(Vals.size()-RecordIdx), 6);
@@ -340,7 +359,7 @@ private:
       } else if (Op.getEncoding() == BitCodeAbbrevOp::Blob) {
         // If this record has blob data, emit it, otherwise we must have record
         // entries to encode this way.
-
+        
         // Emit a vbr6 to indicate the number of elements present.
         if (BlobData) {
           EmitVBR(static_cast<uint32_t>(BlobLen), 6);
@@ -349,7 +368,7 @@ private:
         } else {
           EmitVBR(static_cast<uint32_t>(Vals.size()-RecordIdx), 6);
         }
-
+        
         // Flush to a 32-bit alignment boundary.
         FlushToWord();
 
@@ -357,13 +376,12 @@ private:
         if (BlobData) {
           for (unsigned i = 0; i != BlobLen; ++i)
             WriteByte((unsigned char)BlobData[i]);
-
+          
           // Know that blob data is consumed for assertion below.
-          BlobData = nullptr;
+          BlobData = 0;
         } else {
           for (unsigned e = Vals.size(); RecordIdx != e; ++RecordIdx) {
-            assert(isUInt<8>(Vals[RecordIdx]) &&
-                   "Value too large to emit as blob");
+            assert(Vals[RecordIdx] < 256 && "Value too large to emit as blob");
             WriteByte((unsigned char)Vals[RecordIdx]);
           }
         }
@@ -378,10 +396,10 @@ private:
       }
     }
     assert(RecordIdx == Vals.size() && "Not all record operands emitted!");
-    assert(BlobData == nullptr &&
+    assert(BlobData == 0 &&
            "Blob data specified for record that doesn't use it!");
   }
-
+  
 public:
 
   /// EmitRecord - Emit the specified record to the stream, using an abbrev if
@@ -402,10 +420,10 @@ public:
 
     // Insert the code into Vals to treat it uniformly.
     Vals.insert(Vals.begin(), Code);
-
+    
     EmitRecordWithAbbrev(Abbrev, Vals);
   }
-
+  
   /// EmitRecordWithAbbrev - Emit a record with the specified abbreviation.
   /// Unlike EmitRecord, the code for the record should be included in Vals as
   /// the first entry.
@@ -413,7 +431,7 @@ public:
   void EmitRecordWithAbbrev(unsigned Abbrev, SmallVectorImpl<uintty> &Vals) {
     EmitRecordWithAbbrevImpl(Abbrev, Vals, StringRef());
   }
-
+  
   /// EmitRecordWithBlob - Emit the specified record to the stream, using an
   /// abbrev that includes a blob at the end.  The blob data to emit is
   /// specified by the pointer and length specified at the end.  In contrast to
@@ -440,10 +458,10 @@ public:
   template<typename uintty>
   void EmitRecordWithArray(unsigned Abbrev, SmallVectorImpl<uintty> &Vals,
                           const char *ArrayData, unsigned ArrayLen) {
-    return EmitRecordWithAbbrevImpl(Abbrev, Vals, StringRef(ArrayData,
+    return EmitRecordWithAbbrevImpl(Abbrev, Vals, StringRef(ArrayData, 
                                                             ArrayLen));
   }
-
+  
   //===--------------------------------------------------------------------===//
   // Abbrev Emission
   //===--------------------------------------------------------------------===//

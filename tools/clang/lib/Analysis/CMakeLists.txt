@@ -1,7 +1,3 @@
-set(LLVM_LINK_COMPONENTS
-  Support
-  )
-
 add_clang_library(clangAnalysis
   AnalysisDeclContext.cpp
   BodyFarm.cpp
@@ -10,8 +6,6 @@ add_clang_library(clangAnalysis
   CFGStmtMap.cpp
   CallGraph.cpp
   CocoaConventions.cpp
-  Consumed.cpp
-  CodeInjector.cpp
   Dominators.cpp
   FormatString.cpp
   LiveVariables.cpp
@@ -23,13 +17,20 @@ add_clang_library(clangAnalysis
   ReachableCode.cpp
   ScanfFormatString.cpp
   ThreadSafety.cpp
-  ThreadSafetyCommon.cpp
-  ThreadSafetyLogical.cpp
-  ThreadSafetyTIL.cpp
   UninitializedValues.cpp
+  )
 
-  LINK_LIBS
-  clangAST
+add_dependencies(clangAnalysis
+  ClangAttrClasses
+  ClangAttrList
+  ClangCommentNodes
+  ClangDiagnosticCommon
+  ClangDeclNodes
+  ClangDiagnosticAnalysis
+  ClangStmtNodes
+  )
+
+target_link_libraries(clangAnalysis
   clangBasic
-  clangLex
+  clangAST
   )

@@ -32,7 +32,8 @@ void test3() {
   double Gr = __real g1;
 
   cf += D;
-  D += cf;
+  // FIXME: Currently unsupported!
+  //D += cf;
   cf /= g1;
   g1 = g1 + D;
   g1 = D + g1;
@@ -50,7 +51,8 @@ void test3int() {
   i = __real ci1;
 
   cs += i;
-  D += cf;
+  // FIXME: Currently unsupported!
+  //D += cf;
   cs /= ci1;
   ci1 = ci1 + i;
   ci1 = i + ci1;
@@ -95,6 +97,3 @@ double t7(double _Complex c) {
 void t8() {
   __complex__ int *x = &(__complex__ int){1};
 }
-
-const _Complex double test9const = 0;
-_Complex double test9func() { return test9const; }

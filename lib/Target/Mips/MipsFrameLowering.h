@@ -11,10 +11,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_MIPS_MIPSFRAMELOWERING_H
-#define LLVM_LIB_TARGET_MIPS_MIPSFRAMELOWERING_H
+#ifndef MIPS_FRAMEINFO_H
+#define MIPS_FRAMEINFO_H
 
 #include "Mips.h"
+#include "MipsSubtarget.h"
 #include "llvm/Target/TargetFrameLowering.h"
 
 namespace llvm {
@@ -25,18 +26,20 @@ protected:
   const MipsSubtarget &STI;
 
 public:
-  explicit MipsFrameLowering(const MipsSubtarget &sti, unsigned Alignment)
-    : TargetFrameLowering(StackGrowsDown, Alignment, 0, Alignment), STI(sti) {}
+  explicit MipsFrameLowering(const MipsSubtarget &sti)
+    : TargetFrameLowering(StackGrowsDown, sti.hasMips64() ? 16 : 8, 0,
+                          sti.hasMips64() ? 16 : 8), STI(sti) {}
 
-  static const MipsFrameLowering *create(const MipsSubtarget &ST);
+  static const MipsFrameLowering *create(MipsTargetMachine &TM,
+                                         const MipsSubtarget &ST);
 
-  bool hasFP(const MachineFunction &MF) const override;
+  bool hasFP(const MachineFunction &MF) const;
 
 protected:
   uint64_t estimateStackSize(const MachineFunction &MF) const;
 };
 
-/// Create MipsFrameLowering objects.
+/// Create MipsInstrInfo objects.
 const MipsFrameLowering *createMips16FrameLowering(const MipsSubtarget &ST);
 const MipsFrameLowering *createMipsSEFrameLowering(const MipsSubtarget &ST);
 

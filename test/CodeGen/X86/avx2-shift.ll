@@ -212,7 +212,7 @@ define <4 x i64> @variable_srl3_load(<4 x i64> %x, <4 x i64>* %y) {
 define <32 x i8> @shl9(<32 x i8> %A) nounwind {
   %B = shl <32 x i8> %A, <i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3>
   ret <32 x i8> %B
-; CHECK-LABEL: shl9:
+; CHECK: shl9:
 ; CHECK: vpsllw $3
 ; CHECK: vpand
 ; CHECK: ret
@@ -221,7 +221,7 @@ define <32 x i8> @shl9(<32 x i8> %A) nounwind {
 define <32 x i8> @shr9(<32 x i8> %A) nounwind {
   %B = lshr <32 x i8> %A, <i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3>
   ret <32 x i8> %B
-; CHECK-LABEL: shr9:
+; CHECK: shr9:
 ; CHECK: vpsrlw $3
 ; CHECK: vpand
 ; CHECK: ret
@@ -230,7 +230,7 @@ define <32 x i8> @shr9(<32 x i8> %A) nounwind {
 define <32 x i8> @sra_v32i8_7(<32 x i8> %A) nounwind {
   %B = ashr <32 x i8> %A, <i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7>
   ret <32 x i8> %B
-; CHECK-LABEL: sra_v32i8_7:
+; CHECK: sra_v32i8_7:
 ; CHECK: vpxor
 ; CHECK: vpcmpgtb
 ; CHECK: ret
@@ -239,7 +239,7 @@ define <32 x i8> @sra_v32i8_7(<32 x i8> %A) nounwind {
 define <32 x i8> @sra_v32i8(<32 x i8> %A) nounwind {
   %B = ashr <32 x i8> %A, <i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3>
   ret <32 x i8> %B
-; CHECK-LABEL: sra_v32i8:
+; CHECK: sra_v32i8:
 ; CHECK: vpsrlw $3
 ; CHECK: vpand
 ; CHECK: vpxor
@@ -265,37 +265,4 @@ define <8 x i32> @sext_v8i32(<8 x i32> %a) nounwind {
   %b = trunc <8 x i32> %a to <8 x i16>
   %c = sext <8 x i16> %b to <8 x i32>
   ret <8 x i32> %c
-}
-
-define <8 x i16> @variable_shl16(<8 x i16> %lhs, <8  x i16> %rhs) {
-; CHECK-LABEL: variable_shl16:
-; CHECK-DAG: vpmovzxwd %xmm1, [[AMT:%ymm[0-9]+]]
-; CHECK-DAG: vpmovzxwd %xmm0, [[LHS:%ymm[0-9]+]]
-; CHECK: vpsllvd [[AMT]], [[LHS]], {{%ymm[0-9]+}}
-; CHECK: vpshufb
-; CHECK: vpermq
-  %res = shl <8 x i16> %lhs, %rhs
-  ret <8 x i16> %res
-}
-
-define <8 x i16> @variable_ashr16(<8 x i16> %lhs, <8  x i16> %rhs) {
-; CHECK-LABEL: variable_ashr16:
-; CHECK-DAG: vpmovzxwd %xmm1, [[AMT:%ymm[0-9]+]]
-; CHECK-DAG: vpmovsxwd %xmm0, [[LHS:%ymm[0-9]+]]
-; CHECK: vpsravd [[AMT]], [[LHS]], {{%ymm[0-9]+}}
-; CHECK: vpshufb
-; CHECK: vpermq
-  %res = ashr <8 x i16> %lhs, %rhs
-  ret <8 x i16> %res
-}
-
-define <8 x i16> @variable_lshr16(<8 x i16> %lhs, <8  x i16> %rhs) {
-; CHECK-LABEL: variable_lshr16:
-; CHECK-DAG: vpmovzxwd %xmm1, [[AMT:%ymm[0-9]+]]
-; CHECK-DAG: vpmovzxwd %xmm0, [[LHS:%ymm[0-9]+]]
-; CHECK: vpsrlvd [[AMT]], [[LHS]], {{%ymm[0-9]+}}
-; CHECK: vpshufb
-; CHECK: vpermq
-  %res = lshr <8 x i16> %lhs, %rhs
-  ret <8 x i16> %res
 }

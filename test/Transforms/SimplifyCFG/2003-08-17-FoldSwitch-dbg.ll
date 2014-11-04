@@ -1,6 +1,7 @@
-; RUN: opt < %s -simplifycfg -S | FileCheck %s
+; RUN: opt < %s -simplifycfg -S | \
+; RUN:   not grep switch
 
-; CHECK-NOT: switch
+
         %llvm.dbg.anchor.type = type { i32, i32 }
         %llvm.dbg.compile_unit.type = type { i32, { }*, i32, i8*, i8*, i8*, i1, i1, i8* }
 

@@ -11,76 +11,66 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_EXECUTIONENGINE_RUNTIMEDYLD_OBJECTIMAGECOMMON_H
-#define LLVM_LIB_EXECUTIONENGINE_RUNTIMEDYLD_OBJECTIMAGECOMMON_H
+#ifndef LLVM_RUNTIMEDYLD_OBJECTIMAGECOMMON_H
+#define LLVM_RUNTIMEDYLD_OBJECTIMAGECOMMON_H
 
-#include "llvm/ExecutionEngine/ObjectBuffer.h"
-#include "llvm/ExecutionEngine/ObjectImage.h"
 #include "llvm/Object/ObjectFile.h"
-
-#include <memory>
+#include "llvm/ExecutionEngine/ObjectImage.h"
+#include "llvm/ExecutionEngine/ObjectBuffer.h"
 
 namespace llvm {
-
-namespace object {
-  class ObjectFile;
-}
 
 class ObjectImageCommon : public ObjectImage {
   ObjectImageCommon(); // = delete
   ObjectImageCommon(const ObjectImageCommon &other); // = delete
-  void anchor() override;
 
 protected:
-  std::unique_ptr<object::ObjectFile> ObjFile;
+  object::ObjectFile *ObjFile;
 
   // This form of the constructor allows subclasses to use
   // format-specific subclasses of ObjectFile directly
-  ObjectImageCommon(std::unique_ptr<ObjectBuffer> Input,
-                    std::unique_ptr<object::ObjectFile> Obj)
-      : ObjectImage(std::move(Input)), ObjFile(std::move(Obj)) {}
+  ObjectImageCommon(ObjectBuffer *Input, object::ObjectFile *Obj)
+  : ObjectImage(Input), // saves Input as Buffer and takes ownership
+    ObjFile(Obj)
+  {
+  }
 
 public:
-  ObjectImageCommon(std::unique_ptr<ObjectBuffer> Input)
-      : ObjectImage(std::move(Input)) {
-    // FIXME: error checking? createObjectFile returns an ErrorOr<ObjectFile*>
-    // and should probably be checked for failure.
-    MemoryBufferRef Buf = Buffer->getMemBuffer();
-    ObjFile = std::move(object::ObjectFile::createObjectFile(Buf).get());
+  ObjectImageCommon(ObjectBuffer* Input)
+  : ObjectImage(Input) // saves Input as Buffer and takes ownership
+  {
+    ObjFile = object::ObjectFile::createObjectFile(Buffer->getMemBuffer());
   }
-  ObjectImageCommon(std::unique_ptr<object::ObjectFile> Input)
-  : ObjectImage(nullptr), ObjFile(std::move(Input))  {}
-  virtual ~ObjectImageCommon() { }
+  virtual ~ObjectImageCommon() { delete ObjFile; }
 
-  object::symbol_iterator begin_symbols() const override
-      { return ObjFile->symbol_begin(); }
-  object::symbol_iterator end_symbols() const override
-      { return ObjFile->symbol_end(); }
+  virtual object::symbol_iterator begin_symbols() const
+              { return ObjFile->begin_symbols(); }
+  virtual object::symbol_iterator end_symbols() const
+              { return ObjFile->end_symbols(); }
 
-  object::section_iterator begin_sections() const override
-      { return ObjFile->section_begin(); }
-  object::section_iterator end_sections() const override
-      { return ObjFile->section_end(); }
+  virtual object::section_iterator begin_sections() const
+              { return ObjFile->begin_sections(); }
+  virtual object::section_iterator end_sections() const
+              { return ObjFile->end_sections(); }
 
-  /* Triple::ArchType */ unsigned getArch() const override
-      { return ObjFile->getArch(); }
+  virtual /* Triple::ArchType */ unsigned getArch() const
+              { return ObjFile->getArch(); }
 
-  StringRef getData() const override { return ObjFile->getData(); }
-
-  object::ObjectFile* getObjectFile() const override { return ObjFile.get(); }
+  virtual StringRef getData() const { return ObjFile->getData(); }
 
   // Subclasses can override these methods to update the image with loaded
   // addresses for sections and common symbols
-  void updateSectionAddress(const object::SectionRef &Sec,
-                            uint64_t Addr) override {}
-  void updateSymbolAddress(const object::SymbolRef &Sym,
-                           uint64_t Addr) override {}
+  virtual void updateSectionAddress(const object::SectionRef &Sec,
+                                    uint64_t Addr) {}
+  virtual void updateSymbolAddress(const object::SymbolRef &Sym, uint64_t Addr)
+              {}
 
   // Subclasses can override these methods to provide JIT debugging support
-  void registerWithDebugger() override {}
-  void deregisterWithDebugger() override {}
+  virtual void registerWithDebugger() {}
+  virtual void deregisterWithDebugger() {}
 };
 
 } // end namespace llvm
 
-#endif
+#endif // LLVM_RUNTIMEDYLD_OBJECT_IMAGE_H
+

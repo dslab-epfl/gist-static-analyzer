@@ -5,26 +5,15 @@ file(GLOB entries *)
 foreach(entry ${entries})
   if(IS_DIRECTORY ${entry} AND EXISTS ${entry}/CMakeLists.txt)
     if((NOT ${entry} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR}/compiler-rt) AND
-       (NOT ${entry} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR}/dragonegg) AND
-       (NOT ${entry} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR}/libcxx) AND
-       (NOT ${entry} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR}/libcxxabi))
+       (NOT ${entry} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR}/libcxx))
       add_subdirectory(${entry})
     endif()
   endif()
 endforeach(entry)
 
-# Also add in libc++ and compiler-rt trees if present (and we have
-# a sufficiently recent version of CMake where required).
-if(${LLVM_BUILD_RUNTIME})
-  # MSVC isn't quite working with libc++ yet, disable it until issues are
-  # fixed.
-  if(NOT MSVC)
-    add_llvm_external_project(libcxx)
-    add_llvm_external_project(libcxxabi)
-  endif()
-  if(NOT LLVM_BUILD_EXTERNAL_COMPILER_RT)
-    add_llvm_external_project(compiler-rt)
-  endif()
+# Also add in the compiler-rt tree if present and we have a sufficiently
+# recent version of CMake.
+if(${CMAKE_VERSION} VERSION_GREATER 2.8.7 AND
+   ${LLVM_BUILD_RUNTIME})
+  add_llvm_external_project(compiler-rt)
 endif()
-
-add_llvm_external_project(dragonegg)

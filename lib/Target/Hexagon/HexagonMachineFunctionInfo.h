@@ -1,4 +1,4 @@
-//=- HexagonMachineFunctionInfo.h - Hexagon machine function info -*- C++ -*-=//
+//=- HexagonMachineFuctionInfo.h - Hexagon machine function info --*- C++ -*-=//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,11 +7,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_HEXAGON_HEXAGONMACHINEFUNCTIONINFO_H
-#define LLVM_LIB_TARGET_HEXAGON_HEXAGONMACHINEFUNCTIONINFO_H
+#ifndef HexagonMACHINEFUNCTIONINFO_H
+#define HexagonMACHINEFUNCTIONINFO_H
 
 #include "llvm/CodeGen/MachineFunction.h"
-#include <map>
 
 namespace llvm {
 
@@ -30,17 +29,15 @@ class HexagonMachineFunctionInfo : public MachineFunctionInfo {
   std::vector<MachineInstr*> AllocaAdjustInsts;
   int VarArgsFrameIndex;
   bool HasClobberLR;
-  bool HasEHReturn;
+
   std::map<const MachineInstr*, unsigned> PacketInfo;
-  virtual void anchor();
+
 
 public:
-  HexagonMachineFunctionInfo() : SRetReturnReg(0), HasClobberLR(0),
-    HasEHReturn(false) {}
+  HexagonMachineFunctionInfo() : SRetReturnReg(0), HasClobberLR(0) {}
 
   HexagonMachineFunctionInfo(MachineFunction &MF) : SRetReturnReg(0),
-                                                    HasClobberLR(0),
-                                                    HasEHReturn(false) {}
+                                                    HasClobberLR(0) {}
 
   unsigned getSRetReturnReg() const { return SRetReturnReg; }
   void setSRetReturnReg(unsigned Reg) { SRetReturnReg = Reg; }
@@ -72,8 +69,6 @@ public:
   void setHasClobberLR(bool v) { HasClobberLR = v;  }
   bool hasClobberLR() const { return HasClobberLR; }
 
-  bool hasEHReturn() const { return HasEHReturn; };
-  void setHasEHReturn(bool H = true) { HasEHReturn = H; };
 };
 } // End llvm namespace
 

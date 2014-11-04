@@ -13,87 +13,57 @@
 //===----------------------------------------------------------------------===//
 
 #include "CIndexer.h"
-#include "CIndexDiagnostic.h"
-#include "CLog.h"
+#include "CXComment.h"
 #include "CXCursor.h"
-#include "CXSourceLocation.h"
-#include "CXString.h"
 #include "CXTranslationUnit.h"
+#include "CXString.h"
 #include "CXType.h"
+#include "CXSourceLocation.h"
+#include "CIndexDiagnostic.h"
 #include "CursorVisitor.h"
-#include "clang/AST/Attr.h"
-#include "clang/AST/Mangle.h"
+
+#include "clang/Basic/Version.h"
+
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Basic/Diagnostic.h"
-#include "clang/Basic/DiagnosticCategories.h"
-#include "clang/Basic/DiagnosticIDs.h"
-#include "clang/Basic/TargetInfo.h"
-#include "clang/Basic/Version.h"
 #include "clang/Frontend/ASTUnit.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendDiagnostic.h"
-#include "clang/Index/CommentToXML.h"
-#include "clang/Lex/HeaderSearch.h"
 #include "clang/Lex/Lexer.h"
+#include "clang/Lex/HeaderSearch.h"
 #include "clang/Lex/PreprocessingRecord.h"
 #include "clang/Lex/Preprocessor.h"
-#include "clang/Serialization/SerializationDiagnostic.h"
-#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringSwitch.h"
-#include "llvm/Config/llvm-config.h"
-#include "llvm/IR/DataLayout.h"
-#include "llvm/IR/Mangler.h"
-#include "llvm/Support/Compiler.h"
+#include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/CrashRecoveryContext.h"
-#include "llvm/Support/Format.h"
-#include "llvm/Support/ManagedStatic.h"
+#include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/Timer.h"
 #include "llvm/Support/Mutex.h"
 #include "llvm/Support/Program.h"
-#include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/Threading.h"
-#include "llvm/Support/Timer.h"
-#include "llvm/Support/raw_ostream.h"
-
-#if LLVM_ENABLE_THREADS != 0 && defined(__APPLE__)
-#define USE_DARWIN_THREADS
-#endif
-
-#ifdef USE_DARWIN_THREADS
-#include <pthread.h>
-#endif
+#include "llvm/Support/Compiler.h"
 
 using namespace clang;
 using namespace clang::cxcursor;
+using namespace clang::cxstring;
 using namespace clang::cxtu;
 using namespace clang::cxindex;
 
-CXTranslationUnit cxtu::MakeCXTranslationUnit(CIndexer *CIdx, ASTUnit *AU) {
-  if (!AU)
-    return nullptr;
-  assert(CIdx);
+CXTranslationUnit cxtu::MakeCXTranslationUnit(CIndexer *CIdx, ASTUnit *TU) {
+  if (!TU)
+    return 0;
   CXTranslationUnit D = new CXTranslationUnitImpl();
   D->CIdx = CIdx;
-  D->TheASTUnit = AU;
-  D->StringPool = new cxstring::CXStringPool();
-  D->Diagnostics = nullptr;
+  D->TUData = TU;
+  D->StringPool = createCXStringPool();
+  D->Diagnostics = 0;
   D->OverridenCursorsPool = createOverridenCXCursorsPool();
-  D->CommentToXML = nullptr;
   return D;
-}
-
-bool cxtu::isASTReadError(ASTUnit *AU) {
-  for (ASTUnit::stored_diag_iterator D = AU->stored_diag_begin(),
-                                     DEnd = AU->stored_diag_end();
-       D != DEnd; ++D) {
-    if (D->getLevel() >= DiagnosticsEngine::Error &&
-        DiagnosticIDs::getCategoryNumberForDiag(D->getID()) ==
-            diag::DiagCat_AST_Deserialization_Issue)
-      return true;
-  }
-  return false;
 }
 
 cxtu::CXTUOwner::~CXTUOwner() {
@@ -152,11 +122,9 @@ CXSourceRange cxloc::translateSourceRange(const SourceManager &SM,
     EndLoc = EndLoc.getLocWithOffset(Length);
   }
 
-  CXSourceRange Result = {
-    { &SM, &LangOpts },
-    R.getBegin().getRawEncoding(),
-    EndLoc.getRawEncoding()
-  };
+  CXSourceRange Result = { { (void *)&SM, (void *)&LangOpts },
+                           R.getBegin().getRawEncoding(),
+                           EndLoc.getRawEncoding() };
   return Result;
 }
 
@@ -187,7 +155,7 @@ bool CursorVisitor::Visit(CXCursor Cursor, bool CheckedRegionOfInterest) {
     return false;
 
   if (clang_isDeclaration(Cursor.kind)) {
-    const Decl *D = getCursorDecl(Cursor);
+    Decl *D = getCursorDecl(Cursor);
     if (!D) {
       assert(0 && "Invalid declaration cursor");
       return true; // abort.
@@ -246,11 +214,11 @@ static bool visitPreprocessedEntitiesInRange(SourceRange R,
                                            PPRec, FID);
 }
 
-bool CursorVisitor::visitFileRegion() {
+void CursorVisitor::visitFileRegion() {
   if (RegionOfInterest.isInvalid())
-    return false;
+    return;
 
-  ASTUnit *Unit = cxtu::getASTUnit(TU);
+  ASTUnit *Unit = static_cast<ASTUnit *>(TU->TUData);
   SourceManager &SM = Unit->getSourceManager();
   
   std::pair<FileID, unsigned>
@@ -266,7 +234,7 @@ bool CursorVisitor::visitFileRegion() {
 
   assert(Begin.first == End.first);
   if (Begin.second > End.second)
-    return false;
+    return;
   
   FileID File = Begin.first;
   unsigned Offset = Begin.second;
@@ -274,15 +242,12 @@ bool CursorVisitor::visitFileRegion() {
 
   if (!VisitDeclsOnly && !VisitPreprocessorLast)
     if (visitPreprocessedEntitiesInRegion())
-      return true; // visitation break.
+      return; // visitation break.
 
-  if (visitDeclsFromFileRegion(File, Offset, Length))
-    return true; // visitation break.
+  visitDeclsFromFileRegion(File, Offset, Length);
 
   if (!VisitDeclsOnly && VisitPreprocessorLast)
-    return visitPreprocessedEntitiesInRegion();
-
-  return false;
+    visitPreprocessedEntitiesInRegion();
 }
 
 static bool isInLexicalContext(Decl *D, DeclContext *DC) {
@@ -297,9 +262,9 @@ static bool isInLexicalContext(Decl *D, DeclContext *DC) {
   return false;
 }
 
-bool CursorVisitor::visitDeclsFromFileRegion(FileID File,
+void CursorVisitor::visitDeclsFromFileRegion(FileID File,
                                              unsigned Offset, unsigned Length) {
-  ASTUnit *Unit = cxtu::getASTUnit(TU);
+  ASTUnit *Unit = static_cast<ASTUnit *>(TU->TUData);
   SourceManager &SM = Unit->getSourceManager();
   SourceRange Range = RegionOfInterest;
 
@@ -312,7 +277,7 @@ bool CursorVisitor::visitDeclsFromFileRegion(FileID File,
     bool Invalid = false;
     const SrcMgr::SLocEntry &SLEntry = SM.getSLocEntry(File, &Invalid);
     if (Invalid)
-      return false;
+      return;
 
     SourceLocation Outer;
     if (SLEntry.isFile())
@@ -320,9 +285,9 @@ bool CursorVisitor::visitDeclsFromFileRegion(FileID File,
     else
       Outer = SLEntry.getExpansion().getExpansionLocStart();
     if (Outer.isInvalid())
-      return false;
+      return;
 
-    std::tie(File, Offset) = SM.getDecomposedExpansionLoc(Outer);
+    llvm::tie(File, Offset) = SM.getDecomposedExpansionLoc(Outer);
     Length = 0;
     Unit->findFileRegionDecls(File, Offset, Length, Decls);
   }
@@ -330,9 +295,9 @@ bool CursorVisitor::visitDeclsFromFileRegion(FileID File,
   assert(!Decls.empty());
 
   bool VisitedAtLeastOnce = false;
-  DeclContext *CurDC = nullptr;
-  SmallVectorImpl<Decl *>::iterator DIt = Decls.begin();
-  for (SmallVectorImpl<Decl *>::iterator DE = Decls.end(); DIt != DE; ++DIt) {
+  DeclContext *CurDC = 0;
+  SmallVector<Decl *, 16>::iterator DIt = Decls.begin();
+  for (SmallVector<Decl *, 16>::iterator DE = Decls.end(); DIt != DE; ++DIt) {
     Decl *D = *DIt;
     if (D->getSourceRange().isInvalid())
       continue;
@@ -359,15 +324,15 @@ bool CursorVisitor::visitDeclsFromFileRegion(FileID File,
       FileDI_current = &DIt;
       FileDE_current = DE;
     } else {
-      FileDI_current = nullptr;
+      FileDI_current = 0;
     }
 
     if (Visit(MakeCXCursor(D, TU, Range), /*CheckedRegionOfInterest=*/true))
-      return true; // visitation break.
+      break;
   }
 
   if (VisitedAtLeastOnce)
-    return false;
+    return;
 
   // No Decls overlapped with the range. Move up the lexical context until there
   // is a context that contains the range or we reach the translation unit
@@ -382,14 +347,12 @@ bool CursorVisitor::visitDeclsFromFileRegion(FileID File,
       break;
 
     if (RangeCompare(SM, CurDeclRange, Range) == RangeOverlap) {
-      if (Visit(MakeCXCursor(D, TU, Range), /*CheckedRegionOfInterest=*/true))
-        return true; // visitation break.
+      Visit(MakeCXCursor(D, TU, Range), /*CheckedRegionOfInterest=*/true);
+      break;
     }
 
     DC = D->getLexicalDeclContext();
   }
-
-  return false;
 }
 
 bool CursorVisitor::visitPreprocessedEntitiesInRegion() {
@@ -449,9 +412,6 @@ bool CursorVisitor::visitPreprocessedEntities(InputIterator First,
       continue;
 
     PreprocessedEntity *PPE = *First;
-    if (!PPE)
-      continue;
-
     if (MacroExpansion *ME = dyn_cast<MacroExpansion>(PPE)) {
       if (Visit(MakeMacroExpansionCursor(ME, TU)))
         return true;
@@ -493,7 +453,7 @@ bool CursorVisitor::VisitChildren(CXCursor Cursor) {
   SetParentRAII SetParent(Parent, StmtParent, Cursor);
 
   if (clang_isDeclaration(Cursor.kind)) {
-    Decl *D = const_cast<Decl *>(getCursorDecl(Cursor));
+    Decl *D = getCursorDecl(Cursor);
     if (!D)
       return false;
 
@@ -501,22 +461,22 @@ bool CursorVisitor::VisitChildren(CXCursor Cursor) {
   }
 
   if (clang_isStatement(Cursor.kind)) {
-    if (const Stmt *S = getCursorStmt(Cursor))
+    if (Stmt *S = getCursorStmt(Cursor))
       return Visit(S);
 
     return false;
   }
 
   if (clang_isExpression(Cursor.kind)) {
-    if (const Expr *E = getCursorExpr(Cursor))
+    if (Expr *E = getCursorExpr(Cursor))
       return Visit(E);
 
     return false;
   }
 
   if (clang_isTranslationUnit(Cursor.kind)) {
-    CXTranslationUnit TU = getCursorTU(Cursor);
-    ASTUnit *CXXUnit = cxtu::getASTUnit(TU);
+    CXTranslationUnit tu = getCursorTU(Cursor);
+    ASTUnit *CXXUnit = static_cast<ASTUnit*>(tu->TUData);
     
     int VisitOrder[2] = { VisitPreprocessorLast, !VisitPreprocessorLast };
     for (unsigned I = 0; I != 2; ++I) {
@@ -526,7 +486,7 @@ bool CursorVisitor::VisitChildren(CXCursor Cursor) {
           for (ASTUnit::top_level_iterator TL = CXXUnit->top_level_begin(),
                                         TLEnd = CXXUnit->top_level_end();
                TL != TLEnd; ++TL) {
-            if (Visit(MakeCXCursor(*TL, TU, RegionOfInterest), true))
+            if (Visit(MakeCXCursor(*TL, tu, RegionOfInterest), true))
               return true;
           }
         } else if (VisitDeclContext(
@@ -544,7 +504,7 @@ bool CursorVisitor::VisitChildren(CXCursor Cursor) {
   }
 
   if (Cursor.kind == CXCursor_CXXBaseSpecifier) {
-    if (const CXXBaseSpecifier *Base = getCursorCXXBaseSpecifier(Cursor)) {
+    if (CXXBaseSpecifier *Base = getCursorCXXBaseSpecifier(Cursor)) {
       if (TypeSourceInfo *BaseTSInfo = Base->getTypeSourceInfo()) {
         return Visit(BaseTSInfo->getTypeLoc());
       }
@@ -552,26 +512,11 @@ bool CursorVisitor::VisitChildren(CXCursor Cursor) {
   }
 
   if (Cursor.kind == CXCursor_IBOutletCollectionAttr) {
-    const IBOutletCollectionAttr *A =
+    IBOutletCollectionAttr *A =
       cast<IBOutletCollectionAttr>(cxcursor::getCursorAttr(Cursor));
-    if (const ObjCObjectType *ObjT = A->getInterface()->getAs<ObjCObjectType>())
-      return Visit(cxcursor::MakeCursorObjCClassRef(
-          ObjT->getInterface(),
-          A->getInterfaceLoc()->getTypeLoc().getLocStart(), TU));
-  }
-
-  // If pointing inside a macro definition, check if the token is an identifier
-  // that was ever defined as a macro. In such a case, create a "pseudo" macro
-  // expansion cursor for that token.
-  SourceLocation BeginLoc = RegionOfInterest.getBegin();
-  if (Cursor.kind == CXCursor_MacroDefinition &&
-      BeginLoc == RegionOfInterest.getEnd()) {
-    SourceLocation Loc = AU->mapLocationToPreamble(BeginLoc);
-    const MacroInfo *MI =
-        getMacroInfo(cxcursor::getCursorMacroDefinition(Cursor), TU);
-    if (MacroDefinition *MacroDef =
-          checkForMacroInMacroDefinition(MI, Loc, TU))
-      return Visit(cxcursor::MakeMacroExpansionCursor(MacroDef, BeginLoc, TU));
+    if (const ObjCInterfaceType *InterT = A->getInterface()->getAs<ObjCInterfaceType>())
+      return Visit(cxcursor::MakeCursorObjCClassRef(InterT->getInterface(),
+                                                    A->getInterfaceLoc(), TU));
   }
 
   // Nothing to visit at the moment.
@@ -589,16 +534,16 @@ bool CursorVisitor::VisitBlockDecl(BlockDecl *B) {
   return false;
 }
 
-Optional<bool> CursorVisitor::shouldVisitCursor(CXCursor Cursor) {
+llvm::Optional<bool> CursorVisitor::shouldVisitCursor(CXCursor Cursor) {
   if (RegionOfInterest.isValid()) {
     SourceRange Range = getFullCursorExtent(Cursor, AU->getSourceManager());
     if (Range.isInvalid())
-      return None;
+      return llvm::Optional<bool>();
     
     switch (CompareRegionOfInterest(Range)) {
     case RangeBefore:
       // This declaration comes before the region of interest; skip it.
-      return None;
+      return llvm::Optional<bool>();
 
     case RangeAfter:
       // This declaration comes after the region of interest; we're done.
@@ -649,7 +594,7 @@ bool CursorVisitor::VisitDeclContext(DeclContext *DC) {
         Cursor = MakeCursorObjCProtocolRef(PD, PD->getLocation(), TU);
     }
 
-    const Optional<bool> &V = shouldVisitCursor(Cursor);
+    const llvm::Optional<bool> &V = shouldVisitCursor(Cursor);
     if (!V.hasValue())
       continue;
     if (!V.getValue())
@@ -703,10 +648,10 @@ bool CursorVisitor::VisitClassTemplateSpecializationDecl(
   // Visit the template arguments used in the specialization.
   if (TypeSourceInfo *SpecType = D->getTypeAsWritten()) {
     TypeLoc TL = SpecType->getTypeLoc();
-    if (TemplateSpecializationTypeLoc TSTLoc =
-            TL.getAs<TemplateSpecializationTypeLoc>()) {
-      for (unsigned I = 0, N = TSTLoc.getNumArgs(); I != N; ++I)
-        if (VisitTemplateArgumentLoc(TSTLoc.getArgLoc(I)))
+    if (TemplateSpecializationTypeLoc *TSTLoc
+          = dyn_cast<TemplateSpecializationTypeLoc>(&TL)) {
+      for (unsigned I = 0, N = TSTLoc->getNumArgs(); I != N; ++I)
+        if (VisitTemplateArgumentLoc(TSTLoc->getArgLoc(I)))
           return true;
     }
   }
@@ -725,9 +670,8 @@ bool CursorVisitor::VisitClassTemplatePartialSpecializationDecl(
     return true;
 
   // Visit the partial specialization arguments.
-  const ASTTemplateArgumentListInfo *Info = D->getTemplateArgsAsWritten();
-  const TemplateArgumentLoc *TemplateArgs = Info->getTemplateArgs();
-  for (unsigned I = 0, N = Info->NumTemplateArgs; I != N; ++I)
+  const TemplateArgumentLoc *TemplateArgs = D->getTemplateArgsAsWritten();
+  for (unsigned I = 0, N = D->getNumTemplateArgsAsWritten(); I != N; ++I)
     if (VisitTemplateArgumentLoc(TemplateArgs[I]))
       return true;
   
@@ -751,13 +695,6 @@ bool CursorVisitor::VisitEnumConstantDecl(EnumConstantDecl *D) {
 }
 
 bool CursorVisitor::VisitDeclaratorDecl(DeclaratorDecl *DD) {
-  unsigned NumParamList = DD->getNumTemplateParameterLists();
-  for (unsigned i = 0; i < NumParamList; i++) {
-    TemplateParameterList* Params = DD->getTemplateParameterList(i);
-    if (VisitTemplateParameters(Params))
-      return true;
-  }
-
   if (TypeSourceInfo *TSInfo = DD->getTypeSourceInfo())
     if (Visit(TSInfo->getTypeLoc()))
       return true;
@@ -771,29 +708,31 @@ bool CursorVisitor::VisitDeclaratorDecl(DeclaratorDecl *DD) {
 }
 
 /// \brief Compare two base or member initializers based on their source order.
-static int CompareCXXCtorInitializers(CXXCtorInitializer *const *X,
-                                      CXXCtorInitializer *const *Y) {
-  return (*X)->getSourceOrder() - (*Y)->getSourceOrder();
+static int CompareCXXCtorInitializers(const void* Xp, const void *Yp) {
+  CXXCtorInitializer const * const *X
+    = static_cast<CXXCtorInitializer const * const *>(Xp);
+  CXXCtorInitializer const * const *Y
+    = static_cast<CXXCtorInitializer const * const *>(Yp);
+  
+  if ((*X)->getSourceOrder() < (*Y)->getSourceOrder())
+    return -1;
+  else if ((*X)->getSourceOrder() > (*Y)->getSourceOrder())
+    return 1;
+  else
+    return 0;
 }
 
 bool CursorVisitor::VisitFunctionDecl(FunctionDecl *ND) {
-  unsigned NumParamList = ND->getNumTemplateParameterLists();
-  for (unsigned i = 0; i < NumParamList; i++) {
-    TemplateParameterList* Params = ND->getTemplateParameterList(i);
-    if (VisitTemplateParameters(Params))
-      return true;
-  }
-
   if (TypeSourceInfo *TSInfo = ND->getTypeSourceInfo()) {
     // Visit the function declaration's syntactic components in the order
     // written. This requires a bit of work.
     TypeLoc TL = TSInfo->getTypeLoc().IgnoreParens();
-    FunctionTypeLoc FTL = TL.getAs<FunctionTypeLoc>();
+    FunctionTypeLoc *FTL = dyn_cast<FunctionTypeLoc>(&TL);
     
     // If we have a function declared directly (without the use of a typedef),
     // visit just the return type. Otherwise, just visit the function's type
     // now.
-    if ((FTL && !isa<CXXConversionDecl>(ND) && Visit(FTL.getReturnLoc())) ||
+    if ((FTL && !isa<CXXConversionDecl>(ND) && Visit(FTL->getResultLoc())) ||
         (!FTL && Visit(TL)))
       return true;
     
@@ -803,14 +742,13 @@ bool CursorVisitor::VisitFunctionDecl(FunctionDecl *ND) {
         return true;
     
     // Visit the declaration name.
-    if (!isa<CXXDestructorDecl>(ND))
-      if (VisitDeclarationNameInfo(ND->getNameInfo()))
-        return true;
+    if (VisitDeclarationNameInfo(ND->getNameInfo()))
+      return true;
     
     // FIXME: Visit explicitly-specified template arguments!
     
     // Visit the function parameters, if we have a function type.
-    if (FTL && VisitFunctionTypeLoc(FTL, true))
+    if (FTL && VisitFunctionTypeLoc(*FTL, true))
       return true;
     
     // FIXME: Attributes?
@@ -820,11 +758,13 @@ bool CursorVisitor::VisitFunctionDecl(FunctionDecl *ND) {
     if (CXXConstructorDecl *Constructor = dyn_cast<CXXConstructorDecl>(ND)) {
       // Find the initializers that were written in the source.
       SmallVector<CXXCtorInitializer *, 4> WrittenInits;
-      for (auto *I : Constructor->inits()) {
-        if (!I->isWritten())
+      for (CXXConstructorDecl::init_iterator I = Constructor->init_begin(),
+                                          IEnd = Constructor->init_end();
+           I != IEnd; ++I) {
+        if (!(*I)->isWritten())
           continue;
       
-        WrittenInits.push_back(I);
+        WrittenInits.push_back(*I);
       }
       
       // Sort the initializers in source order
@@ -918,12 +858,14 @@ bool CursorVisitor::VisitTemplateTemplateParmDecl(TemplateTemplateParmDecl *D) {
 }
 
 bool CursorVisitor::VisitObjCMethodDecl(ObjCMethodDecl *ND) {
-  if (TypeSourceInfo *TSInfo = ND->getReturnTypeSourceInfo())
+  if (TypeSourceInfo *TSInfo = ND->getResultTypeSourceInfo())
     if (Visit(TSInfo->getTypeLoc()))
       return true;
 
-  for (const auto *P : ND->params()) {
-    if (Visit(MakeCXCursor(P, TU, RegionOfInterest)))
+  for (ObjCMethodDecl::param_iterator P = ND->param_begin(),
+       PEnd = ND->param_end();
+       P != PEnd; ++P) {
+    if (Visit(MakeCXCursor(*P, TU, RegionOfInterest)))
       return true;
   }
 
@@ -953,6 +895,19 @@ static void addRangedDeclsInContainer(DeclIt *DI_current, DeclIt DE_current,
     }
     break;
   }
+}
+
+namespace {
+  struct ContainerDeclsSort {
+    SourceManager &SM;
+    ContainerDeclsSort(SourceManager &sm) : SM(sm) {}
+    bool operator()(Decl *A, Decl *B) {
+      SourceLocation L_A = A->getLocStart();
+      SourceLocation L_B = B->getLocStart();
+      assert(L_A.isValid() && L_B.isValid());
+      return SM.isBeforeInTranslationUnit(L_A, L_B);
+    }
+  };
 }
 
 bool CursorVisitor::VisitObjCContainerDecl(ObjCContainerDecl *D) {
@@ -986,27 +941,24 @@ bool CursorVisitor::VisitObjCContainerDecl(ObjCContainerDecl *D) {
 
   // Get all the Decls in the DeclContext, and sort them with the
   // additional ones we've collected.  Then visit them.
-  for (auto *SubDecl : D->decls()) {
-    if (!SubDecl || SubDecl->getLexicalDeclContext() != D ||
-        SubDecl->getLocStart().isInvalid())
+  for (DeclContext::decl_iterator I = D->decls_begin(), E = D->decls_end();
+       I!=E; ++I) {
+    Decl *subDecl = *I;
+    if (!subDecl || subDecl->getLexicalDeclContext() != D ||
+        subDecl->getLocStart().isInvalid())
       continue;
-    DeclsInContainer.push_back(SubDecl);
+    DeclsInContainer.push_back(subDecl);
   }
 
   // Now sort the Decls so that they appear in lexical order.
   std::sort(DeclsInContainer.begin(), DeclsInContainer.end(),
-            [&SM](Decl *A, Decl *B) {
-    SourceLocation L_A = A->getLocStart();
-    SourceLocation L_B = B->getLocStart();
-    assert(L_A.isValid() && L_B.isValid());
-    return SM.isBeforeInTranslationUnit(L_A, L_B);
-  });
+            ContainerDeclsSort(SM));
 
   // Now visit the decls.
   for (SmallVectorImpl<Decl*>::iterator I = DeclsInContainer.begin(),
          E = DeclsInContainer.end(); I != E; ++I) {
     CXCursor Cursor = MakeCXCursor(*I, TU, RegionOfInterest);
-    const Optional<bool> &V = shouldVisitCursor(Cursor);
+    const llvm::Optional<bool> &V = shouldVisitCursor(Cursor);
     if (!V.hasValue())
       continue;
     if (!V.getValue())
@@ -1260,7 +1212,6 @@ bool CursorVisitor::VisitNestedNameSpecifier(NestedNameSpecifier *NNS,
   case NestedNameSpecifier::TypeSpecWithTemplate:
   case NestedNameSpecifier::Global:
   case NestedNameSpecifier::Identifier:
-  case NestedNameSpecifier::Super:
     break;      
   }
   
@@ -1302,7 +1253,6 @@ CursorVisitor::VisitNestedNameSpecifierLoc(NestedNameSpecifierLoc Qualifier) {
         
     case NestedNameSpecifier::Global:
     case NestedNameSpecifier::Identifier:
-    case NestedNameSpecifier::Super:
       break;              
     }
   }
@@ -1419,14 +1369,6 @@ bool CursorVisitor::VisitBuiltinTypeLoc(BuiltinTypeLoc TL) {
   case BuiltinType::Void:
   case BuiltinType::NullPtr:
   case BuiltinType::Dependent:
-  case BuiltinType::OCLImage1d:
-  case BuiltinType::OCLImage1dArray:
-  case BuiltinType::OCLImage1dBuffer:
-  case BuiltinType::OCLImage2d:
-  case BuiltinType::OCLImage2dArray:
-  case BuiltinType::OCLImage3d:
-  case BuiltinType::OCLSampler:
-  case BuiltinType::OCLEvent:
 #define BUILTIN_TYPE(Id, SingletonId)
 #define SIGNED_TYPE(Id, SingletonId) case BuiltinType::Id:
 #define UNSIGNED_TYPE(Id, SingletonId) case BuiltinType::Id:
@@ -1530,11 +1472,11 @@ bool CursorVisitor::VisitAttributedTypeLoc(AttributedTypeLoc TL) {
 
 bool CursorVisitor::VisitFunctionTypeLoc(FunctionTypeLoc TL, 
                                          bool SkipResultType) {
-  if (!SkipResultType && Visit(TL.getReturnLoc()))
+  if (!SkipResultType && Visit(TL.getResultLoc()))
     return true;
 
-  for (unsigned I = 0, N = TL.getNumParams(); I != N; ++I)
-    if (Decl *D = TL.getParam(I))
+  for (unsigned I = 0, N = TL.getNumArgs(); I != N; ++I)
+    if (Decl *D = TL.getArg(I))
       if (Visit(MakeCXCursor(D, TU, RegionOfInterest)))
         return true;
 
@@ -1549,14 +1491,6 @@ bool CursorVisitor::VisitArrayTypeLoc(ArrayTypeLoc TL) {
     return Visit(MakeCXCursor(Size, StmtParent, TU, RegionOfInterest));
 
   return false;
-}
-
-bool CursorVisitor::VisitDecayedTypeLoc(DecayedTypeLoc TL) {
-  return Visit(TL.getOriginalLoc());
-}
-
-bool CursorVisitor::VisitAdjustedTypeLoc(AdjustedTypeLoc TL) {
-  return Visit(TL.getOriginalLoc());
 }
 
 bool CursorVisitor::VisitTemplateSpecializationTypeLoc(
@@ -1668,8 +1602,9 @@ bool CursorVisitor::VisitCXXRecordDecl(CXXRecordDecl *D) {
       return true;
 
   if (D->isCompleteDefinition()) {
-    for (const auto &I : D->bases()) {
-      if (Visit(cxcursor::MakeCursorCXXBaseSpecifier(&I, TU)))
+    for (CXXRecordDecl::base_class_iterator I = D->bases_begin(),
+         E = D->bases_end(); I != E; ++I) {
+      if (Visit(cxcursor::MakeCursorCXXBaseSpecifier(I, TU)))
         return true;
     }
   }
@@ -1678,8 +1613,9 @@ bool CursorVisitor::VisitCXXRecordDecl(CXXRecordDecl *D) {
 }
 
 bool CursorVisitor::VisitAttributes(Decl *D) {
-  for (const auto *I : D->attrs())
-    if (Visit(MakeCXCursor(I, D, TU)))
+  for (AttrVec::const_iterator i = D->attr_begin(), e = D->attr_end();
+       i != e; ++i)
+    if (Visit(MakeCXCursor(*i, D, TU)))
         return true;
 
   return false;
@@ -1693,10 +1629,9 @@ namespace {
 #define DEF_JOB(NAME, DATA, KIND)\
 class NAME : public VisitorJob {\
 public:\
-  NAME(const DATA *d, CXCursor parent) : \
-      VisitorJob(parent, VisitorJob::KIND, d) {} \
+  NAME(DATA *d, CXCursor parent) : VisitorJob(parent, VisitorJob::KIND, d) {} \
   static bool classof(const VisitorJob *VJ) { return VJ->getKind() == KIND; }\
-  const DATA *get() const { return static_cast<const DATA*>(data[0]); }\
+  DATA *get() const { return static_cast<DATA*>(data[0]); }\
 };
 
 DEF_JOB(StmtVisit, Stmt, StmtVisitKind)
@@ -1712,13 +1647,13 @@ DEF_JOB(PostChildrenVisit, void, PostChildrenVisitKind)
 
 class DeclVisit : public VisitorJob {
 public:
-  DeclVisit(const Decl *D, CXCursor parent, bool isFirst) :
+  DeclVisit(Decl *d, CXCursor parent, bool isFirst) :
     VisitorJob(parent, VisitorJob::DeclVisitKind,
-               D, isFirst ? (void*) 1 : (void*) nullptr) {}
+               d, isFirst ? (void*) 1 : (void*) 0) {}
   static bool classof(const VisitorJob *VJ) {
     return VJ->getKind() == DeclVisitKind;
   }
-  const Decl *get() const { return static_cast<const Decl *>(data[0]); }
+  Decl *get() const { return static_cast<Decl*>(data[0]); }
   bool isFirst() const { return data[1] ? true : false; }
 };
 class TypeLocVisit : public VisitorJob {
@@ -1733,7 +1668,7 @@ public:
 
   TypeLoc get() const { 
     QualType T = QualType::getFromOpaquePtr(data[0]);
-    return TypeLoc(T, const_cast<void *>(data[1]));
+    return TypeLoc(T, data[1]);
   }
 };
 
@@ -1746,9 +1681,7 @@ public:
   static bool classof(const VisitorJob *VJ) {
     return VJ->getKind() == VisitorJob::LabelRefVisitKind;
   }
-  const LabelDecl *get() const {
-    return static_cast<const LabelDecl *>(data[0]);
-  }
+  LabelDecl *get() const { return static_cast<LabelDecl*>(data[0]); }
   SourceLocation getLoc() const { 
     return SourceLocation::getFromPtrEncoding(data[1]); }
 };
@@ -1765,22 +1698,20 @@ public:
   }
   
   NestedNameSpecifierLoc get() const {
-    return NestedNameSpecifierLoc(
-            const_cast<NestedNameSpecifier *>(
-              static_cast<const NestedNameSpecifier *>(data[0])),
-            const_cast<void *>(data[1]));
+    return NestedNameSpecifierLoc(static_cast<NestedNameSpecifier*>(data[0]), 
+                                  data[1]);
   }
 };
   
 class DeclarationNameInfoVisit : public VisitorJob {
 public:
-  DeclarationNameInfoVisit(const Stmt *S, CXCursor parent)
+  DeclarationNameInfoVisit(Stmt *S, CXCursor parent)
     : VisitorJob(parent, VisitorJob::DeclarationNameInfoVisitKind, S) {}
   static bool classof(const VisitorJob *VJ) {
     return VJ->getKind() == VisitorJob::DeclarationNameInfoVisitKind;
   }
   DeclarationNameInfo get() const {
-    const Stmt *S = static_cast<const Stmt *>(data[0]);
+    Stmt *S = static_cast<Stmt*>(data[0]);
     switch (S->getStmtClass()) {
     default:
       llvm_unreachable("Unhandled Stmt");
@@ -1790,115 +1721,90 @@ public:
       return cast<CXXDependentScopeMemberExpr>(S)->getMemberNameInfo();
     case Stmt::DependentScopeDeclRefExprClass:
       return cast<DependentScopeDeclRefExpr>(S)->getNameInfo();
-    case Stmt::OMPCriticalDirectiveClass:
-      return cast<OMPCriticalDirective>(S)->getDirectiveName();
     }
   }
 };
 class MemberRefVisit : public VisitorJob {
 public:
-  MemberRefVisit(const FieldDecl *D, SourceLocation L, CXCursor parent)
+  MemberRefVisit(FieldDecl *D, SourceLocation L, CXCursor parent)
     : VisitorJob(parent, VisitorJob::MemberRefVisitKind, D,
                  L.getPtrEncoding()) {}
   static bool classof(const VisitorJob *VJ) {
     return VJ->getKind() == VisitorJob::MemberRefVisitKind;
   }
-  const FieldDecl *get() const {
-    return static_cast<const FieldDecl *>(data[0]);
+  FieldDecl *get() const {
+    return static_cast<FieldDecl*>(data[0]);
   }
   SourceLocation getLoc() const {
     return SourceLocation::getFromRawEncoding((unsigned)(uintptr_t) data[1]);
   }
 };
-class EnqueueVisitor : public ConstStmtVisitor<EnqueueVisitor, void> {
-  friend class OMPClauseEnqueue;
+class EnqueueVisitor : public StmtVisitor<EnqueueVisitor, void> {
   VisitorWorkList &WL;
   CXCursor Parent;
 public:
   EnqueueVisitor(VisitorWorkList &wl, CXCursor parent)
     : WL(wl), Parent(parent) {}
 
-  void VisitAddrLabelExpr(const AddrLabelExpr *E);
-  void VisitBlockExpr(const BlockExpr *B);
-  void VisitCompoundLiteralExpr(const CompoundLiteralExpr *E);
-  void VisitCompoundStmt(const CompoundStmt *S);
-  void VisitCXXDefaultArgExpr(const CXXDefaultArgExpr *E) { /* Do nothing. */ }
-  void VisitMSDependentExistsStmt(const MSDependentExistsStmt *S);
-  void VisitCXXDependentScopeMemberExpr(const CXXDependentScopeMemberExpr *E);
-  void VisitCXXNewExpr(const CXXNewExpr *E);
-  void VisitCXXScalarValueInitExpr(const CXXScalarValueInitExpr *E);
-  void VisitCXXOperatorCallExpr(const CXXOperatorCallExpr *E);
-  void VisitCXXPseudoDestructorExpr(const CXXPseudoDestructorExpr *E);
-  void VisitCXXTemporaryObjectExpr(const CXXTemporaryObjectExpr *E);
-  void VisitCXXTypeidExpr(const CXXTypeidExpr *E);
-  void VisitCXXUnresolvedConstructExpr(const CXXUnresolvedConstructExpr *E);
-  void VisitCXXUuidofExpr(const CXXUuidofExpr *E);
-  void VisitCXXCatchStmt(const CXXCatchStmt *S);
-  void VisitDeclRefExpr(const DeclRefExpr *D);
-  void VisitDeclStmt(const DeclStmt *S);
-  void VisitDependentScopeDeclRefExpr(const DependentScopeDeclRefExpr *E);
-  void VisitDesignatedInitExpr(const DesignatedInitExpr *E);
-  void VisitExplicitCastExpr(const ExplicitCastExpr *E);
-  void VisitForStmt(const ForStmt *FS);
-  void VisitGotoStmt(const GotoStmt *GS);
-  void VisitIfStmt(const IfStmt *If);
-  void VisitInitListExpr(const InitListExpr *IE);
-  void VisitMemberExpr(const MemberExpr *M);
-  void VisitOffsetOfExpr(const OffsetOfExpr *E);
-  void VisitObjCEncodeExpr(const ObjCEncodeExpr *E);
-  void VisitObjCMessageExpr(const ObjCMessageExpr *M);
-  void VisitOverloadExpr(const OverloadExpr *E);
-  void VisitUnaryExprOrTypeTraitExpr(const UnaryExprOrTypeTraitExpr *E);
-  void VisitStmt(const Stmt *S);
-  void VisitSwitchStmt(const SwitchStmt *S);
-  void VisitWhileStmt(const WhileStmt *W);
-  void VisitTypeTraitExpr(const TypeTraitExpr *E);
-  void VisitArrayTypeTraitExpr(const ArrayTypeTraitExpr *E);
-  void VisitExpressionTraitExpr(const ExpressionTraitExpr *E);
-  void VisitUnresolvedMemberExpr(const UnresolvedMemberExpr *U);
-  void VisitVAArgExpr(const VAArgExpr *E);
-  void VisitSizeOfPackExpr(const SizeOfPackExpr *E);
-  void VisitPseudoObjectExpr(const PseudoObjectExpr *E);
-  void VisitOpaqueValueExpr(const OpaqueValueExpr *E);
-  void VisitLambdaExpr(const LambdaExpr *E);
-  void VisitOMPExecutableDirective(const OMPExecutableDirective *D);
-  void VisitOMPLoopDirective(const OMPLoopDirective *D);
-  void VisitOMPParallelDirective(const OMPParallelDirective *D);
-  void VisitOMPSimdDirective(const OMPSimdDirective *D);
-  void VisitOMPForDirective(const OMPForDirective *D);
-  void VisitOMPForSimdDirective(const OMPForSimdDirective *D);
-  void VisitOMPSectionsDirective(const OMPSectionsDirective *D);
-  void VisitOMPSectionDirective(const OMPSectionDirective *D);
-  void VisitOMPSingleDirective(const OMPSingleDirective *D);
-  void VisitOMPMasterDirective(const OMPMasterDirective *D);
-  void VisitOMPCriticalDirective(const OMPCriticalDirective *D);
-  void VisitOMPParallelForDirective(const OMPParallelForDirective *D);
-  void VisitOMPParallelForSimdDirective(const OMPParallelForSimdDirective *D);
-  void VisitOMPParallelSectionsDirective(const OMPParallelSectionsDirective *D);
-  void VisitOMPTaskDirective(const OMPTaskDirective *D);
-  void VisitOMPTaskyieldDirective(const OMPTaskyieldDirective *D);
-  void VisitOMPBarrierDirective(const OMPBarrierDirective *D);
-  void VisitOMPTaskwaitDirective(const OMPTaskwaitDirective *D);
-  void VisitOMPFlushDirective(const OMPFlushDirective *D);
-  void VisitOMPOrderedDirective(const OMPOrderedDirective *D);
-  void VisitOMPAtomicDirective(const OMPAtomicDirective *D);
-  void VisitOMPTargetDirective(const OMPTargetDirective *D);
-  void VisitOMPTeamsDirective(const OMPTeamsDirective *D);
-
+  void VisitAddrLabelExpr(AddrLabelExpr *E);
+  void VisitBlockExpr(BlockExpr *B);
+  void VisitCompoundLiteralExpr(CompoundLiteralExpr *E);
+  void VisitCompoundStmt(CompoundStmt *S);
+  void VisitCXXDefaultArgExpr(CXXDefaultArgExpr *E) { /* Do nothing. */ }
+  void VisitMSDependentExistsStmt(MSDependentExistsStmt *S);
+  void VisitCXXDependentScopeMemberExpr(CXXDependentScopeMemberExpr *E);
+  void VisitCXXNewExpr(CXXNewExpr *E);
+  void VisitCXXScalarValueInitExpr(CXXScalarValueInitExpr *E);
+  void VisitCXXOperatorCallExpr(CXXOperatorCallExpr *E);
+  void VisitCXXPseudoDestructorExpr(CXXPseudoDestructorExpr *E);
+  void VisitCXXTemporaryObjectExpr(CXXTemporaryObjectExpr *E);
+  void VisitCXXTypeidExpr(CXXTypeidExpr *E);
+  void VisitCXXUnresolvedConstructExpr(CXXUnresolvedConstructExpr *E);
+  void VisitCXXUuidofExpr(CXXUuidofExpr *E);
+  void VisitCXXCatchStmt(CXXCatchStmt *S);
+  void VisitDeclRefExpr(DeclRefExpr *D);
+  void VisitDeclStmt(DeclStmt *S);
+  void VisitDependentScopeDeclRefExpr(DependentScopeDeclRefExpr *E);
+  void VisitDesignatedInitExpr(DesignatedInitExpr *E);
+  void VisitExplicitCastExpr(ExplicitCastExpr *E);
+  void VisitForStmt(ForStmt *FS);
+  void VisitGotoStmt(GotoStmt *GS);
+  void VisitIfStmt(IfStmt *If);
+  void VisitInitListExpr(InitListExpr *IE);
+  void VisitMemberExpr(MemberExpr *M);
+  void VisitOffsetOfExpr(OffsetOfExpr *E);
+  void VisitObjCEncodeExpr(ObjCEncodeExpr *E);
+  void VisitObjCMessageExpr(ObjCMessageExpr *M);
+  void VisitOverloadExpr(OverloadExpr *E);
+  void VisitUnaryExprOrTypeTraitExpr(UnaryExprOrTypeTraitExpr *E);
+  void VisitStmt(Stmt *S);
+  void VisitSwitchStmt(SwitchStmt *S);
+  void VisitWhileStmt(WhileStmt *W);
+  void VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E);
+  void VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E);
+  void VisitTypeTraitExpr(TypeTraitExpr *E);
+  void VisitArrayTypeTraitExpr(ArrayTypeTraitExpr *E);
+  void VisitExpressionTraitExpr(ExpressionTraitExpr *E);
+  void VisitUnresolvedMemberExpr(UnresolvedMemberExpr *U);
+  void VisitVAArgExpr(VAArgExpr *E);
+  void VisitSizeOfPackExpr(SizeOfPackExpr *E);
+  void VisitPseudoObjectExpr(PseudoObjectExpr *E);
+  void VisitOpaqueValueExpr(OpaqueValueExpr *E);
+  void VisitLambdaExpr(LambdaExpr *E);
+  
 private:
-  void AddDeclarationNameInfo(const Stmt *S);
+  void AddDeclarationNameInfo(Stmt *S);
   void AddNestedNameSpecifierLoc(NestedNameSpecifierLoc Qualifier);
   void AddExplicitTemplateArgs(const ASTTemplateArgumentListInfo *A);
-  void AddMemberRef(const FieldDecl *D, SourceLocation L);
-  void AddStmt(const Stmt *S);
-  void AddDecl(const Decl *D, bool isFirst = true);
+  void AddMemberRef(FieldDecl *D, SourceLocation L);
+  void AddStmt(Stmt *S);
+  void AddDecl(Decl *D, bool isFirst = true);
   void AddTypeLoc(TypeSourceInfo *TI);
-  void EnqueueChildren(const Stmt *S);
-  void EnqueueChildren(const OMPClause *S);
+  void EnqueueChildren(Stmt *S);
 };
 } // end anonyous namespace
 
-void EnqueueVisitor::AddDeclarationNameInfo(const Stmt *S) {
+void EnqueueVisitor::AddDeclarationNameInfo(Stmt *S) {
   // 'S' should always be non-null, since it comes from the
   // statement we are visiting.
   WL.push_back(DeclarationNameInfoVisit(S, Parent));
@@ -1910,20 +1816,21 @@ EnqueueVisitor::AddNestedNameSpecifierLoc(NestedNameSpecifierLoc Qualifier) {
     WL.push_back(NestedNameSpecifierLocVisit(Qualifier, Parent));
 }
 
-void EnqueueVisitor::AddStmt(const Stmt *S) {
+void EnqueueVisitor::AddStmt(Stmt *S) {
   if (S)
     WL.push_back(StmtVisit(S, Parent));
 }
-void EnqueueVisitor::AddDecl(const Decl *D, bool isFirst) {
+void EnqueueVisitor::AddDecl(Decl *D, bool isFirst) {
   if (D)
     WL.push_back(DeclVisit(D, Parent, isFirst));
 }
 void EnqueueVisitor::
   AddExplicitTemplateArgs(const ASTTemplateArgumentListInfo *A) {
   if (A)
-    WL.push_back(ExplicitTemplateArgsVisit(A, Parent));
+    WL.push_back(ExplicitTemplateArgsVisit(
+                        const_cast<ASTTemplateArgumentListInfo*>(A), Parent));
 }
-void EnqueueVisitor::AddMemberRef(const FieldDecl *D, SourceLocation L) {
+void EnqueueVisitor::AddMemberRef(FieldDecl *D, SourceLocation L) {
   if (D)
     WL.push_back(MemberRefVisit(D, L, Parent));
 }
@@ -1931,9 +1838,9 @@ void EnqueueVisitor::AddTypeLoc(TypeSourceInfo *TI) {
   if (TI)
     WL.push_back(TypeLocVisit(TI->getTypeLoc(), Parent));
  }
-void EnqueueVisitor::EnqueueChildren(const Stmt *S) {
+void EnqueueVisitor::EnqueueChildren(Stmt *S) {
   unsigned size = WL.size();
-  for (Stmt::const_child_range Child = S->children(); Child; ++Child) {
+  for (Stmt::child_range Child = S->children(); Child; ++Child) {
     AddStmt(*Child);
   }
   if (size == WL.size())
@@ -1943,137 +1850,24 @@ void EnqueueVisitor::EnqueueChildren(const Stmt *S) {
   VisitorWorkList::iterator I = WL.begin() + size, E = WL.end();
   std::reverse(I, E);
 }
-namespace {
-class OMPClauseEnqueue : public ConstOMPClauseVisitor<OMPClauseEnqueue> {
-  EnqueueVisitor *Visitor;
-  /// \brief Process clauses with list of variables.
-  template <typename T>
-  void VisitOMPClauseList(T *Node);
-public:
-  OMPClauseEnqueue(EnqueueVisitor *Visitor) : Visitor(Visitor) { }
-#define OPENMP_CLAUSE(Name, Class)                                             \
-  void Visit##Class(const Class *C);
-#include "clang/Basic/OpenMPKinds.def"
-};
-
-void OMPClauseEnqueue::VisitOMPIfClause(const OMPIfClause *C) {
-  Visitor->AddStmt(C->getCondition());
-}
-
-void OMPClauseEnqueue::VisitOMPFinalClause(const OMPFinalClause *C) {
-  Visitor->AddStmt(C->getCondition());
-}
-
-void OMPClauseEnqueue::VisitOMPNumThreadsClause(const OMPNumThreadsClause *C) {
-  Visitor->AddStmt(C->getNumThreads());
-}
-
-void OMPClauseEnqueue::VisitOMPSafelenClause(const OMPSafelenClause *C) {
-  Visitor->AddStmt(C->getSafelen());
-}
-
-void OMPClauseEnqueue::VisitOMPCollapseClause(const OMPCollapseClause *C) {
-  Visitor->AddStmt(C->getNumForLoops());
-}
-
-void OMPClauseEnqueue::VisitOMPDefaultClause(const OMPDefaultClause *C) { }
-
-void OMPClauseEnqueue::VisitOMPProcBindClause(const OMPProcBindClause *C) { }
-
-void OMPClauseEnqueue::VisitOMPScheduleClause(const OMPScheduleClause *C) {
-  Visitor->AddStmt(C->getChunkSize());
-}
-
-void OMPClauseEnqueue::VisitOMPOrderedClause(const OMPOrderedClause *) {}
-
-void OMPClauseEnqueue::VisitOMPNowaitClause(const OMPNowaitClause *) {}
-
-void OMPClauseEnqueue::VisitOMPUntiedClause(const OMPUntiedClause *) {}
-
-void OMPClauseEnqueue::VisitOMPMergeableClause(const OMPMergeableClause *) {}
-
-void OMPClauseEnqueue::VisitOMPReadClause(const OMPReadClause *) {}
-
-void OMPClauseEnqueue::VisitOMPWriteClause(const OMPWriteClause *) {}
-
-void OMPClauseEnqueue::VisitOMPUpdateClause(const OMPUpdateClause *) {}
-
-void OMPClauseEnqueue::VisitOMPCaptureClause(const OMPCaptureClause *) {}
-
-void OMPClauseEnqueue::VisitOMPSeqCstClause(const OMPSeqCstClause *) {}
-
-template<typename T>
-void OMPClauseEnqueue::VisitOMPClauseList(T *Node) {
-  for (const auto *I : Node->varlists())
-    Visitor->AddStmt(I);
-}
-
-void OMPClauseEnqueue::VisitOMPPrivateClause(const OMPPrivateClause *C) {
-  VisitOMPClauseList(C);
-}
-void OMPClauseEnqueue::VisitOMPFirstprivateClause(
-                                        const OMPFirstprivateClause *C) {
-  VisitOMPClauseList(C);
-}
-void OMPClauseEnqueue::VisitOMPLastprivateClause(
-                                        const OMPLastprivateClause *C) {
-  VisitOMPClauseList(C);
-}
-void OMPClauseEnqueue::VisitOMPSharedClause(const OMPSharedClause *C) {
-  VisitOMPClauseList(C);
-}
-void OMPClauseEnqueue::VisitOMPReductionClause(const OMPReductionClause *C) {
-  VisitOMPClauseList(C);
-}
-void OMPClauseEnqueue::VisitOMPLinearClause(const OMPLinearClause *C) {
-  VisitOMPClauseList(C);
-  Visitor->AddStmt(C->getStep());
-}
-void OMPClauseEnqueue::VisitOMPAlignedClause(const OMPAlignedClause *C) {
-  VisitOMPClauseList(C);
-  Visitor->AddStmt(C->getAlignment());
-}
-void OMPClauseEnqueue::VisitOMPCopyinClause(const OMPCopyinClause *C) {
-  VisitOMPClauseList(C);
-}
-void
-OMPClauseEnqueue::VisitOMPCopyprivateClause(const OMPCopyprivateClause *C) {
-  VisitOMPClauseList(C);
-}
-void OMPClauseEnqueue::VisitOMPFlushClause(const OMPFlushClause *C) {
-  VisitOMPClauseList(C);
-}
-}
-
-void EnqueueVisitor::EnqueueChildren(const OMPClause *S) {
-  unsigned size = WL.size();
-  OMPClauseEnqueue Visitor(this);
-  Visitor.Visit(S);
-  if (size == WL.size())
-    return;
-  // Now reverse the entries we just added.  This will match the DFS
-  // ordering performed by the worklist.
-  VisitorWorkList::iterator I = WL.begin() + size, E = WL.end();
-  std::reverse(I, E);
-}
-void EnqueueVisitor::VisitAddrLabelExpr(const AddrLabelExpr *E) {
+void EnqueueVisitor::VisitAddrLabelExpr(AddrLabelExpr *E) {
   WL.push_back(LabelRefVisit(E->getLabel(), E->getLabelLoc(), Parent));
 }
-void EnqueueVisitor::VisitBlockExpr(const BlockExpr *B) {
+void EnqueueVisitor::VisitBlockExpr(BlockExpr *B) {
   AddDecl(B->getBlockDecl());
 }
-void EnqueueVisitor::VisitCompoundLiteralExpr(const CompoundLiteralExpr *E) {
+void EnqueueVisitor::VisitCompoundLiteralExpr(CompoundLiteralExpr *E) {
   EnqueueChildren(E);
   AddTypeLoc(E->getTypeSourceInfo());
 }
-void EnqueueVisitor::VisitCompoundStmt(const CompoundStmt *S) {
-  for (CompoundStmt::const_reverse_body_iterator I = S->body_rbegin(),
+void EnqueueVisitor::VisitCompoundStmt(CompoundStmt *S) {
+  for (CompoundStmt::reverse_body_iterator I = S->body_rbegin(),
         E = S->body_rend(); I != E; ++I) {
     AddStmt(*I);
   }
 }
 void EnqueueVisitor::
-VisitMSDependentExistsStmt(const MSDependentExistsStmt *S) {
+VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {
   AddStmt(S->getSubStmt());
   AddDeclarationNameInfo(S);
   if (NestedNameSpecifierLoc QualifierLoc = S->getQualifierLoc())
@@ -2081,7 +1875,7 @@ VisitMSDependentExistsStmt(const MSDependentExistsStmt *S) {
 }
 
 void EnqueueVisitor::
-VisitCXXDependentScopeMemberExpr(const CXXDependentScopeMemberExpr *E) {
+VisitCXXDependentScopeMemberExpr(CXXDependentScopeMemberExpr *E) {
   AddExplicitTemplateArgs(E->getOptionalExplicitTemplateArgs());
   AddDeclarationNameInfo(E);
   if (NestedNameSpecifierLoc QualifierLoc = E->getQualifierLoc())
@@ -2089,7 +1883,7 @@ VisitCXXDependentScopeMemberExpr(const CXXDependentScopeMemberExpr *E) {
   if (!E->isImplicitAccess())
     AddStmt(E->getBase());
 }
-void EnqueueVisitor::VisitCXXNewExpr(const CXXNewExpr *E) {
+void EnqueueVisitor::VisitCXXNewExpr(CXXNewExpr *E) {
   // Enqueue the initializer , if any.
   AddStmt(E->getInitializer());
   // Enqueue the array size, if any.
@@ -2100,14 +1894,13 @@ void EnqueueVisitor::VisitCXXNewExpr(const CXXNewExpr *E) {
   for (unsigned I = E->getNumPlacementArgs(); I > 0; --I)
     AddStmt(E->getPlacementArg(I-1));
 }
-void EnqueueVisitor::VisitCXXOperatorCallExpr(const CXXOperatorCallExpr *CE) {
+void EnqueueVisitor::VisitCXXOperatorCallExpr(CXXOperatorCallExpr *CE) {
   for (unsigned I = CE->getNumArgs(); I > 1 /* Yes, this is 1 */; --I)
     AddStmt(CE->getArg(I-1));
   AddStmt(CE->getCallee());
   AddStmt(CE->getArg(0));
 }
-void EnqueueVisitor::VisitCXXPseudoDestructorExpr(
-                                        const CXXPseudoDestructorExpr *E) {
+void EnqueueVisitor::VisitCXXPseudoDestructorExpr(CXXPseudoDestructorExpr *E) {
   // Visit the name of the type being destroyed.
   AddTypeLoc(E->getDestroyedTypeInfo());
   // Visit the scope type that looks disturbingly like the nested-name-specifier
@@ -2119,54 +1912,52 @@ void EnqueueVisitor::VisitCXXPseudoDestructorExpr(
   // Visit base expression.
   AddStmt(E->getBase());
 }
-void EnqueueVisitor::VisitCXXScalarValueInitExpr(
-                                        const CXXScalarValueInitExpr *E) {
+void EnqueueVisitor::VisitCXXScalarValueInitExpr(CXXScalarValueInitExpr *E) {
   AddTypeLoc(E->getTypeSourceInfo());
 }
-void EnqueueVisitor::VisitCXXTemporaryObjectExpr(
-                                        const CXXTemporaryObjectExpr *E) {
+void EnqueueVisitor::VisitCXXTemporaryObjectExpr(CXXTemporaryObjectExpr *E) {
   EnqueueChildren(E);
   AddTypeLoc(E->getTypeSourceInfo());
 }
-void EnqueueVisitor::VisitCXXTypeidExpr(const CXXTypeidExpr *E) {
+void EnqueueVisitor::VisitCXXTypeidExpr(CXXTypeidExpr *E) {
   EnqueueChildren(E);
   if (E->isTypeOperand())
     AddTypeLoc(E->getTypeOperandSourceInfo());
 }
 
-void EnqueueVisitor::VisitCXXUnresolvedConstructExpr(
-                                        const CXXUnresolvedConstructExpr *E) {
+void EnqueueVisitor::VisitCXXUnresolvedConstructExpr(CXXUnresolvedConstructExpr 
+                                                     *E) {
   EnqueueChildren(E);
   AddTypeLoc(E->getTypeSourceInfo());
 }
-void EnqueueVisitor::VisitCXXUuidofExpr(const CXXUuidofExpr *E) {
+void EnqueueVisitor::VisitCXXUuidofExpr(CXXUuidofExpr *E) {
   EnqueueChildren(E);
   if (E->isTypeOperand())
     AddTypeLoc(E->getTypeOperandSourceInfo());
 }
 
-void EnqueueVisitor::VisitCXXCatchStmt(const CXXCatchStmt *S) {
+void EnqueueVisitor::VisitCXXCatchStmt(CXXCatchStmt *S) {
   EnqueueChildren(S);
   AddDecl(S->getExceptionDecl());
 }
 
-void EnqueueVisitor::VisitDeclRefExpr(const DeclRefExpr *DR) {
+void EnqueueVisitor::VisitDeclRefExpr(DeclRefExpr *DR) {
   if (DR->hasExplicitTemplateArgs()) {
     AddExplicitTemplateArgs(&DR->getExplicitTemplateArgs());
   }
   WL.push_back(DeclRefExprParts(DR, Parent));
 }
-void EnqueueVisitor::VisitDependentScopeDeclRefExpr(
-                                        const DependentScopeDeclRefExpr *E) {
+void EnqueueVisitor::VisitDependentScopeDeclRefExpr(DependentScopeDeclRefExpr *E) {
   AddExplicitTemplateArgs(E->getOptionalExplicitTemplateArgs());
   AddDeclarationNameInfo(E);
   AddNestedNameSpecifierLoc(E->getQualifierLoc());
 }
-void EnqueueVisitor::VisitDeclStmt(const DeclStmt *S) {
+void EnqueueVisitor::VisitDeclStmt(DeclStmt *S) {
   unsigned size = WL.size();
   bool isFirst = true;
-  for (const auto *D : S->decls()) {
-    AddDecl(D, isFirst);
+  for (DeclStmt::decl_iterator D = S->decl_begin(), DEnd = S->decl_end();
+       D != DEnd; ++D) {
+    AddDecl(*D, isFirst);
     isFirst = false;
   }
   if (size == WL.size())
@@ -2176,9 +1967,10 @@ void EnqueueVisitor::VisitDeclStmt(const DeclStmt *S) {
   VisitorWorkList::iterator I = WL.begin() + size, E = WL.end();
   std::reverse(I, E);
 }
-void EnqueueVisitor::VisitDesignatedInitExpr(const DesignatedInitExpr *E) {
+void EnqueueVisitor::VisitDesignatedInitExpr(DesignatedInitExpr *E) {
   AddStmt(E->getInit());
-  for (DesignatedInitExpr::const_reverse_designators_iterator
+  typedef DesignatedInitExpr::Designator Designator;
+  for (DesignatedInitExpr::reverse_designators_iterator
          D = E->designators_rbegin(), DEnd = E->designators_rend();
          D != DEnd; ++D) {
     if (D->isFieldDesignator()) {
@@ -2195,33 +1987,33 @@ void EnqueueVisitor::VisitDesignatedInitExpr(const DesignatedInitExpr *E) {
     AddStmt(E->getArrayRangeStart(*D));
   }
 }
-void EnqueueVisitor::VisitExplicitCastExpr(const ExplicitCastExpr *E) {
+void EnqueueVisitor::VisitExplicitCastExpr(ExplicitCastExpr *E) {
   EnqueueChildren(E);
   AddTypeLoc(E->getTypeInfoAsWritten());
 }
-void EnqueueVisitor::VisitForStmt(const ForStmt *FS) {
+void EnqueueVisitor::VisitForStmt(ForStmt *FS) {
   AddStmt(FS->getBody());
   AddStmt(FS->getInc());
   AddStmt(FS->getCond());
   AddDecl(FS->getConditionVariable());
   AddStmt(FS->getInit());
 }
-void EnqueueVisitor::VisitGotoStmt(const GotoStmt *GS) {
+void EnqueueVisitor::VisitGotoStmt(GotoStmt *GS) {
   WL.push_back(LabelRefVisit(GS->getLabel(), GS->getLabelLoc(), Parent));
 }
-void EnqueueVisitor::VisitIfStmt(const IfStmt *If) {
+void EnqueueVisitor::VisitIfStmt(IfStmt *If) {
   AddStmt(If->getElse());
   AddStmt(If->getThen());
   AddStmt(If->getCond());
   AddDecl(If->getConditionVariable());
 }
-void EnqueueVisitor::VisitInitListExpr(const InitListExpr *IE) {
+void EnqueueVisitor::VisitInitListExpr(InitListExpr *IE) {
   // We care about the syntactic form of the initializer list, only.
   if (InitListExpr *Syntactic = IE->getSyntacticForm())
     IE = Syntactic;
   EnqueueChildren(IE);
 }
-void EnqueueVisitor::VisitMemberExpr(const MemberExpr *M) {
+void EnqueueVisitor::VisitMemberExpr(MemberExpr *M) {
   WL.push_back(MemberExprParts(M, Parent));
   
   // If the base of the member access expression is an implicit 'this', don't
@@ -2231,14 +2023,14 @@ void EnqueueVisitor::VisitMemberExpr(const MemberExpr *M) {
   if (!M->isImplicitAccess())
     AddStmt(M->getBase());
 }
-void EnqueueVisitor::VisitObjCEncodeExpr(const ObjCEncodeExpr *E) {
+void EnqueueVisitor::VisitObjCEncodeExpr(ObjCEncodeExpr *E) {
   AddTypeLoc(E->getEncodedTypeSourceInfo());
 }
-void EnqueueVisitor::VisitObjCMessageExpr(const ObjCMessageExpr *M) {
+void EnqueueVisitor::VisitObjCMessageExpr(ObjCMessageExpr *M) {
   EnqueueChildren(M);
   AddTypeLoc(M->getClassReceiverTypeInfo());
 }
-void EnqueueVisitor::VisitOffsetOfExpr(const OffsetOfExpr *E) {
+void EnqueueVisitor::VisitOffsetOfExpr(OffsetOfExpr *E) {
   // Visit the components of the offsetof expression.
   for (unsigned N = E->getNumComponents(), I = N; I > 0; --I) {
     typedef OffsetOfExpr::OffsetOfNode OffsetOfNode;
@@ -2258,174 +2050,81 @@ void EnqueueVisitor::VisitOffsetOfExpr(const OffsetOfExpr *E) {
   // Visit the type into which we're computing the offset.
   AddTypeLoc(E->getTypeSourceInfo());
 }
-void EnqueueVisitor::VisitOverloadExpr(const OverloadExpr *E) {
+void EnqueueVisitor::VisitOverloadExpr(OverloadExpr *E) {
   AddExplicitTemplateArgs(E->getOptionalExplicitTemplateArgs());
   WL.push_back(OverloadExprParts(E, Parent));
 }
 void EnqueueVisitor::VisitUnaryExprOrTypeTraitExpr(
-                                        const UnaryExprOrTypeTraitExpr *E) {
+                                              UnaryExprOrTypeTraitExpr *E) {
   EnqueueChildren(E);
   if (E->isArgumentType())
     AddTypeLoc(E->getArgumentTypeInfo());
 }
-void EnqueueVisitor::VisitStmt(const Stmt *S) {
+void EnqueueVisitor::VisitStmt(Stmt *S) {
   EnqueueChildren(S);
 }
-void EnqueueVisitor::VisitSwitchStmt(const SwitchStmt *S) {
+void EnqueueVisitor::VisitSwitchStmt(SwitchStmt *S) {
   AddStmt(S->getBody());
   AddStmt(S->getCond());
   AddDecl(S->getConditionVariable());
 }
 
-void EnqueueVisitor::VisitWhileStmt(const WhileStmt *W) {
+void EnqueueVisitor::VisitWhileStmt(WhileStmt *W) {
   AddStmt(W->getBody());
   AddStmt(W->getCond());
   AddDecl(W->getConditionVariable());
 }
 
-void EnqueueVisitor::VisitTypeTraitExpr(const TypeTraitExpr *E) {
+void EnqueueVisitor::VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E) {
+  AddTypeLoc(E->getQueriedTypeSourceInfo());
+}
+
+void EnqueueVisitor::VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E) {
+  AddTypeLoc(E->getRhsTypeSourceInfo());
+  AddTypeLoc(E->getLhsTypeSourceInfo());
+}
+
+void EnqueueVisitor::VisitTypeTraitExpr(TypeTraitExpr *E) {
   for (unsigned I = E->getNumArgs(); I > 0; --I)
     AddTypeLoc(E->getArg(I-1));
 }
 
-void EnqueueVisitor::VisitArrayTypeTraitExpr(const ArrayTypeTraitExpr *E) {
+void EnqueueVisitor::VisitArrayTypeTraitExpr(ArrayTypeTraitExpr *E) {
   AddTypeLoc(E->getQueriedTypeSourceInfo());
 }
 
-void EnqueueVisitor::VisitExpressionTraitExpr(const ExpressionTraitExpr *E) {
+void EnqueueVisitor::VisitExpressionTraitExpr(ExpressionTraitExpr *E) {
   EnqueueChildren(E);
 }
 
-void EnqueueVisitor::VisitUnresolvedMemberExpr(const UnresolvedMemberExpr *U) {
+void EnqueueVisitor::VisitUnresolvedMemberExpr(UnresolvedMemberExpr *U) {
   VisitOverloadExpr(U);
   if (!U->isImplicitAccess())
     AddStmt(U->getBase());
 }
-void EnqueueVisitor::VisitVAArgExpr(const VAArgExpr *E) {
+void EnqueueVisitor::VisitVAArgExpr(VAArgExpr *E) {
   AddStmt(E->getSubExpr());
   AddTypeLoc(E->getWrittenTypeInfo());
 }
-void EnqueueVisitor::VisitSizeOfPackExpr(const SizeOfPackExpr *E) {
+void EnqueueVisitor::VisitSizeOfPackExpr(SizeOfPackExpr *E) {
   WL.push_back(SizeOfPackExprParts(E, Parent));
 }
-void EnqueueVisitor::VisitOpaqueValueExpr(const OpaqueValueExpr *E) {
+void EnqueueVisitor::VisitOpaqueValueExpr(OpaqueValueExpr *E) {
   // If the opaque value has a source expression, just transparently
   // visit that.  This is useful for (e.g.) pseudo-object expressions.
   if (Expr *SourceExpr = E->getSourceExpr())
     return Visit(SourceExpr);
 }
-void EnqueueVisitor::VisitLambdaExpr(const LambdaExpr *E) {
+void EnqueueVisitor::VisitLambdaExpr(LambdaExpr *E) {
   AddStmt(E->getBody());
   WL.push_back(LambdaExprParts(E, Parent));
 }
-void EnqueueVisitor::VisitPseudoObjectExpr(const PseudoObjectExpr *E) {
+void EnqueueVisitor::VisitPseudoObjectExpr(PseudoObjectExpr *E) {
   // Treat the expression like its syntactic form.
   Visit(E->getSyntacticForm());
 }
 
-void EnqueueVisitor::VisitOMPExecutableDirective(
-  const OMPExecutableDirective *D) {
-  EnqueueChildren(D);
-  for (ArrayRef<OMPClause *>::iterator I = D->clauses().begin(),
-                                       E = D->clauses().end();
-       I != E; ++I)
-    EnqueueChildren(*I);
-}
-
-void EnqueueVisitor::VisitOMPLoopDirective(const OMPLoopDirective *D) {
-  VisitOMPExecutableDirective(D);
-}
-
-void EnqueueVisitor::VisitOMPParallelDirective(const OMPParallelDirective *D) {
-  VisitOMPExecutableDirective(D);
-}
-
-void EnqueueVisitor::VisitOMPSimdDirective(const OMPSimdDirective *D) {
-  VisitOMPLoopDirective(D);
-}
-
-void EnqueueVisitor::VisitOMPForDirective(const OMPForDirective *D) {
-  VisitOMPLoopDirective(D);
-}
-
-void EnqueueVisitor::VisitOMPForSimdDirective(const OMPForSimdDirective *D) {
-  VisitOMPLoopDirective(D);
-}
-
-void EnqueueVisitor::VisitOMPSectionsDirective(const OMPSectionsDirective *D) {
-  VisitOMPExecutableDirective(D);
-}
-
-void EnqueueVisitor::VisitOMPSectionDirective(const OMPSectionDirective *D) {
-  VisitOMPExecutableDirective(D);
-}
-
-void EnqueueVisitor::VisitOMPSingleDirective(const OMPSingleDirective *D) {
-  VisitOMPExecutableDirective(D);
-}
-
-void EnqueueVisitor::VisitOMPMasterDirective(const OMPMasterDirective *D) {
-  VisitOMPExecutableDirective(D);
-}
-
-void EnqueueVisitor::VisitOMPCriticalDirective(const OMPCriticalDirective *D) {
-  VisitOMPExecutableDirective(D);
-  AddDeclarationNameInfo(D);
-}
-
-void
-EnqueueVisitor::VisitOMPParallelForDirective(const OMPParallelForDirective *D) {
-  VisitOMPLoopDirective(D);
-}
-
-void EnqueueVisitor::VisitOMPParallelForSimdDirective(
-    const OMPParallelForSimdDirective *D) {
-  VisitOMPLoopDirective(D);
-}
-
-void EnqueueVisitor::VisitOMPParallelSectionsDirective(
-    const OMPParallelSectionsDirective *D) {
-  VisitOMPExecutableDirective(D);
-}
-
-void EnqueueVisitor::VisitOMPTaskDirective(const OMPTaskDirective *D) {
-  VisitOMPExecutableDirective(D);
-}
-
-void
-EnqueueVisitor::VisitOMPTaskyieldDirective(const OMPTaskyieldDirective *D) {
-  VisitOMPExecutableDirective(D);
-}
-
-void EnqueueVisitor::VisitOMPBarrierDirective(const OMPBarrierDirective *D) {
-  VisitOMPExecutableDirective(D);
-}
-
-void EnqueueVisitor::VisitOMPTaskwaitDirective(const OMPTaskwaitDirective *D) {
-  VisitOMPExecutableDirective(D);
-}
-
-void EnqueueVisitor::VisitOMPFlushDirective(const OMPFlushDirective *D) {
-  VisitOMPExecutableDirective(D);
-}
-
-void EnqueueVisitor::VisitOMPOrderedDirective(const OMPOrderedDirective *D) {
-  VisitOMPExecutableDirective(D);
-}
-
-void EnqueueVisitor::VisitOMPAtomicDirective(const OMPAtomicDirective *D) {
-  VisitOMPExecutableDirective(D);
-}
-
-void EnqueueVisitor::VisitOMPTargetDirective(const OMPTargetDirective *D) {
-  VisitOMPExecutableDirective(D);
-}
-
-void EnqueueVisitor::VisitOMPTeamsDirective(const OMPTeamsDirective *D) {
-  VisitOMPExecutableDirective(D);
-}
-
-void CursorVisitor::EnqueueWorkList(VisitorWorkList &WL, const Stmt *S) {
+void CursorVisitor::EnqueueWorkList(VisitorWorkList &WL, Stmt *S) {
   EnqueueVisitor(WL, MakeCXCursor(S, StmtParent, TU,RegionOfInterest)).Visit(S);
 }
 
@@ -2441,14 +2140,15 @@ bool CursorVisitor::IsInRegionOfInterest(CXCursor C) {
 bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
   while (!WL.empty()) {
     // Dequeue the worklist item.
-    VisitorJob LI = WL.pop_back_val();
+    VisitorJob LI = WL.back();
+    WL.pop_back();
 
     // Set the Parent field, then back to its old value once we're done.
     SetParentRAII SetParent(Parent, StmtParent, LI.getParent());
   
     switch (LI.getKind()) {
       case VisitorJob::DeclVisitKind: {
-        const Decl *D = cast<DeclVisit>(&LI)->get();
+        Decl *D = cast<DeclVisit>(&LI)->get();
         if (!D)
           continue;
 
@@ -2477,7 +2177,7 @@ bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
         continue;
       }
       case VisitorJob::LabelRefVisitKind: {
-        const LabelDecl *LS = cast<LabelRefVisit>(&LI)->get();
+        LabelDecl *LS = cast<LabelRefVisit>(&LI)->get();
         if (LabelStmt *stmt = LS->getStmt()) {
           if (Visit(MakeCursorLabelRef(stmt, cast<LabelRefVisit>(&LI)->getLoc(),
                                        TU))) {
@@ -2507,7 +2207,7 @@ bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
         continue;
       }
       case VisitorJob::StmtVisitKind: {
-        const Stmt *S = cast<StmtVisit>(&LI)->get();
+        Stmt *S = cast<StmtVisit>(&LI)->get();
         if (!S)
           continue;
 
@@ -2520,7 +2220,7 @@ bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
           case CXChildVisit_Continue: break;
           case CXChildVisit_Recurse:
             if (PostChildrenVisitor)
-              WL.push_back(PostChildrenVisit(nullptr, Cursor));
+              WL.push_back(PostChildrenVisit(0, Cursor));
             EnqueueWorkList(WL, S);
             break;
         }
@@ -2528,7 +2228,7 @@ bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
       }
       case VisitorJob::MemberExprPartsKind: {
         // Handle the other pieces in the MemberExpr besides the base.
-        const MemberExpr *M = cast<MemberExprParts>(&LI)->get();
+        MemberExpr *M = cast<MemberExprParts>(&LI)->get();
         
         // Visit the nested-name-specifier
         if (NestedNameSpecifierLoc QualifierLoc = M->getQualifierLoc())
@@ -2551,7 +2251,7 @@ bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
         continue;
       }
       case VisitorJob::DeclRefExprPartsKind: {
-        const DeclRefExpr *DR = cast<DeclRefExprParts>(&LI)->get();
+        DeclRefExpr *DR = cast<DeclRefExprParts>(&LI)->get();
         // Visit nested-name-specifier, if present.
         if (NestedNameSpecifierLoc QualifierLoc = DR->getQualifierLoc())
           if (VisitNestedNameSpecifierLoc(QualifierLoc))
@@ -2562,7 +2262,7 @@ bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
         continue;
       }
       case VisitorJob::OverloadExprPartsKind: {
-        const OverloadExpr *O = cast<OverloadExprParts>(&LI)->get();
+        OverloadExpr *O = cast<OverloadExprParts>(&LI)->get();
         // Visit the nested-name-specifier.
         if (NestedNameSpecifierLoc QualifierLoc = O->getQualifierLoc())
           if (VisitNestedNameSpecifierLoc(QualifierLoc))
@@ -2576,7 +2276,7 @@ bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
         continue;
       }
       case VisitorJob::SizeOfPackExprPartsKind: {
-        const SizeOfPackExpr *E = cast<SizeOfPackExprParts>(&LI)->get();
+        SizeOfPackExpr *E = cast<SizeOfPackExprParts>(&LI)->get();
         NamedDecl *Pack = E->getPack();
         if (isa<TemplateTypeParmDecl>(Pack)) {
           if (Visit(MakeCursorTypeRef(cast<TemplateTypeParmDecl>(Pack),
@@ -2601,14 +2301,13 @@ bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
         
       case VisitorJob::LambdaExprPartsKind: {
         // Visit captures.
-        const LambdaExpr *E = cast<LambdaExprParts>(&LI)->get();
+        LambdaExpr *E = cast<LambdaExprParts>(&LI)->get();
         for (LambdaExpr::capture_iterator C = E->explicit_capture_begin(),
                                        CEnd = E->explicit_capture_end();
              C != CEnd; ++C) {
-          // FIXME: Lambda init-captures.
-          if (!C->capturesVariable())
+          if (C->capturesThis())
             continue;
-
+          
           if (Visit(MakeCursorVariableRef(C->getCapturedVar(),
                                           C->getLocation(),
                                           TU)))
@@ -2622,16 +2321,16 @@ bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
             // Visit the whole type.
             if (Visit(TL))
               return true;
-          } else if (FunctionProtoTypeLoc Proto =
-                         TL.getAs<FunctionProtoTypeLoc>()) {
+          } else if (isa<FunctionProtoTypeLoc>(TL)) {
+            FunctionProtoTypeLoc Proto = cast<FunctionProtoTypeLoc>(TL);
             if (E->hasExplicitParameters()) {
               // Visit parameters.
-              for (unsigned I = 0, N = Proto.getNumParams(); I != N; ++I)
-                if (Visit(MakeCXCursor(Proto.getParam(I), TU)))
+              for (unsigned I = 0, N = Proto.getNumArgs(); I != N; ++I)
+                if (Visit(MakeCXCursor(Proto.getArg(I), TU)))
                   return true;
             } else {
               // Visit result type.
-              if (Visit(Proto.getReturnLoc()))
+              if (Visit(Proto.getResultLoc()))
                 return true;
             }
           }
@@ -2648,8 +2347,8 @@ bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
   return false;
 }
 
-bool CursorVisitor::Visit(const Stmt *S) {
-  VisitorWorkList *WL = nullptr;
+bool CursorVisitor::Visit(Stmt *S) {
+  VisitorWorkList *WL = 0;
   if (!WorkListFreeList.empty()) {
     WL = WorkListFreeList.back();
     WL->clear();
@@ -2666,11 +2365,11 @@ bool CursorVisitor::Visit(const Stmt *S) {
 }
 
 namespace {
-typedef SmallVector<SourceRange, 4> RefNamePieces;
-RefNamePieces
-buildPieces(unsigned NameFlags, bool IsMemberRefExpr,
-            const DeclarationNameInfo &NI, const SourceRange &QLoc,
-            const ASTTemplateArgumentListInfo *TemplateArgs = nullptr) {
+typedef llvm::SmallVector<SourceRange, 4> RefNamePieces;
+RefNamePieces buildPieces(unsigned NameFlags, bool IsMemberRefExpr, 
+                          const DeclarationNameInfo &NI, 
+                          const SourceRange &QLoc, 
+                          const ASTTemplateArgumentListInfo *TemplateArgs = 0){
   const bool WantQualifier = NameFlags & CXNameRange_WantQualifier;
   const bool WantTemplateArgs = NameFlags & CXNameRange_WantTemplateArgs;
   const bool WantSinglePiece = NameFlags & CXNameRange_WantSinglePiece;
@@ -2710,36 +2409,36 @@ buildPieces(unsigned NameFlags, bool IsMemberRefExpr,
 // Misc. API hooks.
 //===----------------------------------------------------------------------===//               
 
-static void fatal_error_handler(void *user_data, const std::string& reason,
-                                bool gen_crash_diag) {
+static llvm::sys::Mutex EnableMultithreadingMutex;
+static bool EnabledMultithreading;
+
+static void fatal_error_handler(void *user_data, const std::string& reason) {
   // Write the result out to stderr avoiding errs() because raw_ostreams can
   // call report_fatal_error.
   fprintf(stderr, "LIBCLANG FATAL ERROR: %s\n", reason.c_str());
   ::abort();
 }
 
-namespace {
-struct RegisterFatalErrorHandler {
-  RegisterFatalErrorHandler() {
-    llvm::install_fatal_error_handler(fatal_error_handler, nullptr);
-  }
-};
-}
-
-static llvm::ManagedStatic<RegisterFatalErrorHandler> RegisterFatalErrorHandlerOnce;
-
 extern "C" {
 CXIndex clang_createIndex(int excludeDeclarationsFromPCH,
                           int displayDiagnostics) {
+  // Disable pretty stack trace functionality, which will otherwise be a very
+  // poor citizen of the world and set up all sorts of signal handlers.
+  llvm::DisablePrettyStackTrace = true;
+
   // We use crash recovery to make some of our APIs more reliable, implicitly
   // enable it.
-  if (!getenv("LIBCLANG_DISABLE_CRASH_RECOVERY"))
-    llvm::CrashRecoveryContext::Enable();
+  llvm::CrashRecoveryContext::Enable();
 
-  // Look through the managed static to trigger construction of the managed
-  // static which registers our fatal error handler. This ensures it is only
-  // registered once.
-  (void)*RegisterFatalErrorHandlerOnce;
+  // Enable support for multithreading in LLVM.
+  {
+    llvm::sys::ScopedLock L(EnableMultithreadingMutex);
+    if (!EnabledMultithreading) {
+      llvm::install_fatal_error_handler(fatal_error_handler, 0);
+      llvm::llvm_start_multithreaded();
+      EnabledMultithreading = true;
+    }
+  }
 
   CIndexer *CIdxr = new CIndexer();
   if (excludeDeclarationsFromPCH)
@@ -2779,50 +2478,31 @@ void clang_toggleCrashRecovery(unsigned isEnabled) {
   else
     llvm::CrashRecoveryContext::Disable();
 }
-
+  
 CXTranslationUnit clang_createTranslationUnit(CXIndex CIdx,
                                               const char *ast_filename) {
-  CXTranslationUnit TU;
-  enum CXErrorCode Result =
-      clang_createTranslationUnit2(CIdx, ast_filename, &TU);
-  (void)Result;
-  assert((TU && Result == CXError_Success) ||
-         (!TU && Result != CXError_Success));
-  return TU;
-}
-
-enum CXErrorCode clang_createTranslationUnit2(CXIndex CIdx,
-                                              const char *ast_filename,
-                                              CXTranslationUnit *out_TU) {
-  if (out_TU)
-    *out_TU = nullptr;
-
-  if (!CIdx || !ast_filename || !out_TU)
-    return CXError_InvalidArguments;
-
-  LOG_FUNC_SECTION {
-    *Log << ast_filename;
-  }
+  if (!CIdx)
+    return 0;
 
   CIndexer *CXXIdx = static_cast<CIndexer *>(CIdx);
   FileSystemOptions FileSystemOpts;
+  FileSystemOpts.WorkingDir = CXXIdx->getWorkingDirectory();
 
-  IntrusiveRefCntPtr<DiagnosticsEngine> Diags =
-      CompilerInstance::createDiagnostics(new DiagnosticOptions());
-  std::unique_ptr<ASTUnit> AU = ASTUnit::LoadFromASTFile(
-      ast_filename, Diags, FileSystemOpts, CXXIdx->getOnlyLocalDecls(), None,
-      /*CaptureDiagnostics=*/true,
-      /*AllowPCHWithCompilerErrors=*/true,
-      /*UserFilesAreVolatile=*/true);
-  *out_TU = MakeCXTranslationUnit(CXXIdx, AU.release());
-  return *out_TU ? CXError_Success : CXError_Failure;
+  IntrusiveRefCntPtr<DiagnosticsEngine> Diags;
+  ASTUnit *TU = ASTUnit::LoadFromASTFile(ast_filename, Diags, FileSystemOpts,
+                                  CXXIdx->getOnlyLocalDecls(),
+                                  0, 0,
+                                  /*CaptureDiagnostics=*/true,
+                                  /*AllowPCHWithCompilerErrors=*/true,
+                                  /*UserFilesAreVolatile=*/true);
+  return MakeCXTranslationUnit(CXXIdx, TU);
 }
 
 unsigned clang_defaultEditingTranslationUnitOptions() {
   return CXTranslationUnit_PrecompiledPreamble | 
          CXTranslationUnit_CacheCompletionResults;
 }
-
+  
 CXTranslationUnit
 clang_createTranslationUnitFromSourceFile(CXIndex CIdx,
                                           const char *source_filename,
@@ -2842,30 +2522,25 @@ struct ParseTranslationUnitInfo {
   const char *source_filename;
   const char *const *command_line_args;
   int num_command_line_args;
-  ArrayRef<CXUnsavedFile> unsaved_files;
+  struct CXUnsavedFile *unsaved_files;
+  unsigned num_unsaved_files;
   unsigned options;
-  CXTranslationUnit *out_TU;
-  CXErrorCode &result;
+  CXTranslationUnit result;
 };
 static void clang_parseTranslationUnit_Impl(void *UserData) {
-  const ParseTranslationUnitInfo *PTUI =
-      static_cast<ParseTranslationUnitInfo *>(UserData);
+  ParseTranslationUnitInfo *PTUI =
+    static_cast<ParseTranslationUnitInfo*>(UserData);
   CXIndex CIdx = PTUI->CIdx;
   const char *source_filename = PTUI->source_filename;
   const char * const *command_line_args = PTUI->command_line_args;
   int num_command_line_args = PTUI->num_command_line_args;
+  struct CXUnsavedFile *unsaved_files = PTUI->unsaved_files;
+  unsigned num_unsaved_files = PTUI->num_unsaved_files;
   unsigned options = PTUI->options;
-  CXTranslationUnit *out_TU = PTUI->out_TU;
+  PTUI->result = 0;
 
-  // Set up the initial return values.
-  if (out_TU)
-    *out_TU = nullptr;
-
-  // Check arguments.
-  if (!CIdx || !out_TU) {
-    PTUI->result = CXError_InvalidArguments;
+  if (!CIdx)
     return;
-  }
 
   CIndexer *CXXIdx = static_cast<CIndexer *>(CIdx);
 
@@ -2876,7 +2551,7 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
   // FIXME: Add a flag for modules.
   TranslationUnitKind TUKind
     = (options & CXTranslationUnit_Incomplete)? TU_Prefix : TU_Complete;
-  bool CacheCodeCompletionResults
+  bool CacheCodeCompetionResults
     = options & CXTranslationUnit_CacheCompletionResults;
   bool IncludeBriefCommentsInCodeCompletion
     = options & CXTranslationUnit_IncludeBriefCommentsInCodeCompletion;
@@ -2885,28 +2560,32 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
 
   // Configure the diagnostics.
   IntrusiveRefCntPtr<DiagnosticsEngine>
-    Diags(CompilerInstance::createDiagnostics(new DiagnosticOptions));
+    Diags(CompilerInstance::createDiagnostics(new DiagnosticOptions,
+                                              num_command_line_args,
+                                              command_line_args));
 
   // Recover resources if we crash before exiting this function.
   llvm::CrashRecoveryContextCleanupRegistrar<DiagnosticsEngine,
     llvm::CrashRecoveryContextReleaseRefCleanup<DiagnosticsEngine> >
-    DiagCleanup(Diags.get());
+    DiagCleanup(Diags.getPtr());
 
-  std::unique_ptr<std::vector<ASTUnit::RemappedFile>> RemappedFiles(
-      new std::vector<ASTUnit::RemappedFile>());
+  OwningPtr<std::vector<ASTUnit::RemappedFile> >
+    RemappedFiles(new std::vector<ASTUnit::RemappedFile>());
 
   // Recover resources if we crash before exiting this function.
   llvm::CrashRecoveryContextCleanupRegistrar<
     std::vector<ASTUnit::RemappedFile> > RemappedCleanup(RemappedFiles.get());
 
-  for (auto &UF : PTUI->unsaved_files) {
-    std::unique_ptr<llvm::MemoryBuffer> MB =
-        llvm::MemoryBuffer::getMemBufferCopy(getContents(UF), UF.Filename);
-    RemappedFiles->push_back(std::make_pair(UF.Filename, MB.release()));
+  for (unsigned I = 0; I != num_unsaved_files; ++I) {
+    StringRef Data(unsaved_files[I].Contents, unsaved_files[I].Length);
+    const llvm::MemoryBuffer *Buffer
+      = llvm::MemoryBuffer::getMemBufferCopy(Data, unsaved_files[I].Filename);
+    RemappedFiles->push_back(std::make_pair(unsaved_files[I].Filename,
+                                            Buffer));
   }
 
-  std::unique_ptr<std::vector<const char *>> Args(
-      new std::vector<const char *>());
+  OwningPtr<std::vector<const char *> >
+    Args(new std::vector<const char*>());
 
   // Recover resources if we crash before exiting this method.
   llvm::CrashRecoveryContextCleanupRegistrar<std::vector<const char*> >
@@ -2946,15 +2625,27 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
   }
   
   unsigned NumErrors = Diags->getClient()->getNumErrors();
-  std::unique_ptr<ASTUnit> ErrUnit;
-  std::unique_ptr<ASTUnit> Unit(ASTUnit::LoadFromCommandLine(
-      Args->data(), Args->data() + Args->size(), Diags,
-      CXXIdx->getClangResourcesPath(), CXXIdx->getOnlyLocalDecls(),
-      /*CaptureDiagnostics=*/true, *RemappedFiles.get(),
-      /*RemappedFilesKeepOriginalName=*/true, PrecompilePreamble, TUKind,
-      CacheCodeCompletionResults, IncludeBriefCommentsInCodeCompletion,
-      /*AllowPCHWithCompilerErrors=*/true, SkipFunctionBodies,
-      /*UserFilesAreVolatile=*/true, ForSerialization, &ErrUnit));
+  OwningPtr<ASTUnit> ErrUnit;
+  OwningPtr<ASTUnit> Unit(
+    ASTUnit::LoadFromCommandLine(Args->size() ? &(*Args)[0] : 0 
+                                 /* vector::data() not portable */,
+                                 Args->size() ? (&(*Args)[0] + Args->size()) :0,
+                                 Diags,
+                                 CXXIdx->getClangResourcesPath(),
+                                 CXXIdx->getOnlyLocalDecls(),
+                                 /*CaptureDiagnostics=*/true,
+                                 RemappedFiles->size() ? &(*RemappedFiles)[0]:0,
+                                 RemappedFiles->size(),
+                                 /*RemappedFilesKeepOriginalName=*/true,
+                                 PrecompilePreamble,
+                                 TUKind,
+                                 CacheCodeCompetionResults,
+                                 IncludeBriefCommentsInCodeCompletion,
+                                 /*AllowPCHWithCompilerErrors=*/true,
+                                 SkipFunctionBodies,
+                                 /*UserFilesAreVolatile=*/true,
+                                 ForSerialization,
+                                 &ErrUnit));
 
   if (NumErrors != Diags->getClient()->getNumErrors()) {
     // Make sure to check that 'Unit' is non-NULL.
@@ -2962,60 +2653,18 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
       printDiagsToStderr(Unit ? Unit.get() : ErrUnit.get());
   }
 
-  if (isASTReadError(Unit ? Unit.get() : ErrUnit.get())) {
-    PTUI->result = CXError_ASTReadError;
-  } else {
-    *PTUI->out_TU = MakeCXTranslationUnit(CXXIdx, Unit.release());
-    PTUI->result = *PTUI->out_TU ? CXError_Success : CXError_Failure;
-  }
+  PTUI->result = MakeCXTranslationUnit(CXXIdx, Unit.take());
 }
-
-CXTranslationUnit
-clang_parseTranslationUnit(CXIndex CIdx,
-                           const char *source_filename,
-                           const char *const *command_line_args,
-                           int num_command_line_args,
-                           struct CXUnsavedFile *unsaved_files,
-                           unsigned num_unsaved_files,
-                           unsigned options) {
-  CXTranslationUnit TU;
-  enum CXErrorCode Result = clang_parseTranslationUnit2(
-      CIdx, source_filename, command_line_args, num_command_line_args,
-      unsaved_files, num_unsaved_files, options, &TU);
-  (void)Result;
-  assert((TU && Result == CXError_Success) ||
-         (!TU && Result != CXError_Success));
-  return TU;
-}
-
-enum CXErrorCode clang_parseTranslationUnit2(
-    CXIndex CIdx,
-    const char *source_filename,
-    const char *const *command_line_args,
-    int num_command_line_args,
-    struct CXUnsavedFile *unsaved_files,
-    unsigned num_unsaved_files,
-    unsigned options,
-    CXTranslationUnit *out_TU) {
-  LOG_FUNC_SECTION {
-    *Log << source_filename << ": ";
-    for (int i = 0; i != num_command_line_args; ++i)
-      *Log << command_line_args[i] << " ";
-  }
-
-  if (num_unsaved_files && !unsaved_files)
-    return CXError_InvalidArguments;
-
-  CXErrorCode result = CXError_Failure;
-  ParseTranslationUnitInfo PTUI = {
-      CIdx,
-      source_filename,
-      command_line_args,
-      num_command_line_args,
-      llvm::makeArrayRef(unsaved_files, num_unsaved_files),
-      options,
-      out_TU,
-      result};
+CXTranslationUnit clang_parseTranslationUnit(CXIndex CIdx,
+                                             const char *source_filename,
+                                         const char * const *command_line_args,
+                                             int num_command_line_args,
+                                            struct CXUnsavedFile *unsaved_files,
+                                             unsigned num_unsaved_files,
+                                             unsigned options) {
+  ParseTranslationUnitInfo PTUI = { CIdx, source_filename, command_line_args,
+                                    num_command_line_args, unsaved_files,
+                                    num_unsaved_files, options, 0 };
   llvm::CrashRecoveryContext CRC;
 
   if (!RunSafely(CRC, clang_parseTranslationUnit_Impl, &PTUI)) {
@@ -3038,14 +2687,13 @@ enum CXErrorCode clang_parseTranslationUnit2(
     fprintf(stderr, "],\n");
     fprintf(stderr, "  'options' : %d,\n", options);
     fprintf(stderr, "}\n");
-
-    return CXError_Crashed;
+    
+    return 0;
   } else if (getenv("LIBCLANG_RESOURCE_USAGE")) {
-    if (CXTranslationUnit *TU = PTUI.out_TU)
-      PrintLibclangResourceUsage(*TU);
+    PrintLibclangResourceUsage(PTUI.result);
   }
-
-  return result;
+  
+  return PTUI.result;
 }
 
 unsigned clang_defaultSaveOptions(CXTranslationUnit TU) {
@@ -3067,26 +2715,20 @@ static void clang_saveTranslationUnit_Impl(void *UserData) {
   SaveTranslationUnitInfo *STUI =
     static_cast<SaveTranslationUnitInfo*>(UserData);
 
-  CIndexer *CXXIdx = STUI->TU->CIdx;
+  CIndexer *CXXIdx = (CIndexer*)STUI->TU->CIdx;
   if (CXXIdx->isOptEnabled(CXGlobalOpt_ThreadBackgroundPriorityForIndexing))
     setThreadBackgroundPriority();
 
-  bool hadError = cxtu::getASTUnit(STUI->TU)->Save(STUI->FileName);
+  bool hadError = static_cast<ASTUnit *>(STUI->TU->TUData)->Save(STUI->FileName);
   STUI->result = hadError ? CXSaveError_Unknown : CXSaveError_None;
 }
 
 int clang_saveTranslationUnit(CXTranslationUnit TU, const char *FileName,
                               unsigned options) {
-  LOG_FUNC_SECTION {
-    *Log << TU << ' ' << FileName;
-  }
-
-  if (isNotUsableTU(TU)) {
-    LOG_BAD_TU(TU);
+  if (!TU)
     return CXSaveError_InvalidTU;
-  }
 
-  ASTUnit *CXXUnit = cxtu::getASTUnit(TU);
+  ASTUnit *CXXUnit = static_cast<ASTUnit *>(TU->TUData);
   ASTUnit::ConcurrencyCheck Check(*CXXUnit);
   if (!CXXUnit->hasSema())
     return CXSaveError_InvalidTU;
@@ -3127,15 +2769,13 @@ void clang_disposeTranslationUnit(CXTranslationUnit CTUnit) {
   if (CTUnit) {
     // If the translation unit has been marked as unsafe to free, just discard
     // it.
-    ASTUnit *Unit = cxtu::getASTUnit(CTUnit);
-    if (Unit && Unit->isUnsafeToFree())
+    if (static_cast<ASTUnit *>(CTUnit->TUData)->isUnsafeToFree())
       return;
 
-    delete cxtu::getASTUnit(CTUnit);
-    delete CTUnit->StringPool;
+    delete static_cast<ASTUnit *>(CTUnit->TUData);
+    disposeCXStringPool(CTUnit->StringPool);
     delete static_cast<CXDiagnosticSetImpl *>(CTUnit->Diagnostics);
     disposeOverridenCXCursorsPool(CTUnit->OverridenCursorsPool);
-    delete CTUnit->CommentToXML;
     delete CTUnit;
   }
 }
@@ -3146,106 +2786,92 @@ unsigned clang_defaultReparseOptions(CXTranslationUnit TU) {
 
 struct ReparseTranslationUnitInfo {
   CXTranslationUnit TU;
-  ArrayRef<CXUnsavedFile> unsaved_files;
+  unsigned num_unsaved_files;
+  struct CXUnsavedFile *unsaved_files;
   unsigned options;
-  CXErrorCode &result;
+  int result;
 };
 
 static void clang_reparseTranslationUnit_Impl(void *UserData) {
-  const ReparseTranslationUnitInfo *RTUI =
-      static_cast<ReparseTranslationUnitInfo *>(UserData);
+  ReparseTranslationUnitInfo *RTUI =
+    static_cast<ReparseTranslationUnitInfo*>(UserData);
   CXTranslationUnit TU = RTUI->TU;
-  unsigned options = RTUI->options;
-  (void) options;
-
-  // Check arguments.
-  if (isNotUsableTU(TU)) {
-    LOG_BAD_TU(TU);
-    RTUI->result = CXError_InvalidArguments;
-    return;
-  }
 
   // Reset the associated diagnostics.
   delete static_cast<CXDiagnosticSetImpl*>(TU->Diagnostics);
-  TU->Diagnostics = nullptr;
+  TU->Diagnostics = 0;
 
-  CIndexer *CXXIdx = TU->CIdx;
+  unsigned num_unsaved_files = RTUI->num_unsaved_files;
+  struct CXUnsavedFile *unsaved_files = RTUI->unsaved_files;
+  unsigned options = RTUI->options;
+  (void) options;
+  RTUI->result = 1;
+
+  if (!TU)
+    return;
+
+  CIndexer *CXXIdx = (CIndexer*)TU->CIdx;
   if (CXXIdx->isOptEnabled(CXGlobalOpt_ThreadBackgroundPriorityForEditing))
     setThreadBackgroundPriority();
 
-  ASTUnit *CXXUnit = cxtu::getASTUnit(TU);
+  ASTUnit *CXXUnit = static_cast<ASTUnit *>(TU->TUData);
   ASTUnit::ConcurrencyCheck Check(*CXXUnit);
-
-  std::unique_ptr<std::vector<ASTUnit::RemappedFile>> RemappedFiles(
-      new std::vector<ASTUnit::RemappedFile>());
-
+  
+  OwningPtr<std::vector<ASTUnit::RemappedFile> >
+    RemappedFiles(new std::vector<ASTUnit::RemappedFile>());
+  
   // Recover resources if we crash before exiting this function.
   llvm::CrashRecoveryContextCleanupRegistrar<
     std::vector<ASTUnit::RemappedFile> > RemappedCleanup(RemappedFiles.get());
-
-  for (auto &UF : RTUI->unsaved_files) {
-    std::unique_ptr<llvm::MemoryBuffer> MB =
-        llvm::MemoryBuffer::getMemBufferCopy(getContents(UF), UF.Filename);
-    RemappedFiles->push_back(std::make_pair(UF.Filename, MB.release()));
+  
+  for (unsigned I = 0; I != num_unsaved_files; ++I) {
+    StringRef Data(unsaved_files[I].Contents, unsaved_files[I].Length);
+    const llvm::MemoryBuffer *Buffer
+      = llvm::MemoryBuffer::getMemBufferCopy(Data, unsaved_files[I].Filename);
+    RemappedFiles->push_back(std::make_pair(unsaved_files[I].Filename,
+                                            Buffer));
   }
-
-  if (!CXXUnit->Reparse(*RemappedFiles.get()))
-    RTUI->result = CXError_Success;
-  else if (isASTReadError(CXXUnit))
-    RTUI->result = CXError_ASTReadError;
+  
+  if (!CXXUnit->Reparse(RemappedFiles->size() ? &(*RemappedFiles)[0] : 0,
+                        RemappedFiles->size()))
+    RTUI->result = 0;
 }
 
 int clang_reparseTranslationUnit(CXTranslationUnit TU,
                                  unsigned num_unsaved_files,
                                  struct CXUnsavedFile *unsaved_files,
                                  unsigned options) {
-  LOG_FUNC_SECTION {
-    *Log << TU;
-  }
-
-  if (num_unsaved_files && !unsaved_files)
-    return CXError_InvalidArguments;
-
-  CXErrorCode result = CXError_Failure;
-  ReparseTranslationUnitInfo RTUI = {
-      TU, llvm::makeArrayRef(unsaved_files, num_unsaved_files), options,
-      result};
+  ReparseTranslationUnitInfo RTUI = { TU, num_unsaved_files, unsaved_files,
+                                      options, 0 };
 
   if (getenv("LIBCLANG_NOTHREADS")) {
     clang_reparseTranslationUnit_Impl(&RTUI);
-    return result;
+    return RTUI.result;
   }
 
   llvm::CrashRecoveryContext CRC;
 
   if (!RunSafely(CRC, clang_reparseTranslationUnit_Impl, &RTUI)) {
     fprintf(stderr, "libclang: crash detected during reparsing\n");
-    cxtu::getASTUnit(TU)->setUnsafeToFree(true);
-    return CXError_Crashed;
+    static_cast<ASTUnit *>(TU->TUData)->setUnsafeToFree(true);
+    return 1;
   } else if (getenv("LIBCLANG_RESOURCE_USAGE"))
     PrintLibclangResourceUsage(TU);
 
-  return result;
+  return RTUI.result;
 }
 
 
 CXString clang_getTranslationUnitSpelling(CXTranslationUnit CTUnit) {
-  if (isNotUsableTU(CTUnit)) {
-    LOG_BAD_TU(CTUnit);
-    return cxstring::createEmpty();
-  }
+  if (!CTUnit)
+    return createCXString("");
 
-  ASTUnit *CXXUnit = cxtu::getASTUnit(CTUnit);
-  return cxstring::createDup(CXXUnit->getOriginalSourceFileName());
+  ASTUnit *CXXUnit = static_cast<ASTUnit *>(CTUnit->TUData);
+  return createCXString(CXXUnit->getOriginalSourceFileName(), true);
 }
 
 CXCursor clang_getTranslationUnitCursor(CXTranslationUnit TU) {
-  if (isNotUsableTU(TU)) {
-    LOG_BAD_TU(TU);
-    return clang_getNullCursor();
-  }
-
-  ASTUnit *CXXUnit = cxtu::getASTUnit(TU);
+  ASTUnit *CXXUnit = static_cast<ASTUnit*>(TU->TUData);
   return MakeCXCursor(CXXUnit->getASTContext().getTranslationUnitDecl(), TU);
 }
 
@@ -3258,10 +2884,10 @@ CXCursor clang_getTranslationUnitCursor(CXTranslationUnit TU) {
 extern "C" {
 CXString clang_getFileName(CXFile SFile) {
   if (!SFile)
-    return cxstring::createNull();
+    return createCXString((const char*)NULL);
 
   FileEntry *FEnt = static_cast<FileEntry *>(SFile);
-  return cxstring::createRef(FEnt->getName());
+  return createCXString(FEnt->getName());
 }
 
 time_t clang_getFileTime(CXFile SFile) {
@@ -3272,56 +2898,24 @@ time_t clang_getFileTime(CXFile SFile) {
   return FEnt->getModificationTime();
 }
 
-CXFile clang_getFile(CXTranslationUnit TU, const char *file_name) {
-  if (isNotUsableTU(TU)) {
-    LOG_BAD_TU(TU);
-    return nullptr;
-  }
+CXFile clang_getFile(CXTranslationUnit tu, const char *file_name) {
+  if (!tu)
+    return 0;
 
-  ASTUnit *CXXUnit = cxtu::getASTUnit(TU);
+  ASTUnit *CXXUnit = static_cast<ASTUnit *>(tu->TUData);
 
   FileManager &FMgr = CXXUnit->getFileManager();
   return const_cast<FileEntry *>(FMgr.getFile(file_name));
 }
 
-unsigned clang_isFileMultipleIncludeGuarded(CXTranslationUnit TU,
-                                            CXFile file) {
-  if (isNotUsableTU(TU)) {
-    LOG_BAD_TU(TU);
-    return 0;
-  }
-
-  if (!file)
+unsigned clang_isFileMultipleIncludeGuarded(CXTranslationUnit tu, CXFile file) {
+  if (!tu || !file)
     return 0;
 
-  ASTUnit *CXXUnit = cxtu::getASTUnit(TU);
+  ASTUnit *CXXUnit = static_cast<ASTUnit *>(tu->TUData);
   FileEntry *FEnt = static_cast<FileEntry *>(file);
   return CXXUnit->getPreprocessor().getHeaderSearchInfo()
                                           .isFileMultipleIncludeGuarded(FEnt);
-}
-
-int clang_getFileUniqueID(CXFile file, CXFileUniqueID *outID) {
-  if (!file || !outID)
-    return 1;
-
-  FileEntry *FEnt = static_cast<FileEntry *>(file);
-  const llvm::sys::fs::UniqueID &ID = FEnt->getUniqueID();
-  outID->data[0] = ID.getDevice();
-  outID->data[1] = ID.getFile();
-  outID->data[2] = FEnt->getModificationTime();
-  return 0;
-}
-
-int clang_File_isEqual(CXFile file1, CXFile file2) {
-  if (file1 == file2)
-    return true;
-
-  if (!file1 || !file2)
-    return false;
-
-  FileEntry *FEnt1 = static_cast<FileEntry *>(file1);
-  FileEntry *FEnt2 = static_cast<FileEntry *>(file2);
-  return FEnt1->getUniqueID() == FEnt2->getUniqueID();
 }
 
 } // end: extern "C"
@@ -3330,17 +2924,17 @@ int clang_File_isEqual(CXFile file1, CXFile file2) {
 // CXCursor Operations.
 //===----------------------------------------------------------------------===//
 
-static const Decl *getDeclFromExpr(const Stmt *E) {
-  if (const ImplicitCastExpr *CE = dyn_cast<ImplicitCastExpr>(E))
+static Decl *getDeclFromExpr(Stmt *E) {
+  if (ImplicitCastExpr *CE = dyn_cast<ImplicitCastExpr>(E))
     return getDeclFromExpr(CE->getSubExpr());
 
-  if (const DeclRefExpr *RefExpr = dyn_cast<DeclRefExpr>(E))
+  if (DeclRefExpr *RefExpr = dyn_cast<DeclRefExpr>(E))
     return RefExpr->getDecl();
-  if (const MemberExpr *ME = dyn_cast<MemberExpr>(E))
+  if (MemberExpr *ME = dyn_cast<MemberExpr>(E))
     return ME->getMemberDecl();
-  if (const ObjCIvarRefExpr *RE = dyn_cast<ObjCIvarRefExpr>(E))
+  if (ObjCIvarRefExpr *RE = dyn_cast<ObjCIvarRefExpr>(E))
     return RE->getDecl();
-  if (const ObjCPropertyRefExpr *PRE = dyn_cast<ObjCPropertyRefExpr>(E)) {
+  if (ObjCPropertyRefExpr *PRE = dyn_cast<ObjCPropertyRefExpr>(E)) {
     if (PRE->isExplicitProperty())
       return PRE->getExplicitProperty();
     // It could be messaging both getter and setter as in:
@@ -3351,48 +2945,48 @@ static const Decl *getDeclFromExpr(const Stmt *E) {
       return PRE->getImplicitPropertySetter();
     return PRE->getImplicitPropertyGetter();
   }
-  if (const PseudoObjectExpr *POE = dyn_cast<PseudoObjectExpr>(E))
+  if (PseudoObjectExpr *POE = dyn_cast<PseudoObjectExpr>(E))
     return getDeclFromExpr(POE->getSyntacticForm());
-  if (const OpaqueValueExpr *OVE = dyn_cast<OpaqueValueExpr>(E))
+  if (OpaqueValueExpr *OVE = dyn_cast<OpaqueValueExpr>(E))
     if (Expr *Src = OVE->getSourceExpr())
       return getDeclFromExpr(Src);
       
-  if (const CallExpr *CE = dyn_cast<CallExpr>(E))
+  if (CallExpr *CE = dyn_cast<CallExpr>(E))
     return getDeclFromExpr(CE->getCallee());
-  if (const CXXConstructExpr *CE = dyn_cast<CXXConstructExpr>(E))
+  if (CXXConstructExpr *CE = dyn_cast<CXXConstructExpr>(E))
     if (!CE->isElidable())
     return CE->getConstructor();
-  if (const ObjCMessageExpr *OME = dyn_cast<ObjCMessageExpr>(E))
+  if (ObjCMessageExpr *OME = dyn_cast<ObjCMessageExpr>(E))
     return OME->getMethodDecl();
 
-  if (const ObjCProtocolExpr *PE = dyn_cast<ObjCProtocolExpr>(E))
+  if (ObjCProtocolExpr *PE = dyn_cast<ObjCProtocolExpr>(E))
     return PE->getProtocol();
-  if (const SubstNonTypeTemplateParmPackExpr *NTTP
+  if (SubstNonTypeTemplateParmPackExpr *NTTP 
                               = dyn_cast<SubstNonTypeTemplateParmPackExpr>(E))
     return NTTP->getParameterPack();
-  if (const SizeOfPackExpr *SizeOfPack = dyn_cast<SizeOfPackExpr>(E))
+  if (SizeOfPackExpr *SizeOfPack = dyn_cast<SizeOfPackExpr>(E))
     if (isa<NonTypeTemplateParmDecl>(SizeOfPack->getPack()) || 
         isa<ParmVarDecl>(SizeOfPack->getPack()))
       return SizeOfPack->getPack();
-
-  return nullptr;
+  
+  return 0;
 }
 
-static SourceLocation getLocationFromExpr(const Expr *E) {
-  if (const ImplicitCastExpr *CE = dyn_cast<ImplicitCastExpr>(E))
+static SourceLocation getLocationFromExpr(Expr *E) {
+  if (ImplicitCastExpr *CE = dyn_cast<ImplicitCastExpr>(E))
     return getLocationFromExpr(CE->getSubExpr());
 
-  if (const ObjCMessageExpr *Msg = dyn_cast<ObjCMessageExpr>(E))
+  if (ObjCMessageExpr *Msg = dyn_cast<ObjCMessageExpr>(E))
     return /*FIXME:*/Msg->getLeftLoc();
-  if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E))
+  if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E))
     return DRE->getLocation();
-  if (const MemberExpr *Member = dyn_cast<MemberExpr>(E))
+  if (MemberExpr *Member = dyn_cast<MemberExpr>(E))
     return Member->getMemberLoc();
-  if (const ObjCIvarRefExpr *Ivar = dyn_cast<ObjCIvarRefExpr>(E))
+  if (ObjCIvarRefExpr *Ivar = dyn_cast<ObjCIvarRefExpr>(E))
     return Ivar->getLocation();
-  if (const SizeOfPackExpr *SizeOfPack = dyn_cast<SizeOfPackExpr>(E))
+  if (SizeOfPackExpr *SizeOfPack = dyn_cast<SizeOfPackExpr>(E))
     return SizeOfPack->getPackLoc();
-  if (const ObjCPropertyRefExpr *PropRef = dyn_cast<ObjCPropertyRefExpr>(E))
+  if (ObjCPropertyRefExpr *PropRef = dyn_cast<ObjCPropertyRefExpr>(E))
     return PropRef->getLocation();
   
   return E->getLocStart();
@@ -3445,189 +3039,169 @@ unsigned clang_visitChildrenWithBlock(CXCursor parent,
   return clang_visitChildren(parent, visitWithBlock, block);
 }
 
-static CXString getDeclSpelling(const Decl *D) {
+static CXString getDeclSpelling(Decl *D) {
   if (!D)
-    return cxstring::createEmpty();
+    return createCXString("");
 
-  const NamedDecl *ND = dyn_cast<NamedDecl>(D);
+  NamedDecl *ND = dyn_cast<NamedDecl>(D);
   if (!ND) {
-    if (const ObjCPropertyImplDecl *PropImpl =
-            dyn_cast<ObjCPropertyImplDecl>(D))
+    if (ObjCPropertyImplDecl *PropImpl =dyn_cast<ObjCPropertyImplDecl>(D))
       if (ObjCPropertyDecl *Property = PropImpl->getPropertyDecl())
-        return cxstring::createDup(Property->getIdentifier()->getName());
+        return createCXString(Property->getIdentifier()->getName());
     
-    if (const ImportDecl *ImportD = dyn_cast<ImportDecl>(D))
+    if (ImportDecl *ImportD = dyn_cast<ImportDecl>(D))
       if (Module *Mod = ImportD->getImportedModule())
-        return cxstring::createDup(Mod->getFullModuleName());
+        return createCXString(Mod->getFullModuleName());
 
-    return cxstring::createEmpty();
+    return createCXString("");
   }
   
-  if (const ObjCMethodDecl *OMD = dyn_cast<ObjCMethodDecl>(ND))
-    return cxstring::createDup(OMD->getSelector().getAsString());
+  if (ObjCMethodDecl *OMD = dyn_cast<ObjCMethodDecl>(ND))
+    return createCXString(OMD->getSelector().getAsString());
 
-  if (const ObjCCategoryImplDecl *CIMP = dyn_cast<ObjCCategoryImplDecl>(ND))
+  if (ObjCCategoryImplDecl *CIMP = dyn_cast<ObjCCategoryImplDecl>(ND))
     // No, this isn't the same as the code below. getIdentifier() is non-virtual
     // and returns different names. NamedDecl returns the class name and
     // ObjCCategoryImplDecl returns the category name.
-    return cxstring::createRef(CIMP->getIdentifier()->getNameStart());
+    return createCXString(CIMP->getIdentifier()->getNameStart());
 
   if (isa<UsingDirectiveDecl>(D))
-    return cxstring::createEmpty();
+    return createCXString("");
   
   SmallString<1024> S;
   llvm::raw_svector_ostream os(S);
   ND->printName(os);
   
-  return cxstring::createDup(os.str());
+  return createCXString(os.str());
 }
 
 CXString clang_getCursorSpelling(CXCursor C) {
   if (clang_isTranslationUnit(C.kind))
-    return clang_getTranslationUnitSpelling(getCursorTU(C));
+    return clang_getTranslationUnitSpelling(
+                            static_cast<CXTranslationUnit>(C.data[2]));
 
   if (clang_isReference(C.kind)) {
     switch (C.kind) {
     case CXCursor_ObjCSuperClassRef: {
-      const ObjCInterfaceDecl *Super = getCursorObjCSuperClassRef(C).first;
-      return cxstring::createRef(Super->getIdentifier()->getNameStart());
+      ObjCInterfaceDecl *Super = getCursorObjCSuperClassRef(C).first;
+      return createCXString(Super->getIdentifier()->getNameStart());
     }
     case CXCursor_ObjCClassRef: {
-      const ObjCInterfaceDecl *Class = getCursorObjCClassRef(C).first;
-      return cxstring::createRef(Class->getIdentifier()->getNameStart());
+      ObjCInterfaceDecl *Class = getCursorObjCClassRef(C).first;
+      return createCXString(Class->getIdentifier()->getNameStart());
     }
     case CXCursor_ObjCProtocolRef: {
-      const ObjCProtocolDecl *OID = getCursorObjCProtocolRef(C).first;
+      ObjCProtocolDecl *OID = getCursorObjCProtocolRef(C).first;
       assert(OID && "getCursorSpelling(): Missing protocol decl");
-      return cxstring::createRef(OID->getIdentifier()->getNameStart());
+      return createCXString(OID->getIdentifier()->getNameStart());
     }
     case CXCursor_CXXBaseSpecifier: {
-      const CXXBaseSpecifier *B = getCursorCXXBaseSpecifier(C);
-      return cxstring::createDup(B->getType().getAsString());
+      CXXBaseSpecifier *B = getCursorCXXBaseSpecifier(C);
+      return createCXString(B->getType().getAsString());
     }
     case CXCursor_TypeRef: {
-      const TypeDecl *Type = getCursorTypeRef(C).first;
+      TypeDecl *Type = getCursorTypeRef(C).first;
       assert(Type && "Missing type decl");
 
-      return cxstring::createDup(getCursorContext(C).getTypeDeclType(Type).
+      return createCXString(getCursorContext(C).getTypeDeclType(Type).
                               getAsString());
     }
     case CXCursor_TemplateRef: {
-      const TemplateDecl *Template = getCursorTemplateRef(C).first;
+      TemplateDecl *Template = getCursorTemplateRef(C).first;
       assert(Template && "Missing template decl");
       
-      return cxstring::createDup(Template->getNameAsString());
+      return createCXString(Template->getNameAsString());
     }
         
     case CXCursor_NamespaceRef: {
-      const NamedDecl *NS = getCursorNamespaceRef(C).first;
+      NamedDecl *NS = getCursorNamespaceRef(C).first;
       assert(NS && "Missing namespace decl");
       
-      return cxstring::createDup(NS->getNameAsString());
+      return createCXString(NS->getNameAsString());
     }
 
     case CXCursor_MemberRef: {
-      const FieldDecl *Field = getCursorMemberRef(C).first;
+      FieldDecl *Field = getCursorMemberRef(C).first;
       assert(Field && "Missing member decl");
       
-      return cxstring::createDup(Field->getNameAsString());
+      return createCXString(Field->getNameAsString());
     }
 
     case CXCursor_LabelRef: {
-      const LabelStmt *Label = getCursorLabelRef(C).first;
+      LabelStmt *Label = getCursorLabelRef(C).first;
       assert(Label && "Missing label");
       
-      return cxstring::createRef(Label->getName());
+      return createCXString(Label->getName());
     }
 
     case CXCursor_OverloadedDeclRef: {
       OverloadedDeclRefStorage Storage = getCursorOverloadedDeclRef(C).first;
-      if (const Decl *D = Storage.dyn_cast<const Decl *>()) {
-        if (const NamedDecl *ND = dyn_cast<NamedDecl>(D))
-          return cxstring::createDup(ND->getNameAsString());
-        return cxstring::createEmpty();
+      if (Decl *D = Storage.dyn_cast<Decl *>()) {
+        if (NamedDecl *ND = dyn_cast<NamedDecl>(D))
+          return createCXString(ND->getNameAsString());
+        return createCXString("");
       }
-      if (const OverloadExpr *E = Storage.dyn_cast<const OverloadExpr *>())
-        return cxstring::createDup(E->getName().getAsString());
+      if (OverloadExpr *E = Storage.dyn_cast<OverloadExpr *>())
+        return createCXString(E->getName().getAsString());
       OverloadedTemplateStorage *Ovl
         = Storage.get<OverloadedTemplateStorage*>();
       if (Ovl->size() == 0)
-        return cxstring::createEmpty();
-      return cxstring::createDup((*Ovl->begin())->getNameAsString());
+        return createCXString("");
+      return createCXString((*Ovl->begin())->getNameAsString());
     }
         
     case CXCursor_VariableRef: {
-      const VarDecl *Var = getCursorVariableRef(C).first;
+      VarDecl *Var = getCursorVariableRef(C).first;
       assert(Var && "Missing variable decl");
       
-      return cxstring::createDup(Var->getNameAsString());
+      return createCXString(Var->getNameAsString());
     }
         
     default:
-      return cxstring::createRef("<not implemented>");
+      return createCXString("<not implemented>");
     }
   }
 
   if (clang_isExpression(C.kind)) {
-    const Expr *E = getCursorExpr(C);
-
-    if (C.kind == CXCursor_ObjCStringLiteral ||
-        C.kind == CXCursor_StringLiteral) {
-      const StringLiteral *SLit;
-      if (const ObjCStringLiteral *OSL = dyn_cast<ObjCStringLiteral>(E)) {
-        SLit = OSL->getString();
-      } else {
-        SLit = cast<StringLiteral>(E);
-      }
-      SmallString<256> Buf;
-      llvm::raw_svector_ostream OS(Buf);
-      SLit->outputString(OS);
-      return cxstring::createDup(OS.str());
-    }
-
-    const Decl *D = getDeclFromExpr(getCursorExpr(C));
+    Decl *D = getDeclFromExpr(getCursorExpr(C));
     if (D)
       return getDeclSpelling(D);
-    return cxstring::createEmpty();
+    return createCXString("");
   }
 
   if (clang_isStatement(C.kind)) {
-    const Stmt *S = getCursorStmt(C);
-    if (const LabelStmt *Label = dyn_cast_or_null<LabelStmt>(S))
-      return cxstring::createRef(Label->getName());
+    Stmt *S = getCursorStmt(C);
+    if (LabelStmt *Label = dyn_cast_or_null<LabelStmt>(S))
+      return createCXString(Label->getName());
 
-    return cxstring::createEmpty();
+    return createCXString("");
   }
   
   if (C.kind == CXCursor_MacroExpansion)
-    return cxstring::createRef(getCursorMacroExpansion(C).getName()
+    return createCXString(getCursorMacroExpansion(C)->getName()
                                                            ->getNameStart());
 
   if (C.kind == CXCursor_MacroDefinition)
-    return cxstring::createRef(getCursorMacroDefinition(C)->getName()
+    return createCXString(getCursorMacroDefinition(C)->getName()
                                                            ->getNameStart());
 
   if (C.kind == CXCursor_InclusionDirective)
-    return cxstring::createDup(getCursorInclusionDirective(C)->getFileName());
+    return createCXString(getCursorInclusionDirective(C)->getFileName());
       
   if (clang_isDeclaration(C.kind))
     return getDeclSpelling(getCursorDecl(C));
 
   if (C.kind == CXCursor_AnnotateAttr) {
-    const AnnotateAttr *AA = cast<AnnotateAttr>(cxcursor::getCursorAttr(C));
-    return cxstring::createDup(AA->getAnnotation());
+    AnnotateAttr *AA = cast<AnnotateAttr>(cxcursor::getCursorAttr(C));
+    return createCXString(AA->getAnnotation());
   }
 
   if (C.kind == CXCursor_AsmLabelAttr) {
-    const AsmLabelAttr *AA = cast<AsmLabelAttr>(cxcursor::getCursorAttr(C));
-    return cxstring::createDup(AA->getLabel());
+    AsmLabelAttr *AA = cast<AsmLabelAttr>(cxcursor::getCursorAttr(C));
+    return createCXString(AA->getLabel());
   }
 
-  if (C.kind == CXCursor_PackedAttr) {
-    return cxstring::createRef("packed");
-  }
-
-  return cxstring::createEmpty();
+  return createCXString("");
 }
 
 CXSourceRange clang_Cursor_getSpellingNameRange(CXCursor C,
@@ -3639,8 +3213,8 @@ CXSourceRange clang_Cursor_getSpellingNameRange(CXCursor C,
   ASTContext &Ctx = getCursorContext(C);
 
   if (clang_isStatement(C.kind)) {
-    const Stmt *S = getCursorStmt(C);
-    if (const LabelStmt *Label = dyn_cast_or_null<LabelStmt>(S)) {
+    Stmt *S = getCursorStmt(C);
+    if (LabelStmt *Label = dyn_cast_or_null<LabelStmt>(S)) {
       if (pieceIndex > 0)
         return clang_getNullRange();
       return cxloc::translateSourceRange(Ctx, Label->getIdentLoc());
@@ -3650,7 +3224,7 @@ CXSourceRange clang_Cursor_getSpellingNameRange(CXCursor C,
   }
 
   if (C.kind == CXCursor_ObjCMessageExpr) {
-    if (const ObjCMessageExpr *
+    if (ObjCMessageExpr *
           ME = dyn_cast_or_null<ObjCMessageExpr>(getCursorExpr(C))) {
       if (pieceIndex >= ME->getNumSelectorLocs())
         return clang_getNullRange();
@@ -3660,7 +3234,7 @@ CXSourceRange clang_Cursor_getSpellingNameRange(CXCursor C,
 
   if (C.kind == CXCursor_ObjCInstanceMethodDecl ||
       C.kind == CXCursor_ObjCClassMethodDecl) {
-    if (const ObjCMethodDecl *
+    if (ObjCMethodDecl *
           MD = dyn_cast_or_null<ObjCMethodDecl>(getCursorDecl(C))) {
       if (pieceIndex >= MD->getNumSelectorLocs())
         return clang_getNullRange();
@@ -3672,10 +3246,10 @@ CXSourceRange clang_Cursor_getSpellingNameRange(CXCursor C,
       C.kind == CXCursor_ObjCCategoryImplDecl) {
     if (pieceIndex > 0)
       return clang_getNullRange();
-    if (const ObjCCategoryDecl *
+    if (ObjCCategoryDecl *
           CD = dyn_cast_or_null<ObjCCategoryDecl>(getCursorDecl(C)))
       return cxloc::translateSourceRange(Ctx, CD->getCategoryNameLoc());
-    if (const ObjCCategoryImplDecl *
+    if (ObjCCategoryImplDecl *
           CID = dyn_cast_or_null<ObjCCategoryImplDecl>(getCursorDecl(C)))
       return cxloc::translateSourceRange(Ctx, CID->getCategoryNameLoc());
   }
@@ -3683,24 +3257,11 @@ CXSourceRange clang_Cursor_getSpellingNameRange(CXCursor C,
   if (C.kind == CXCursor_ModuleImportDecl) {
     if (pieceIndex > 0)
       return clang_getNullRange();
-    if (const ImportDecl *ImportD =
-            dyn_cast_or_null<ImportDecl>(getCursorDecl(C))) {
+    if (ImportDecl *ImportD = dyn_cast_or_null<ImportDecl>(getCursorDecl(C))) {
       ArrayRef<SourceLocation> Locs = ImportD->getIdentifierLocs();
       if (!Locs.empty())
         return cxloc::translateSourceRange(Ctx,
                                          SourceRange(Locs.front(), Locs.back()));
-    }
-    return clang_getNullRange();
-  }
-
-  if (C.kind == CXCursor_CXXMethod || C.kind == CXCursor_Destructor ||
-      C.kind == CXCursor_ConversionFunction) {
-    if (pieceIndex > 0)
-      return clang_getNullRange();
-    if (const FunctionDecl *FD =
-            dyn_cast_or_null<FunctionDecl>(getCursorDecl(C))) {
-      DeclarationNameInfo FunctionName = FD->getNameInfo();
-      return cxloc::translateSourceRange(Ctx, FunctionName.getSourceRange());
     }
     return clang_getNullRange();
   }
@@ -3724,50 +3285,19 @@ CXSourceRange clang_Cursor_getSpellingNameRange(CXCursor C,
   return cxloc::translateSourceRange(Ctx, Loc);
 }
 
-CXString clang_Cursor_getMangling(CXCursor C) {
-  if (clang_isInvalid(C.kind) || !clang_isDeclaration(C.kind))
-    return cxstring::createEmpty();
-
-  // Mangling only works for functions and variables.
-  const Decl *D = getCursorDecl(C);
-  if (!D || !(isa<FunctionDecl>(D) || isa<VarDecl>(D)))
-    return cxstring::createEmpty();
-
-  // First apply frontend mangling.
-  const NamedDecl *ND = cast<NamedDecl>(D);
-  ASTContext &Ctx = ND->getASTContext();
-  std::unique_ptr<MangleContext> MC(Ctx.createMangleContext());
-
-  std::string FrontendBuf;
-  llvm::raw_string_ostream FrontendBufOS(FrontendBuf);
-  MC->mangleName(ND, FrontendBufOS);
-
-  // Now apply backend mangling.
-  std::unique_ptr<llvm::DataLayout> DL(
-      new llvm::DataLayout(Ctx.getTargetInfo().getTargetDescription()));
-  llvm::Mangler BackendMangler(DL.get());
-
-  std::string FinalBuf;
-  llvm::raw_string_ostream FinalBufOS(FinalBuf);
-  BackendMangler.getNameWithPrefix(FinalBufOS,
-                                   llvm::Twine(FrontendBufOS.str()));
-
-  return cxstring::createDup(FinalBufOS.str());
-}
-
 CXString clang_getCursorDisplayName(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
     return clang_getCursorSpelling(C);
   
-  const Decl *D = getCursorDecl(C);
+  Decl *D = getCursorDecl(C);
   if (!D)
-    return cxstring::createEmpty();
+    return createCXString("");
 
   PrintingPolicy Policy = getCursorContext(C).getPrintingPolicy();
-  if (const FunctionTemplateDecl *FunTmpl = dyn_cast<FunctionTemplateDecl>(D))
+  if (FunctionTemplateDecl *FunTmpl = dyn_cast<FunctionTemplateDecl>(D))
     D = FunTmpl->getTemplatedDecl();
   
-  if (const FunctionDecl *Function = dyn_cast<FunctionDecl>(D)) {
+  if (FunctionDecl *Function = dyn_cast<FunctionDecl>(D)) {
     SmallString<64> Str;
     llvm::raw_svector_ostream OS(Str);
     OS << *Function;
@@ -3786,10 +3316,10 @@ CXString clang_getCursorDisplayName(CXCursor C) {
       OS << "...";
     }
     OS << ")";
-    return cxstring::createDup(OS.str());
+    return createCXString(OS.str());
   }
   
-  if (const ClassTemplateDecl *ClassTemplate = dyn_cast<ClassTemplateDecl>(D)) {
+  if (ClassTemplateDecl *ClassTemplate = dyn_cast<ClassTemplateDecl>(D)) {
     SmallString<64> Str;
     llvm::raw_svector_ostream OS(Str);
     OS << *ClassTemplate;
@@ -3817,23 +3347,23 @@ CXString clang_getCursorDisplayName(CXCursor C) {
     }
     
     OS << ">";
-    return cxstring::createDup(OS.str());
+    return createCXString(OS.str());
   }
   
-  if (const ClassTemplateSpecializationDecl *ClassSpec
+  if (ClassTemplateSpecializationDecl *ClassSpec
                               = dyn_cast<ClassTemplateSpecializationDecl>(D)) {
     // If the type was explicitly written, use that.
     if (TypeSourceInfo *TSInfo = ClassSpec->getTypeAsWritten())
-      return cxstring::createDup(TSInfo->getType().getAsString(Policy));
+      return createCXString(TSInfo->getType().getAsString(Policy));
     
-    SmallString<128> Str;
+    SmallString<64> Str;
     llvm::raw_svector_ostream OS(Str);
     OS << *ClassSpec;
-    TemplateSpecializationType::PrintTemplateArgumentList(OS,
+    OS << TemplateSpecializationType::PrintTemplateArgumentList(
                                       ClassSpec->getTemplateArgs().data(),
                                       ClassSpec->getTemplateArgs().size(),
                                                                 Policy);
-    return cxstring::createDup(OS.str());
+    return createCXString(OS.str());
   }
   
   return clang_getCursorSpelling(C);
@@ -3842,361 +3372,297 @@ CXString clang_getCursorDisplayName(CXCursor C) {
 CXString clang_getCursorKindSpelling(enum CXCursorKind Kind) {
   switch (Kind) {
   case CXCursor_FunctionDecl:
-      return cxstring::createRef("FunctionDecl");
+      return createCXString("FunctionDecl");
   case CXCursor_TypedefDecl:
-      return cxstring::createRef("TypedefDecl");
+      return createCXString("TypedefDecl");
   case CXCursor_EnumDecl:
-      return cxstring::createRef("EnumDecl");
+      return createCXString("EnumDecl");
   case CXCursor_EnumConstantDecl:
-      return cxstring::createRef("EnumConstantDecl");
+      return createCXString("EnumConstantDecl");
   case CXCursor_StructDecl:
-      return cxstring::createRef("StructDecl");
+      return createCXString("StructDecl");
   case CXCursor_UnionDecl:
-      return cxstring::createRef("UnionDecl");
+      return createCXString("UnionDecl");
   case CXCursor_ClassDecl:
-      return cxstring::createRef("ClassDecl");
+      return createCXString("ClassDecl");
   case CXCursor_FieldDecl:
-      return cxstring::createRef("FieldDecl");
+      return createCXString("FieldDecl");
   case CXCursor_VarDecl:
-      return cxstring::createRef("VarDecl");
+      return createCXString("VarDecl");
   case CXCursor_ParmDecl:
-      return cxstring::createRef("ParmDecl");
+      return createCXString("ParmDecl");
   case CXCursor_ObjCInterfaceDecl:
-      return cxstring::createRef("ObjCInterfaceDecl");
+      return createCXString("ObjCInterfaceDecl");
   case CXCursor_ObjCCategoryDecl:
-      return cxstring::createRef("ObjCCategoryDecl");
+      return createCXString("ObjCCategoryDecl");
   case CXCursor_ObjCProtocolDecl:
-      return cxstring::createRef("ObjCProtocolDecl");
+      return createCXString("ObjCProtocolDecl");
   case CXCursor_ObjCPropertyDecl:
-      return cxstring::createRef("ObjCPropertyDecl");
+      return createCXString("ObjCPropertyDecl");
   case CXCursor_ObjCIvarDecl:
-      return cxstring::createRef("ObjCIvarDecl");
+      return createCXString("ObjCIvarDecl");
   case CXCursor_ObjCInstanceMethodDecl:
-      return cxstring::createRef("ObjCInstanceMethodDecl");
+      return createCXString("ObjCInstanceMethodDecl");
   case CXCursor_ObjCClassMethodDecl:
-      return cxstring::createRef("ObjCClassMethodDecl");
+      return createCXString("ObjCClassMethodDecl");
   case CXCursor_ObjCImplementationDecl:
-      return cxstring::createRef("ObjCImplementationDecl");
+      return createCXString("ObjCImplementationDecl");
   case CXCursor_ObjCCategoryImplDecl:
-      return cxstring::createRef("ObjCCategoryImplDecl");
+      return createCXString("ObjCCategoryImplDecl");
   case CXCursor_CXXMethod:
-      return cxstring::createRef("CXXMethod");
+      return createCXString("CXXMethod");
   case CXCursor_UnexposedDecl:
-      return cxstring::createRef("UnexposedDecl");
+      return createCXString("UnexposedDecl");
   case CXCursor_ObjCSuperClassRef:
-      return cxstring::createRef("ObjCSuperClassRef");
+      return createCXString("ObjCSuperClassRef");
   case CXCursor_ObjCProtocolRef:
-      return cxstring::createRef("ObjCProtocolRef");
+      return createCXString("ObjCProtocolRef");
   case CXCursor_ObjCClassRef:
-      return cxstring::createRef("ObjCClassRef");
+      return createCXString("ObjCClassRef");
   case CXCursor_TypeRef:
-      return cxstring::createRef("TypeRef");
+      return createCXString("TypeRef");
   case CXCursor_TemplateRef:
-      return cxstring::createRef("TemplateRef");
+      return createCXString("TemplateRef");
   case CXCursor_NamespaceRef:
-    return cxstring::createRef("NamespaceRef");
+    return createCXString("NamespaceRef");
   case CXCursor_MemberRef:
-    return cxstring::createRef("MemberRef");
+    return createCXString("MemberRef");
   case CXCursor_LabelRef:
-    return cxstring::createRef("LabelRef");
+    return createCXString("LabelRef");
   case CXCursor_OverloadedDeclRef:
-    return cxstring::createRef("OverloadedDeclRef");
+    return createCXString("OverloadedDeclRef");
   case CXCursor_VariableRef:
-    return cxstring::createRef("VariableRef");
+    return createCXString("VariableRef");
   case CXCursor_IntegerLiteral:
-      return cxstring::createRef("IntegerLiteral");
+      return createCXString("IntegerLiteral");
   case CXCursor_FloatingLiteral:
-      return cxstring::createRef("FloatingLiteral");
+      return createCXString("FloatingLiteral");
   case CXCursor_ImaginaryLiteral:
-      return cxstring::createRef("ImaginaryLiteral");
+      return createCXString("ImaginaryLiteral");
   case CXCursor_StringLiteral:
-      return cxstring::createRef("StringLiteral");
+      return createCXString("StringLiteral");
   case CXCursor_CharacterLiteral:
-      return cxstring::createRef("CharacterLiteral");
+      return createCXString("CharacterLiteral");
   case CXCursor_ParenExpr:
-      return cxstring::createRef("ParenExpr");
+      return createCXString("ParenExpr");
   case CXCursor_UnaryOperator:
-      return cxstring::createRef("UnaryOperator");
+      return createCXString("UnaryOperator");
   case CXCursor_ArraySubscriptExpr:
-      return cxstring::createRef("ArraySubscriptExpr");
+      return createCXString("ArraySubscriptExpr");
   case CXCursor_BinaryOperator:
-      return cxstring::createRef("BinaryOperator");
+      return createCXString("BinaryOperator");
   case CXCursor_CompoundAssignOperator:
-      return cxstring::createRef("CompoundAssignOperator");
+      return createCXString("CompoundAssignOperator");
   case CXCursor_ConditionalOperator:
-      return cxstring::createRef("ConditionalOperator");
+      return createCXString("ConditionalOperator");
   case CXCursor_CStyleCastExpr:
-      return cxstring::createRef("CStyleCastExpr");
+      return createCXString("CStyleCastExpr");
   case CXCursor_CompoundLiteralExpr:
-      return cxstring::createRef("CompoundLiteralExpr");
+      return createCXString("CompoundLiteralExpr");
   case CXCursor_InitListExpr:
-      return cxstring::createRef("InitListExpr");
+      return createCXString("InitListExpr");
   case CXCursor_AddrLabelExpr:
-      return cxstring::createRef("AddrLabelExpr");
+      return createCXString("AddrLabelExpr");
   case CXCursor_StmtExpr:
-      return cxstring::createRef("StmtExpr");
+      return createCXString("StmtExpr");
   case CXCursor_GenericSelectionExpr:
-      return cxstring::createRef("GenericSelectionExpr");
+      return createCXString("GenericSelectionExpr");
   case CXCursor_GNUNullExpr:
-      return cxstring::createRef("GNUNullExpr");
+      return createCXString("GNUNullExpr");
   case CXCursor_CXXStaticCastExpr:
-      return cxstring::createRef("CXXStaticCastExpr");
+      return createCXString("CXXStaticCastExpr");
   case CXCursor_CXXDynamicCastExpr:
-      return cxstring::createRef("CXXDynamicCastExpr");
+      return createCXString("CXXDynamicCastExpr");
   case CXCursor_CXXReinterpretCastExpr:
-      return cxstring::createRef("CXXReinterpretCastExpr");
+      return createCXString("CXXReinterpretCastExpr");
   case CXCursor_CXXConstCastExpr:
-      return cxstring::createRef("CXXConstCastExpr");
+      return createCXString("CXXConstCastExpr");
   case CXCursor_CXXFunctionalCastExpr:
-      return cxstring::createRef("CXXFunctionalCastExpr");
+      return createCXString("CXXFunctionalCastExpr");
   case CXCursor_CXXTypeidExpr:
-      return cxstring::createRef("CXXTypeidExpr");
+      return createCXString("CXXTypeidExpr");
   case CXCursor_CXXBoolLiteralExpr:
-      return cxstring::createRef("CXXBoolLiteralExpr");
+      return createCXString("CXXBoolLiteralExpr");
   case CXCursor_CXXNullPtrLiteralExpr:
-      return cxstring::createRef("CXXNullPtrLiteralExpr");
+      return createCXString("CXXNullPtrLiteralExpr");
   case CXCursor_CXXThisExpr:
-      return cxstring::createRef("CXXThisExpr");
+      return createCXString("CXXThisExpr");
   case CXCursor_CXXThrowExpr:
-      return cxstring::createRef("CXXThrowExpr");
+      return createCXString("CXXThrowExpr");
   case CXCursor_CXXNewExpr:
-      return cxstring::createRef("CXXNewExpr");
+      return createCXString("CXXNewExpr");
   case CXCursor_CXXDeleteExpr:
-      return cxstring::createRef("CXXDeleteExpr");
+      return createCXString("CXXDeleteExpr");
   case CXCursor_UnaryExpr:
-      return cxstring::createRef("UnaryExpr");
+      return createCXString("UnaryExpr");
   case CXCursor_ObjCStringLiteral:
-      return cxstring::createRef("ObjCStringLiteral");
+      return createCXString("ObjCStringLiteral");
   case CXCursor_ObjCBoolLiteralExpr:
-      return cxstring::createRef("ObjCBoolLiteralExpr");
-  case CXCursor_ObjCSelfExpr:
-      return cxstring::createRef("ObjCSelfExpr");
+      return createCXString("ObjCBoolLiteralExpr");
   case CXCursor_ObjCEncodeExpr:
-      return cxstring::createRef("ObjCEncodeExpr");
+      return createCXString("ObjCEncodeExpr");
   case CXCursor_ObjCSelectorExpr:
-      return cxstring::createRef("ObjCSelectorExpr");
+      return createCXString("ObjCSelectorExpr");
   case CXCursor_ObjCProtocolExpr:
-      return cxstring::createRef("ObjCProtocolExpr");
+      return createCXString("ObjCProtocolExpr");
   case CXCursor_ObjCBridgedCastExpr:
-      return cxstring::createRef("ObjCBridgedCastExpr");
+      return createCXString("ObjCBridgedCastExpr");
   case CXCursor_BlockExpr:
-      return cxstring::createRef("BlockExpr");
+      return createCXString("BlockExpr");
   case CXCursor_PackExpansionExpr:
-      return cxstring::createRef("PackExpansionExpr");
+      return createCXString("PackExpansionExpr");
   case CXCursor_SizeOfPackExpr:
-      return cxstring::createRef("SizeOfPackExpr");
+      return createCXString("SizeOfPackExpr");
   case CXCursor_LambdaExpr:
-    return cxstring::createRef("LambdaExpr");
+    return createCXString("LambdaExpr");
   case CXCursor_UnexposedExpr:
-      return cxstring::createRef("UnexposedExpr");
+      return createCXString("UnexposedExpr");
   case CXCursor_DeclRefExpr:
-      return cxstring::createRef("DeclRefExpr");
+      return createCXString("DeclRefExpr");
   case CXCursor_MemberRefExpr:
-      return cxstring::createRef("MemberRefExpr");
+      return createCXString("MemberRefExpr");
   case CXCursor_CallExpr:
-      return cxstring::createRef("CallExpr");
+      return createCXString("CallExpr");
   case CXCursor_ObjCMessageExpr:
-      return cxstring::createRef("ObjCMessageExpr");
+      return createCXString("ObjCMessageExpr");
   case CXCursor_UnexposedStmt:
-      return cxstring::createRef("UnexposedStmt");
+      return createCXString("UnexposedStmt");
   case CXCursor_DeclStmt:
-      return cxstring::createRef("DeclStmt");
+      return createCXString("DeclStmt");
   case CXCursor_LabelStmt:
-      return cxstring::createRef("LabelStmt");
+      return createCXString("LabelStmt");
   case CXCursor_CompoundStmt:
-      return cxstring::createRef("CompoundStmt");
+      return createCXString("CompoundStmt");
   case CXCursor_CaseStmt:
-      return cxstring::createRef("CaseStmt");
+      return createCXString("CaseStmt");
   case CXCursor_DefaultStmt:
-      return cxstring::createRef("DefaultStmt");
+      return createCXString("DefaultStmt");
   case CXCursor_IfStmt:
-      return cxstring::createRef("IfStmt");
+      return createCXString("IfStmt");
   case CXCursor_SwitchStmt:
-      return cxstring::createRef("SwitchStmt");
+      return createCXString("SwitchStmt");
   case CXCursor_WhileStmt:
-      return cxstring::createRef("WhileStmt");
+      return createCXString("WhileStmt");
   case CXCursor_DoStmt:
-      return cxstring::createRef("DoStmt");
+      return createCXString("DoStmt");
   case CXCursor_ForStmt:
-      return cxstring::createRef("ForStmt");
+      return createCXString("ForStmt");
   case CXCursor_GotoStmt:
-      return cxstring::createRef("GotoStmt");
+      return createCXString("GotoStmt");
   case CXCursor_IndirectGotoStmt:
-      return cxstring::createRef("IndirectGotoStmt");
+      return createCXString("IndirectGotoStmt");
   case CXCursor_ContinueStmt:
-      return cxstring::createRef("ContinueStmt");
+      return createCXString("ContinueStmt");
   case CXCursor_BreakStmt:
-      return cxstring::createRef("BreakStmt");
+      return createCXString("BreakStmt");
   case CXCursor_ReturnStmt:
-      return cxstring::createRef("ReturnStmt");
+      return createCXString("ReturnStmt");
   case CXCursor_GCCAsmStmt:
-      return cxstring::createRef("GCCAsmStmt");
+      return createCXString("GCCAsmStmt");
   case CXCursor_MSAsmStmt:
-      return cxstring::createRef("MSAsmStmt");
+      return createCXString("MSAsmStmt");
   case CXCursor_ObjCAtTryStmt:
-      return cxstring::createRef("ObjCAtTryStmt");
+      return createCXString("ObjCAtTryStmt");
   case CXCursor_ObjCAtCatchStmt:
-      return cxstring::createRef("ObjCAtCatchStmt");
+      return createCXString("ObjCAtCatchStmt");
   case CXCursor_ObjCAtFinallyStmt:
-      return cxstring::createRef("ObjCAtFinallyStmt");
+      return createCXString("ObjCAtFinallyStmt");
   case CXCursor_ObjCAtThrowStmt:
-      return cxstring::createRef("ObjCAtThrowStmt");
+      return createCXString("ObjCAtThrowStmt");
   case CXCursor_ObjCAtSynchronizedStmt:
-      return cxstring::createRef("ObjCAtSynchronizedStmt");
+      return createCXString("ObjCAtSynchronizedStmt");
   case CXCursor_ObjCAutoreleasePoolStmt:
-      return cxstring::createRef("ObjCAutoreleasePoolStmt");
+      return createCXString("ObjCAutoreleasePoolStmt");
   case CXCursor_ObjCForCollectionStmt:
-      return cxstring::createRef("ObjCForCollectionStmt");
+      return createCXString("ObjCForCollectionStmt");
   case CXCursor_CXXCatchStmt:
-      return cxstring::createRef("CXXCatchStmt");
+      return createCXString("CXXCatchStmt");
   case CXCursor_CXXTryStmt:
-      return cxstring::createRef("CXXTryStmt");
+      return createCXString("CXXTryStmt");
   case CXCursor_CXXForRangeStmt:
-      return cxstring::createRef("CXXForRangeStmt");
+      return createCXString("CXXForRangeStmt");
   case CXCursor_SEHTryStmt:
-      return cxstring::createRef("SEHTryStmt");
+      return createCXString("SEHTryStmt");
   case CXCursor_SEHExceptStmt:
-      return cxstring::createRef("SEHExceptStmt");
+      return createCXString("SEHExceptStmt");
   case CXCursor_SEHFinallyStmt:
-      return cxstring::createRef("SEHFinallyStmt");
-  case CXCursor_SEHLeaveStmt:
-      return cxstring::createRef("SEHLeaveStmt");
+      return createCXString("SEHFinallyStmt");
   case CXCursor_NullStmt:
-      return cxstring::createRef("NullStmt");
+      return createCXString("NullStmt");
   case CXCursor_InvalidFile:
-      return cxstring::createRef("InvalidFile");
+      return createCXString("InvalidFile");
   case CXCursor_InvalidCode:
-    return cxstring::createRef("InvalidCode");
+    return createCXString("InvalidCode");
   case CXCursor_NoDeclFound:
-      return cxstring::createRef("NoDeclFound");
+      return createCXString("NoDeclFound");
   case CXCursor_NotImplemented:
-      return cxstring::createRef("NotImplemented");
+      return createCXString("NotImplemented");
   case CXCursor_TranslationUnit:
-      return cxstring::createRef("TranslationUnit");
+      return createCXString("TranslationUnit");
   case CXCursor_UnexposedAttr:
-      return cxstring::createRef("UnexposedAttr");
+      return createCXString("UnexposedAttr");
   case CXCursor_IBActionAttr:
-      return cxstring::createRef("attribute(ibaction)");
+      return createCXString("attribute(ibaction)");
   case CXCursor_IBOutletAttr:
-     return cxstring::createRef("attribute(iboutlet)");
+     return createCXString("attribute(iboutlet)");
   case CXCursor_IBOutletCollectionAttr:
-      return cxstring::createRef("attribute(iboutletcollection)");
+      return createCXString("attribute(iboutletcollection)");
   case CXCursor_CXXFinalAttr:
-      return cxstring::createRef("attribute(final)");
+      return createCXString("attribute(final)");
   case CXCursor_CXXOverrideAttr:
-      return cxstring::createRef("attribute(override)");
+      return createCXString("attribute(override)");
   case CXCursor_AnnotateAttr:
-    return cxstring::createRef("attribute(annotate)");
+    return createCXString("attribute(annotate)");
   case CXCursor_AsmLabelAttr:
-    return cxstring::createRef("asm label");
-  case CXCursor_PackedAttr:
-    return cxstring::createRef("attribute(packed)");
-  case CXCursor_PureAttr:
-    return cxstring::createRef("attribute(pure)");
-  case CXCursor_ConstAttr:
-    return cxstring::createRef("attribute(const)");
-  case CXCursor_NoDuplicateAttr:
-    return cxstring::createRef("attribute(noduplicate)");
-  case CXCursor_CUDAConstantAttr:
-    return cxstring::createRef("attribute(constant)");
-  case CXCursor_CUDADeviceAttr:
-    return cxstring::createRef("attribute(device)");
-  case CXCursor_CUDAGlobalAttr:
-    return cxstring::createRef("attribute(global)");
-  case CXCursor_CUDAHostAttr:
-    return cxstring::createRef("attribute(host)");
-  case CXCursor_CUDASharedAttr:
-    return cxstring::createRef("attribute(shared)");
+    return createCXString("asm label");
   case CXCursor_PreprocessingDirective:
-    return cxstring::createRef("preprocessing directive");
+    return createCXString("preprocessing directive");
   case CXCursor_MacroDefinition:
-    return cxstring::createRef("macro definition");
+    return createCXString("macro definition");
   case CXCursor_MacroExpansion:
-    return cxstring::createRef("macro expansion");
+    return createCXString("macro expansion");
   case CXCursor_InclusionDirective:
-    return cxstring::createRef("inclusion directive");
+    return createCXString("inclusion directive");
   case CXCursor_Namespace:
-    return cxstring::createRef("Namespace");
+    return createCXString("Namespace");
   case CXCursor_LinkageSpec:
-    return cxstring::createRef("LinkageSpec");
+    return createCXString("LinkageSpec");
   case CXCursor_CXXBaseSpecifier:
-    return cxstring::createRef("C++ base class specifier");
+    return createCXString("C++ base class specifier");  
   case CXCursor_Constructor:
-    return cxstring::createRef("CXXConstructor");
+    return createCXString("CXXConstructor");
   case CXCursor_Destructor:
-    return cxstring::createRef("CXXDestructor");
+    return createCXString("CXXDestructor");
   case CXCursor_ConversionFunction:
-    return cxstring::createRef("CXXConversion");
+    return createCXString("CXXConversion");
   case CXCursor_TemplateTypeParameter:
-    return cxstring::createRef("TemplateTypeParameter");
+    return createCXString("TemplateTypeParameter");
   case CXCursor_NonTypeTemplateParameter:
-    return cxstring::createRef("NonTypeTemplateParameter");
+    return createCXString("NonTypeTemplateParameter");
   case CXCursor_TemplateTemplateParameter:
-    return cxstring::createRef("TemplateTemplateParameter");
+    return createCXString("TemplateTemplateParameter");
   case CXCursor_FunctionTemplate:
-    return cxstring::createRef("FunctionTemplate");
+    return createCXString("FunctionTemplate");
   case CXCursor_ClassTemplate:
-    return cxstring::createRef("ClassTemplate");
+    return createCXString("ClassTemplate");
   case CXCursor_ClassTemplatePartialSpecialization:
-    return cxstring::createRef("ClassTemplatePartialSpecialization");
+    return createCXString("ClassTemplatePartialSpecialization");
   case CXCursor_NamespaceAlias:
-    return cxstring::createRef("NamespaceAlias");
+    return createCXString("NamespaceAlias");
   case CXCursor_UsingDirective:
-    return cxstring::createRef("UsingDirective");
+    return createCXString("UsingDirective");
   case CXCursor_UsingDeclaration:
-    return cxstring::createRef("UsingDeclaration");
+    return createCXString("UsingDeclaration");
   case CXCursor_TypeAliasDecl:
-    return cxstring::createRef("TypeAliasDecl");
+    return createCXString("TypeAliasDecl");
   case CXCursor_ObjCSynthesizeDecl:
-    return cxstring::createRef("ObjCSynthesizeDecl");
+    return createCXString("ObjCSynthesizeDecl");
   case CXCursor_ObjCDynamicDecl:
-    return cxstring::createRef("ObjCDynamicDecl");
+    return createCXString("ObjCDynamicDecl");
   case CXCursor_CXXAccessSpecifier:
-    return cxstring::createRef("CXXAccessSpecifier");
+    return createCXString("CXXAccessSpecifier");
   case CXCursor_ModuleImportDecl:
-    return cxstring::createRef("ModuleImport");
-  case CXCursor_OMPParallelDirective:
-    return cxstring::createRef("OMPParallelDirective");
-  case CXCursor_OMPSimdDirective:
-    return cxstring::createRef("OMPSimdDirective");
-  case CXCursor_OMPForDirective:
-    return cxstring::createRef("OMPForDirective");
-  case CXCursor_OMPForSimdDirective:
-    return cxstring::createRef("OMPForSimdDirective");
-  case CXCursor_OMPSectionsDirective:
-    return cxstring::createRef("OMPSectionsDirective");
-  case CXCursor_OMPSectionDirective:
-    return cxstring::createRef("OMPSectionDirective");
-  case CXCursor_OMPSingleDirective:
-    return cxstring::createRef("OMPSingleDirective");
-  case CXCursor_OMPMasterDirective:
-    return cxstring::createRef("OMPMasterDirective");
-  case CXCursor_OMPCriticalDirective:
-    return cxstring::createRef("OMPCriticalDirective");
-  case CXCursor_OMPParallelForDirective:
-    return cxstring::createRef("OMPParallelForDirective");
-  case CXCursor_OMPParallelForSimdDirective:
-    return cxstring::createRef("OMPParallelForSimdDirective");
-  case CXCursor_OMPParallelSectionsDirective:
-    return cxstring::createRef("OMPParallelSectionsDirective");
-  case CXCursor_OMPTaskDirective:
-    return cxstring::createRef("OMPTaskDirective");
-  case CXCursor_OMPTaskyieldDirective:
-    return cxstring::createRef("OMPTaskyieldDirective");
-  case CXCursor_OMPBarrierDirective:
-    return cxstring::createRef("OMPBarrierDirective");
-  case CXCursor_OMPTaskwaitDirective:
-    return cxstring::createRef("OMPTaskwaitDirective");
-  case CXCursor_OMPFlushDirective:
-    return cxstring::createRef("OMPFlushDirective");
-  case CXCursor_OMPOrderedDirective:
-    return cxstring::createRef("OMPOrderedDirective");
-  case CXCursor_OMPAtomicDirective:
-    return cxstring::createRef("OMPAtomicDirective");
-  case CXCursor_OMPTargetDirective:
-    return cxstring::createRef("OMPTargetDirective");
-  case CXCursor_OMPTeamsDirective:
-    return cxstring::createRef("OMPTeamsDirective");
+    return createCXString("ModuleImport");
   }
 
   llvm_unreachable("Unhandled CXCursorKind");
@@ -4231,12 +3697,12 @@ static enum CXChildVisitResult GetCursorVisitor(CXCursor cursor,
   
   if (clang_isDeclaration(cursor.kind)) {
     // Avoid having the implicit methods override the property decls.
-    if (const ObjCMethodDecl *MD
+    if (ObjCMethodDecl *MD
           = dyn_cast_or_null<ObjCMethodDecl>(getCursorDecl(cursor))) {
       if (MD->isImplicit())
         return CXChildVisit_Break;
 
-    } else if (const ObjCInterfaceDecl *ID
+    } else if (ObjCInterfaceDecl *ID
                  = dyn_cast_or_null<ObjCInterfaceDecl>(getCursorDecl(cursor))) {
       // Check that when we have multiple @class references in the same line,
       // that later ones do not override the previous ones.
@@ -4246,7 +3712,7 @@ static enum CXChildVisitResult GetCursorVisitor(CXCursor cursor,
       // 'Foo' even though the cursor location was at 'Foo'.
       if (BestCursor->kind == CXCursor_ObjCInterfaceDecl ||
           BestCursor->kind == CXCursor_ObjCClassRef)
-        if (const ObjCInterfaceDecl *PrevID
+        if (ObjCInterfaceDecl *PrevID
              = dyn_cast_or_null<ObjCInterfaceDecl>(getCursorDecl(*BestCursor))){
          if (PrevID != ID &&
              !PrevID->isThisDeclarationADefinition() &&
@@ -4254,7 +3720,7 @@ static enum CXChildVisitResult GetCursorVisitor(CXCursor cursor,
            return CXChildVisit_Break;
         }
 
-    } else if (const DeclaratorDecl *DD
+    } else if (DeclaratorDecl *DD
                     = dyn_cast_or_null<DeclaratorDecl>(getCursorDecl(cursor))) {
       SourceLocation StartLoc = DD->getSourceRange().getBegin();
       // Check that when we have multiple declarators in the same line,
@@ -4267,7 +3733,7 @@ static enum CXChildVisitResult GetCursorVisitor(CXCursor cursor,
         return CXChildVisit_Break;
       Data->VisitedDeclaratorDeclStartLoc = StartLoc;
 
-    } else if (const ObjCPropertyImplDecl *PropImp
+    } else if (ObjCPropertyImplDecl *PropImp
               = dyn_cast_or_null<ObjCPropertyImplDecl>(getCursorDecl(cursor))) {
       (void)PropImp;
       // Check that when we have multiple @synthesize in the same line,
@@ -4284,7 +3750,7 @@ static enum CXChildVisitResult GetCursorVisitor(CXCursor cursor,
 
   if (clang_isExpression(cursor.kind) &&
       clang_isDeclaration(BestCursor->kind)) {
-    if (const Decl *D = getCursorDecl(*BestCursor)) {
+    if (Decl *D = getCursorDecl(*BestCursor)) {
       // Avoid having the cursor of an expression replace the declaration cursor
       // when the expression source range overlaps the declaration range.
       // This can happen for C++ constructor expressions whose range generally
@@ -4313,18 +3779,17 @@ static enum CXChildVisitResult GetCursorVisitor(CXCursor cursor,
 }
 
 CXCursor clang_getCursor(CXTranslationUnit TU, CXSourceLocation Loc) {
-  if (isNotUsableTU(TU)) {
-    LOG_BAD_TU(TU);
+  if (!TU)
     return clang_getNullCursor();
-  }
 
-  ASTUnit *CXXUnit = cxtu::getASTUnit(TU);
+  ASTUnit *CXXUnit = static_cast<ASTUnit *>(TU->TUData);
   ASTUnit::ConcurrencyCheck Check(*CXXUnit);
 
   SourceLocation SLoc = cxloc::translateSourceLocation(Loc);
   CXCursor Result = cxcursor::getCursor(TU, SLoc);
 
-  LOG_FUNC_SECTION {
+  bool Logging = getenv("LIBCLANG_LOGGING");  
+  if (Logging) {
     CXFile SearchFile;
     unsigned SearchLine, SearchColumn;
     CXFile ResultFile;
@@ -4332,21 +3797,19 @@ CXCursor clang_getCursor(CXTranslationUnit TU, CXSourceLocation Loc) {
     CXString SearchFileName, ResultFileName, KindSpelling, USR;
     const char *IsDef = clang_isCursorDefinition(Result)? " (Definition)" : "";
     CXSourceLocation ResultLoc = clang_getCursorLocation(Result);
-
-    clang_getFileLocation(Loc, &SearchFile, &SearchLine, &SearchColumn,
-                          nullptr);
-    clang_getFileLocation(ResultLoc, &ResultFile, &ResultLine,
-                          &ResultColumn, nullptr);
+    
+    clang_getExpansionLocation(Loc, &SearchFile, &SearchLine, &SearchColumn, 0);
+    clang_getExpansionLocation(ResultLoc, &ResultFile, &ResultLine,
+                               &ResultColumn, 0);
     SearchFileName = clang_getFileName(SearchFile);
     ResultFileName = clang_getFileName(ResultFile);
     KindSpelling = clang_getCursorKindSpelling(Result.kind);
     USR = clang_getCursorUSR(Result);
-    *Log << llvm::format("(%s:%d:%d) = %s",
-                   clang_getCString(SearchFileName), SearchLine, SearchColumn,
-                   clang_getCString(KindSpelling))
-        << llvm::format("(%s:%d:%d):%s%s",
-                     clang_getCString(ResultFileName), ResultLine, ResultColumn,
-                     clang_getCString(USR), IsDef);
+    fprintf(stderr, "clang_getCursor(%s:%d:%d) = %s(%s:%d:%d):%s%s\n",
+            clang_getCString(SearchFileName), SearchLine, SearchColumn,
+            clang_getCString(KindSpelling),
+            clang_getCString(ResultFileName), ResultLine, ResultColumn,
+            clang_getCString(USR), IsDef);
     clang_disposeString(SearchFileName);
     clang_disposeString(ResultFileName);
     clang_disposeString(KindSpelling);
@@ -4359,13 +3822,13 @@ CXCursor clang_getCursor(CXTranslationUnit TU, CXSourceLocation Loc) {
                                 = clang_getCursorKindSpelling(Definition.kind);
       CXFile DefinitionFile;
       unsigned DefinitionLine, DefinitionColumn;
-      clang_getFileLocation(DefinitionLoc, &DefinitionFile,
-                            &DefinitionLine, &DefinitionColumn, nullptr);
+      clang_getExpansionLocation(DefinitionLoc, &DefinitionFile,
+                                 &DefinitionLine, &DefinitionColumn, 0);
       CXString DefinitionFileName = clang_getFileName(DefinitionFile);
-      *Log << llvm::format("  -> %s(%s:%d:%d)",
-                     clang_getCString(DefinitionKindSpelling),
-                     clang_getCString(DefinitionFileName),
-                     DefinitionLine, DefinitionColumn);
+      fprintf(stderr, "  -> %s(%s:%d:%d)\n",
+              clang_getCString(DefinitionKindSpelling),
+              clang_getCString(DefinitionFileName),
+              DefinitionLine, DefinitionColumn);
       clang_disposeString(DefinitionFileName);
       clang_disposeString(DefinitionKindSpelling);
     }
@@ -4379,18 +3842,6 @@ CXCursor clang_getNullCursor(void) {
 }
 
 unsigned clang_equalCursors(CXCursor X, CXCursor Y) {
-  // Clear out the "FirstInDeclGroup" part in a declaration cursor, since we
-  // can't set consistently. For example, when visiting a DeclStmt we will set
-  // it but we don't set it on the result of clang_getCursorDefinition for
-  // a reference of the same declaration.
-  // FIXME: Setting "FirstInDeclGroup" in CXCursors is a hack that only works
-  // when visiting a DeclStmt currently, the AST should be enhanced to be able
-  // to provide that kind of info.
-  if (clang_isDeclaration(X.kind))
-    X.data[1] = nullptr;
-  if (clang_isDeclaration(Y.kind))
-    Y.data[1] = nullptr;
-
   return X == Y;
 }
 
@@ -4399,7 +3850,7 @@ unsigned clang_hashCursor(CXCursor C) {
   if (clang_isExpression(C.kind) || clang_isStatement(C.kind))
     Index = 1;
   
-  return llvm::DenseMapInfo<std::pair<unsigned, const void*> >::getHashValue(
+  return llvm::DenseMapInfo<std::pair<unsigned, void*> >::getHashValue(
                                         std::make_pair(C.kind, C.data[Index]));
 }
 
@@ -4456,51 +3907,50 @@ CXSourceLocation clang_getCursorLocation(CXCursor C) {
   if (clang_isReference(C.kind)) {
     switch (C.kind) {
     case CXCursor_ObjCSuperClassRef: {
-      std::pair<const ObjCInterfaceDecl *, SourceLocation> P
+      std::pair<ObjCInterfaceDecl *, SourceLocation> P
         = getCursorObjCSuperClassRef(C);
       return cxloc::translateSourceLocation(P.first->getASTContext(), P.second);
     }
 
     case CXCursor_ObjCProtocolRef: {
-      std::pair<const ObjCProtocolDecl *, SourceLocation> P
+      std::pair<ObjCProtocolDecl *, SourceLocation> P
         = getCursorObjCProtocolRef(C);
       return cxloc::translateSourceLocation(P.first->getASTContext(), P.second);
     }
 
     case CXCursor_ObjCClassRef: {
-      std::pair<const ObjCInterfaceDecl *, SourceLocation> P
+      std::pair<ObjCInterfaceDecl *, SourceLocation> P
         = getCursorObjCClassRef(C);
       return cxloc::translateSourceLocation(P.first->getASTContext(), P.second);
     }
 
     case CXCursor_TypeRef: {
-      std::pair<const TypeDecl *, SourceLocation> P = getCursorTypeRef(C);
+      std::pair<TypeDecl *, SourceLocation> P = getCursorTypeRef(C);
       return cxloc::translateSourceLocation(P.first->getASTContext(), P.second);
     }
 
     case CXCursor_TemplateRef: {
-      std::pair<const TemplateDecl *, SourceLocation> P =
-          getCursorTemplateRef(C);
+      std::pair<TemplateDecl *, SourceLocation> P = getCursorTemplateRef(C);
       return cxloc::translateSourceLocation(P.first->getASTContext(), P.second);
     }
 
     case CXCursor_NamespaceRef: {
-      std::pair<const NamedDecl *, SourceLocation> P = getCursorNamespaceRef(C);
+      std::pair<NamedDecl *, SourceLocation> P = getCursorNamespaceRef(C);
       return cxloc::translateSourceLocation(P.first->getASTContext(), P.second);
     }
 
     case CXCursor_MemberRef: {
-      std::pair<const FieldDecl *, SourceLocation> P = getCursorMemberRef(C);
+      std::pair<FieldDecl *, SourceLocation> P = getCursorMemberRef(C);
       return cxloc::translateSourceLocation(P.first->getASTContext(), P.second);
     }
 
     case CXCursor_VariableRef: {
-      std::pair<const VarDecl *, SourceLocation> P = getCursorVariableRef(C);
+      std::pair<VarDecl *, SourceLocation> P = getCursorVariableRef(C);
       return cxloc::translateSourceLocation(P.first->getASTContext(), P.second);
     }
 
     case CXCursor_CXXBaseSpecifier: {
-      const CXXBaseSpecifier *BaseSpec = getCursorCXXBaseSpecifier(C);
+      CXXBaseSpecifier *BaseSpec = getCursorCXXBaseSpecifier(C);
       if (!BaseSpec)
         return clang_getNullLocation();
       
@@ -4513,7 +3963,7 @@ CXSourceLocation clang_getCursorLocation(CXCursor C) {
     }
 
     case CXCursor_LabelRef: {
-      std::pair<const LabelStmt *, SourceLocation> P = getCursorLabelRef(C);
+      std::pair<LabelStmt *, SourceLocation> P = getCursorLabelRef(C);
       return cxloc::translateSourceLocation(getCursorContext(C), P.second);
     }
 
@@ -4542,7 +3992,7 @@ CXSourceLocation clang_getCursorLocation(CXCursor C) {
 
   if (C.kind == CXCursor_MacroExpansion) {
     SourceLocation L
-      = cxcursor::getCursorMacroExpansion(C).getSourceRange().getBegin();
+      = cxcursor::getCursorMacroExpansion(C)->getSourceRange().getBegin();
     return cxloc::translateSourceLocation(getCursorContext(C), L);
   }
 
@@ -4557,16 +4007,10 @@ CXSourceLocation clang_getCursorLocation(CXCursor C) {
     return cxloc::translateSourceLocation(getCursorContext(C), L);
   }
 
-  if (clang_isAttribute(C.kind)) {
-    SourceLocation L
-      = cxcursor::getCursorAttr(C)->getLocation();
-    return cxloc::translateSourceLocation(getCursorContext(C), L);
-  }
-
   if (!clang_isDeclaration(C.kind))
     return clang_getNullLocation();
 
-  const Decl *D = getCursorDecl(C);
+  Decl *D = getCursorDecl(C);
   if (!D)
     return clang_getNullLocation();
 
@@ -4576,13 +4020,13 @@ CXSourceLocation clang_getCursorLocation(CXCursor C) {
   // ranges when accounting for the type-specifier.  We use context
   // stored in the CXCursor to determine if the VarDecl is in a DeclGroup,
   // and if so, whether it is the first decl.
-  if (const VarDecl *VD = dyn_cast<VarDecl>(D)) {
+  if (VarDecl *VD = dyn_cast<VarDecl>(D)) {
     if (!cxcursor::isFirstInDeclGroup(C))
       Loc = VD->getLocation();
   }
 
   // For ObjC methods, give the start location of the method name.
-  if (const ObjCMethodDecl *MD = dyn_cast<ObjCMethodDecl>(D))
+  if (ObjCMethodDecl *MD = dyn_cast<ObjCMethodDecl>(D))
     Loc = MD->getSelectorStartLoc();
 
   return cxloc::translateSourceLocation(getCursorContext(C), Loc);
@@ -4598,7 +4042,7 @@ CXCursor cxcursor::getCursor(CXTranslationUnit TU, SourceLocation SLoc) {
   if (SLoc.isInvalid())
     return clang_getNullCursor();
 
-  ASTUnit *CXXUnit = cxtu::getASTUnit(TU);
+  ASTUnit *CXXUnit = static_cast<ASTUnit *>(TU->TUData);
 
   // Translate the given source location to make it point at the beginning of
   // the token under the cursor.
@@ -4674,7 +4118,7 @@ static SourceRange getRawCursorExtent(CXCursor C) {
 
   if (C.kind == CXCursor_MacroExpansion) {
     ASTUnit *TU = getCursorASTUnit(C);
-    SourceRange Range = cxcursor::getCursorMacroExpansion(C).getSourceRange();
+    SourceRange Range = cxcursor::getCursorMacroExpansion(C)->getSourceRange();
     return TU->mapRangeFromPreamble(Range);
   }
 
@@ -4699,7 +4143,7 @@ static SourceRange getRawCursorExtent(CXCursor C) {
   }
 
   if (clang_isDeclaration(C.kind)) {
-    const Decl *D = cxcursor::getCursorDecl(C);
+    Decl *D = cxcursor::getCursorDecl(C);
     if (!D)
       return SourceRange();
 
@@ -4709,7 +4153,7 @@ static SourceRange getRawCursorExtent(CXCursor C) {
     // ranges when accounting for the type-specifier.  We use context
     // stored in the CXCursor to determine if the VarDecl is in a DeclGroup,
     // and if so, whether it is the first decl.
-    if (const VarDecl *VD = dyn_cast<VarDecl>(D)) {
+    if (VarDecl *VD = dyn_cast<VarDecl>(D)) {
       if (!cxcursor::isFirstInDeclGroup(C))
         R.setBegin(VD->getLocation());
     }
@@ -4722,7 +4166,7 @@ static SourceRange getRawCursorExtent(CXCursor C) {
 /// the decl-specifier-seq for declarations.
 static SourceRange getFullCursorExtent(CXCursor C, SourceManager &SrcMgr) {
   if (clang_isDeclaration(C.kind)) {
-    const Decl *D = cxcursor::getCursorDecl(C);
+    Decl *D = cxcursor::getCursorDecl(C);
     if (!D)
       return SourceRange();
 
@@ -4734,7 +4178,7 @@ static SourceRange getFullCursorExtent(CXCursor C, SourceManager &SrcMgr) {
     if (const DeclaratorDecl *DD = dyn_cast<DeclaratorDecl>(D)) {
       if (TypeSourceInfo *TI = DD->getTypeSourceInfo())
         StartLoc = TI->getTypeLoc().getLocStart();
-    } else if (const TypedefDecl *Typedef = dyn_cast<TypedefDecl>(D)) {
+    } else if (TypedefDecl *Typedef = dyn_cast<TypedefDecl>(D)) {
       if (TypeSourceInfo *TI = Typedef->getTypeSourceInfo())
         StartLoc = TI->getTypeLoc().getLocStart();
     }
@@ -4748,7 +4192,7 @@ static SourceRange getFullCursorExtent(CXCursor C, SourceManager &SrcMgr) {
     // ranges when accounting for the type-specifier.  We use context
     // stored in the CXCursor to determine if the VarDecl is in a DeclGroup,
     // and if so, whether it is the first decl.
-    if (const VarDecl *VD = dyn_cast<VarDecl>(D)) {
+    if (VarDecl *VD = dyn_cast<VarDecl>(D)) {
       if (!cxcursor::isFirstInDeclGroup(C))
         R.setBegin(VD->getLocation());
     }
@@ -4775,13 +4219,12 @@ CXCursor clang_getCursorReferenced(CXCursor C) {
 
   CXTranslationUnit tu = getCursorTU(C);
   if (clang_isDeclaration(C.kind)) {
-    const Decl *D = getCursorDecl(C);
+    Decl *D = getCursorDecl(C);
     if (!D)
       return clang_getNullCursor();
-    if (const UsingDecl *Using = dyn_cast<UsingDecl>(D))
+    if (UsingDecl *Using = dyn_cast<UsingDecl>(D))
       return MakeCursorOverloadedDeclRef(Using, D->getLocation(), tu);
-    if (const ObjCPropertyImplDecl *PropImpl =
-            dyn_cast<ObjCPropertyImplDecl>(D))
+    if (ObjCPropertyImplDecl *PropImpl =dyn_cast<ObjCPropertyImplDecl>(D))
       if (ObjCPropertyDecl *Property = PropImpl->getPropertyDecl())
         return MakeCXCursor(Property, tu);
     
@@ -4789,8 +4232,8 @@ CXCursor clang_getCursorReferenced(CXCursor C) {
   }
   
   if (clang_isExpression(C.kind)) {
-    const Expr *E = getCursorExpr(C);
-    const Decl *D = getDeclFromExpr(E);
+    Expr *E = getCursorExpr(C);
+    Decl *D = getDeclFromExpr(E);
     if (D) {
       CXCursor declCursor = MakeCXCursor(D, tu);
       declCursor = getSelectorIdentifierCursor(getSelectorIdentifierIndex(C),
@@ -4798,15 +4241,15 @@ CXCursor clang_getCursorReferenced(CXCursor C) {
       return declCursor;
     }
     
-    if (const OverloadExpr *Ovl = dyn_cast_or_null<OverloadExpr>(E))
+    if (OverloadExpr *Ovl = dyn_cast_or_null<OverloadExpr>(E))
       return MakeCursorOverloadedDeclRef(Ovl, tu);
         
     return clang_getNullCursor();
   }
 
   if (clang_isStatement(C.kind)) {
-    const Stmt *S = getCursorStmt(C);
-    if (const GotoStmt *Goto = dyn_cast_or_null<GotoStmt>(S))
+    Stmt *S = getCursorStmt(C);
+    if (GotoStmt *Goto = dyn_cast_or_null<GotoStmt>(S))
       if (LabelDecl *label = Goto->getLabel())
         if (LabelStmt *labelS = label->getStmt())
         return MakeCXCursor(labelS, getCursorDecl(C), tu);
@@ -4815,7 +4258,7 @@ CXCursor clang_getCursorReferenced(CXCursor C) {
   }
   
   if (C.kind == CXCursor_MacroExpansion) {
-    if (const MacroDefinition *Def = getCursorMacroExpansion(C).getDefinition())
+    if (MacroDefinition *Def = getCursorMacroExpansion(C)->getDefinition())
       return MakeMacroDefinitionCursor(Def, tu);
   }
 
@@ -4827,16 +4270,16 @@ CXCursor clang_getCursorReferenced(CXCursor C) {
       return MakeCXCursor(getCursorObjCSuperClassRef(C).first, tu);
 
     case CXCursor_ObjCProtocolRef: {
-      const ObjCProtocolDecl *Prot = getCursorObjCProtocolRef(C).first;
-      if (const ObjCProtocolDecl *Def = Prot->getDefinition())
+      ObjCProtocolDecl *Prot = getCursorObjCProtocolRef(C).first;
+      if (ObjCProtocolDecl *Def = Prot->getDefinition())
         return MakeCXCursor(Def, tu);
 
       return MakeCXCursor(Prot, tu);
     }
 
     case CXCursor_ObjCClassRef: {
-      const ObjCInterfaceDecl *Class = getCursorObjCClassRef(C).first;
-      if (const ObjCInterfaceDecl *Def = Class->getDefinition())
+      ObjCInterfaceDecl *Class = getCursorObjCClassRef(C).first;
+      if (ObjCInterfaceDecl *Def = Class->getDefinition())
         return MakeCXCursor(Def, tu);
 
       return MakeCXCursor(Class, tu);
@@ -4855,7 +4298,7 @@ CXCursor clang_getCursorReferenced(CXCursor C) {
       return MakeCXCursor(getCursorMemberRef(C).first, tu );
 
     case CXCursor_CXXBaseSpecifier: {
-      const CXXBaseSpecifier *B = cxcursor::getCursorCXXBaseSpecifier(C);
+      CXXBaseSpecifier *B = cxcursor::getCursorCXXBaseSpecifier(C);
       return clang_getTypeDeclaration(cxtype::MakeCXType(B->getType(),
                                                          tu ));
     }
@@ -4863,9 +4306,9 @@ CXCursor clang_getCursorReferenced(CXCursor C) {
     case CXCursor_LabelRef:
       // FIXME: We end up faking the "parent" declaration here because we
       // don't want to make CXCursor larger.
-      return MakeCXCursor(getCursorLabelRef(C).first,
-                          cxtu::getASTUnit(tu)->getASTContext()
-                              .getTranslationUnitDecl(),
+      return MakeCXCursor(getCursorLabelRef(C).first, 
+               static_cast<ASTUnit*>(tu->TUData)->getASTContext()
+                          .getTranslationUnitDecl(),
                           tu);
 
     case CXCursor_OverloadedDeclRef:
@@ -4898,7 +4341,7 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
     return clang_getNullCursor();
 
-  const Decl *D = getCursorDecl(C);
+  Decl *D = getCursorDecl(C);
   if (!D)
     return clang_getNullCursor();
 
@@ -4912,7 +4355,6 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::TemplateTypeParm:
   case Decl::EnumConstant:
   case Decl::Field:
-  case Decl::MSProperty:
   case Decl::IndirectField:
   case Decl::ObjCIvar:
   case Decl::ObjCAtDefsField:
@@ -4928,16 +4370,13 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::FileScopeAsm:
   case Decl::StaticAssert:
   case Decl::Block:
-  case Decl::Captured:
   case Decl::Label:  // FIXME: Is this right??
   case Decl::ClassScopeFunctionSpecialization:
   case Decl::Import:
-  case Decl::OMPThreadPrivate:
     return C;
 
   // Declaration kinds that don't make any sense here, but are
   // nonetheless harmless.
-  case Decl::Empty:
   case Decl::TranslationUnit:
     break;
 
@@ -4967,23 +4406,21 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::CXXConstructor:
   case Decl::CXXDestructor:
   case Decl::CXXConversion: {
-    const FunctionDecl *Def = nullptr;
+    const FunctionDecl *Def = 0;
     if (cast<FunctionDecl>(D)->getBody(Def))
-      return MakeCXCursor(Def, TU);
+      return MakeCXCursor(const_cast<FunctionDecl *>(Def), TU);
     return clang_getNullCursor();
   }
 
-  case Decl::Var:
-  case Decl::VarTemplateSpecialization:
-  case Decl::VarTemplatePartialSpecialization: {
+  case Decl::Var: {
     // Ask the variable if it has a definition.
-    if (const VarDecl *Def = cast<VarDecl>(D)->getDefinition())
+    if (VarDecl *Def = cast<VarDecl>(D)->getDefinition())
       return MakeCXCursor(Def, TU);
     return clang_getNullCursor();
   }
 
   case Decl::FunctionTemplate: {
-    const FunctionDecl *Def = nullptr;
+    const FunctionDecl *Def = 0;
     if (cast<FunctionTemplateDecl>(D)->getTemplatedDecl()->getBody(Def))
       return MakeCXCursor(Def->getDescribedFunctionTemplate(), TU);
     return clang_getNullCursor();
@@ -4997,13 +4434,6 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
     return clang_getNullCursor();
   }
 
-  case Decl::VarTemplate: {
-    if (VarDecl *Def =
-            cast<VarTemplateDecl>(D)->getTemplatedDecl()->getDefinition())
-      return MakeCXCursor(cast<VarDecl>(Def)->getDescribedVarTemplate(), TU);
-    return clang_getNullCursor();
-  }
-
   case Decl::Using:
     return MakeCursorOverloadedDeclRef(cast<UsingDecl>(D), 
                                        D->getLocation(), TU);
@@ -5014,14 +4444,14 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
                                     TU));
 
   case Decl::ObjCMethod: {
-    const ObjCMethodDecl *Method = cast<ObjCMethodDecl>(D);
+    ObjCMethodDecl *Method = cast<ObjCMethodDecl>(D);
     if (Method->isThisDeclarationADefinition())
       return C;
 
     // Dig out the method definition in the associated
     // @implementation, if we have it.
     // FIXME: The ASTs should make finding the definition easier.
-    if (const ObjCInterfaceDecl *Class
+    if (ObjCInterfaceDecl *Class
                        = dyn_cast<ObjCInterfaceDecl>(Method->getDeclContext()))
       if (ObjCImplementationDecl *ClassImpl = Class->getImplementation())
         if (ObjCMethodDecl *Def = ClassImpl->getMethod(Method->getSelector(),
@@ -5039,7 +4469,7 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
     return clang_getNullCursor();
 
   case Decl::ObjCProtocol:
-    if (const ObjCProtocolDecl *Def = cast<ObjCProtocolDecl>(D)->getDefinition())
+    if (ObjCProtocolDecl *Def = cast<ObjCProtocolDecl>(D)->getDefinition())
       return MakeCXCursor(Def, TU);
     return clang_getNullCursor();
 
@@ -5049,9 +4479,9 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
     // reference to an Objective-C class, produce the @interface as
     // the definition; when we were provided with the interface,
     // produce the @implementation as the definition.
-    const ObjCInterfaceDecl *IFace = cast<ObjCInterfaceDecl>(D);
+    ObjCInterfaceDecl *IFace = cast<ObjCInterfaceDecl>(D);
     if (WasReference) {
-      if (const ObjCInterfaceDecl *Def = IFace->getDefinition())
+      if (ObjCInterfaceDecl *Def = IFace->getDefinition())
         return MakeCXCursor(Def, TU);
     } else if (ObjCImplementationDecl *Impl = IFace->getImplementation())
       return MakeCXCursor(Impl, TU);
@@ -5064,9 +4494,9 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
     return clang_getNullCursor();
 
   case Decl::ObjCCompatibleAlias:
-    if (const ObjCInterfaceDecl *Class
+    if (ObjCInterfaceDecl *Class
           = cast<ObjCCompatibleAliasDecl>(D)->getClassInterface())
-      if (const ObjCInterfaceDecl *Def = Class->getDefinition())
+      if (ObjCInterfaceDecl *Def = Class->getDefinition())
         return MakeCXCursor(Def, TU);
 
     return clang_getNullCursor();
@@ -5096,13 +4526,13 @@ CXCursor clang_getCanonicalCursor(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
     return C;
   
-  if (const Decl *D = getCursorDecl(C)) {
-    if (const ObjCCategoryImplDecl *CatImplD = dyn_cast<ObjCCategoryImplDecl>(D))
+  if (Decl *D = getCursorDecl(C)) {
+    if (ObjCCategoryImplDecl *CatImplD = dyn_cast<ObjCCategoryImplDecl>(D))
       if (ObjCCategoryDecl *CatD = CatImplD->getCategoryDecl())
         return MakeCXCursor(CatD, getCursorTU(C));
 
-    if (const ObjCImplDecl *ImplD = dyn_cast<ObjCImplDecl>(D))
-      if (const ObjCInterfaceDecl *IFD = ImplD->getClassInterface())
+    if (ObjCImplDecl *ImplD = dyn_cast<ObjCImplDecl>(D))
+      if (ObjCInterfaceDecl *IFD = ImplD->getClassInterface())
         return MakeCXCursor(IFD, getCursorTU(C));
 
     return MakeCXCursor(D->getCanonicalDecl(), getCursorTU(C));
@@ -5120,15 +4550,15 @@ unsigned clang_getNumOverloadedDecls(CXCursor C) {
     return 0;
   
   OverloadedDeclRefStorage Storage = getCursorOverloadedDeclRef(C).first;
-  if (const OverloadExpr *E = Storage.dyn_cast<const OverloadExpr *>())
+  if (OverloadExpr *E = Storage.dyn_cast<OverloadExpr *>())
     return E->getNumDecls();
   
   if (OverloadedTemplateStorage *S
                               = Storage.dyn_cast<OverloadedTemplateStorage*>())
     return S->size();
   
-  const Decl *D = Storage.get<const Decl *>();
-  if (const UsingDecl *Using = dyn_cast<UsingDecl>(D))
+  Decl *D = Storage.get<Decl*>();
+  if (UsingDecl *Using = dyn_cast<UsingDecl>(D))
     return Using->shadow_size();
   
   return 0;
@@ -5143,15 +4573,15 @@ CXCursor clang_getOverloadedDecl(CXCursor cursor, unsigned index) {
   
   CXTranslationUnit TU = getCursorTU(cursor);
   OverloadedDeclRefStorage Storage = getCursorOverloadedDeclRef(cursor).first;
-  if (const OverloadExpr *E = Storage.dyn_cast<const OverloadExpr *>())
+  if (OverloadExpr *E = Storage.dyn_cast<OverloadExpr *>())
     return MakeCXCursor(E->decls_begin()[index], TU);
   
   if (OverloadedTemplateStorage *S
                               = Storage.dyn_cast<OverloadedTemplateStorage*>())
     return MakeCXCursor(S->begin()[index], TU);
   
-  const Decl *D = Storage.get<const Decl *>();
-  if (const UsingDecl *Using = dyn_cast<UsingDecl>(D)) {
+  Decl *D = Storage.get<Decl*>();
+  if (UsingDecl *Using = dyn_cast<UsingDecl>(D)) {
     // FIXME: This is, unfortunately, linear time.
     UsingDecl::shadow_iterator Pos = Using->shadow_begin();
     std::advance(Pos, index);
@@ -5169,7 +4599,8 @@ void clang_getDefinitionSpellingAndExtent(CXCursor C,
                                           unsigned *endLine,
                                           unsigned *endColumn) {
   assert(getCursorDecl(C) && "CXCursor has null decl");
-  const FunctionDecl *FD = dyn_cast<FunctionDecl>(getCursorDecl(C));
+  NamedDecl *ND = static_cast<NamedDecl *>(getCursorDecl(C));
+  FunctionDecl *FD = dyn_cast<FunctionDecl>(ND);
   CompoundStmt *Body = dyn_cast<CompoundStmt>(FD->getBody());
 
   SourceManager &SM = FD->getASTContext().getSourceManager();
@@ -5188,26 +4619,26 @@ CXSourceRange clang_getCursorReferenceNameRange(CXCursor C, unsigned NameFlags,
   
   switch (C.kind) {
   case CXCursor_MemberRefExpr:
-    if (const MemberExpr *E = dyn_cast<MemberExpr>(getCursorExpr(C)))
+    if (MemberExpr *E = dyn_cast<MemberExpr>(getCursorExpr(C)))
       Pieces = buildPieces(NameFlags, true, E->getMemberNameInfo(),
                            E->getQualifierLoc().getSourceRange());
     break;
   
   case CXCursor_DeclRefExpr:
-    if (const DeclRefExpr *E = dyn_cast<DeclRefExpr>(getCursorExpr(C)))
+    if (DeclRefExpr *E = dyn_cast<DeclRefExpr>(getCursorExpr(C)))
       Pieces = buildPieces(NameFlags, false, E->getNameInfo(), 
                            E->getQualifierLoc().getSourceRange(),
                            E->getOptionalExplicitTemplateArgs());
     break;
     
   case CXCursor_CallExpr:
-    if (const CXXOperatorCallExpr *OCE = 
+    if (CXXOperatorCallExpr *OCE = 
         dyn_cast<CXXOperatorCallExpr>(getCursorExpr(C))) {
-      const Expr *Callee = OCE->getCallee();
-      if (const ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(Callee))
+      Expr *Callee = OCE->getCallee();
+      if (ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(Callee))
         Callee = ICE->getSubExpr();
 
-      if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(Callee))
+      if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(Callee))
         Pieces = buildPieces(NameFlags, false, DRE->getNameInfo(),
                              DRE->getQualifierLoc().getSourceRange());
     }
@@ -5263,13 +4694,13 @@ CXString clang_getTokenSpelling(CXTranslationUnit TU, CXToken CXTok) {
   case CXToken_Identifier:
   case CXToken_Keyword:
     // We know we have an IdentifierInfo*, so use that.
-    return cxstring::createRef(static_cast<IdentifierInfo *>(CXTok.ptr_data)
+    return createCXString(static_cast<IdentifierInfo *>(CXTok.ptr_data)
                             ->getNameStart());
 
   case CXToken_Literal: {
     // We have stashed the starting pointer in the ptr_data field. Use it.
     const char *Text = static_cast<const char *>(CXTok.ptr_data);
-    return cxstring::createDup(StringRef(Text, CXTok.int_data[2]));
+    return createCXString(StringRef(Text, CXTok.int_data[2]));
   }
 
   case CXToken_Punctuation:
@@ -5277,16 +4708,11 @@ CXString clang_getTokenSpelling(CXTranslationUnit TU, CXToken CXTok) {
     break;
   }
 
-  if (isNotUsableTU(TU)) {
-    LOG_BAD_TU(TU);
-    return cxstring::createEmpty();
-  }
-
   // We have to find the starting buffer pointer the hard way, by
   // deconstructing the source location.
-  ASTUnit *CXXUnit = cxtu::getASTUnit(TU);
+  ASTUnit *CXXUnit = static_cast<ASTUnit *>(TU->TUData);
   if (!CXXUnit)
-    return cxstring::createEmpty();
+    return createCXString("");
 
   SourceLocation Loc = SourceLocation::getFromRawEncoding(CXTok.int_data[1]);
   std::pair<FileID, unsigned> LocInfo
@@ -5295,18 +4721,13 @@ CXString clang_getTokenSpelling(CXTranslationUnit TU, CXToken CXTok) {
   StringRef Buffer
     = CXXUnit->getSourceManager().getBufferData(LocInfo.first, &Invalid);
   if (Invalid)
-    return cxstring::createEmpty();
+    return createCXString("");
 
-  return cxstring::createDup(Buffer.substr(LocInfo.second, CXTok.int_data[2]));
+  return createCXString(Buffer.substr(LocInfo.second, CXTok.int_data[2]));
 }
 
 CXSourceLocation clang_getTokenLocation(CXTranslationUnit TU, CXToken CXTok) {
-  if (isNotUsableTU(TU)) {
-    LOG_BAD_TU(TU);
-    return clang_getNullLocation();
-  }
-
-  ASTUnit *CXXUnit = cxtu::getASTUnit(TU);
+  ASTUnit *CXXUnit = static_cast<ASTUnit *>(TU->TUData);
   if (!CXXUnit)
     return clang_getNullLocation();
 
@@ -5315,12 +4736,7 @@ CXSourceLocation clang_getTokenLocation(CXTranslationUnit TU, CXToken CXTok) {
 }
 
 CXSourceRange clang_getTokenExtent(CXTranslationUnit TU, CXToken CXTok) {
-  if (isNotUsableTU(TU)) {
-    LOG_BAD_TU(TU);
-    return clang_getNullRange();
-  }
-
-  ASTUnit *CXXUnit = cxtu::getASTUnit(TU);
+  ASTUnit *CXXUnit = static_cast<ASTUnit *>(TU->TUData);
   if (!CXXUnit)
     return clang_getNullRange();
 
@@ -5332,9 +4748,9 @@ static void getTokens(ASTUnit *CXXUnit, SourceRange Range,
                       SmallVectorImpl<CXToken> &CXTokens) {
   SourceManager &SourceMgr = CXXUnit->getSourceManager();
   std::pair<FileID, unsigned> BeginLocInfo
-    = SourceMgr.getDecomposedSpellingLoc(Range.getBegin());
+    = SourceMgr.getDecomposedLoc(Range.getBegin());
   std::pair<FileID, unsigned> EndLocInfo
-    = SourceMgr.getDecomposedSpellingLoc(Range.getEnd());
+    = SourceMgr.getDecomposedLoc(Range.getEnd());
 
   // Cannot tokenize across files.
   if (BeginLocInfo.first != EndLocInfo.first)
@@ -5373,7 +4789,7 @@ static void getTokens(ASTUnit *CXXUnit, SourceRange Range,
     //   - Kind-specific fields
     if (Tok.isLiteral()) {
       CXTok.int_data[0] = CXToken_Literal;
-      CXTok.ptr_data = const_cast<char *>(Tok.getLiteralData());
+      CXTok.ptr_data = (void *)Tok.getLiteralData();
     } else if (Tok.is(tok::raw_identifier)) {
       // Lookup the identifier to determine whether we have a keyword.
       IdentifierInfo *II
@@ -5390,10 +4806,10 @@ static void getTokens(ASTUnit *CXXUnit, SourceRange Range,
       CXTok.ptr_data = II;
     } else if (Tok.is(tok::comment)) {
       CXTok.int_data[0] = CXToken_Comment;
-      CXTok.ptr_data = nullptr;
+      CXTok.ptr_data = 0;
     } else {
       CXTok.int_data[0] = CXToken_Punctuation;
-      CXTok.ptr_data = nullptr;
+      CXTok.ptr_data = 0;
     }
     CXTokens.push_back(CXTok);
     previousWasAt = Tok.is(tok::at);
@@ -5402,21 +4818,12 @@ static void getTokens(ASTUnit *CXXUnit, SourceRange Range,
 
 void clang_tokenize(CXTranslationUnit TU, CXSourceRange Range,
                     CXToken **Tokens, unsigned *NumTokens) {
-  LOG_FUNC_SECTION {
-    *Log << TU << ' ' << Range;
-  }
-
   if (Tokens)
-    *Tokens = nullptr;
+    *Tokens = 0;
   if (NumTokens)
     *NumTokens = 0;
 
-  if (isNotUsableTU(TU)) {
-    LOG_BAD_TU(TU);
-    return;
-  }
-
-  ASTUnit *CXXUnit = cxtu::getASTUnit(TU);
+  ASTUnit *CXXUnit = static_cast<ASTUnit *>(TU->TUData);
   if (!CXXUnit || !Tokens || !NumTokens)
     return;
 
@@ -5448,6 +4855,7 @@ void clang_disposeTokens(CXTranslationUnit TU,
 // Token annotation APIs.
 //===----------------------------------------------------------------------===//
 
+typedef llvm::DenseMap<unsigned, CXCursor> AnnotateTokensData;
 static enum CXChildVisitResult AnnotateTokensVisitor(CXCursor cursor,
                                                      CXCursor parent,
                                                      CXClientData client_data);
@@ -5456,6 +4864,7 @@ static bool AnnotateTokensPostChildrenVisitor(CXCursor cursor,
 
 namespace {
 class AnnotateTokensWorker {
+  AnnotateTokensData &Annotated;
   CXToken *Tokens;
   CXCursor *Cursors;
   unsigned NumTokens;
@@ -5468,49 +4877,41 @@ class AnnotateTokensWorker {
   struct PostChildrenInfo {
     CXCursor Cursor;
     SourceRange CursorRange;
-    unsigned BeforeReachingCursorIdx;
     unsigned BeforeChildrenTokenIdx;
   };
-  SmallVector<PostChildrenInfo, 8> PostChildrenInfos;
-
-  CXToken &getTok(unsigned Idx) {
-    assert(Idx < NumTokens);
-    return Tokens[Idx];
-  }
-  const CXToken &getTok(unsigned Idx) const {
-    assert(Idx < NumTokens);
-    return Tokens[Idx];
-  }
+  llvm::SmallVector<PostChildrenInfo, 8> PostChildrenInfos;
+  
   bool MoreTokens() const { return TokIdx < NumTokens; }
   unsigned NextToken() const { return TokIdx; }
   void AdvanceToken() { ++TokIdx; }
   SourceLocation GetTokenLoc(unsigned tokI) {
-    return SourceLocation::getFromRawEncoding(getTok(tokI).int_data[1]);
+    return SourceLocation::getFromRawEncoding(Tokens[tokI].int_data[1]);
   }
   bool isFunctionMacroToken(unsigned tokI) const {
-    return getTok(tokI).int_data[3] != 0;
+    return Tokens[tokI].int_data[3] != 0;
   }
   SourceLocation getFunctionMacroTokenLoc(unsigned tokI) const {
-    return SourceLocation::getFromRawEncoding(getTok(tokI).int_data[3]);
+    return SourceLocation::getFromRawEncoding(Tokens[tokI].int_data[3]);
   }
 
   void annotateAndAdvanceTokens(CXCursor, RangeComparisonResult, SourceRange);
-  bool annotateAndAdvanceFunctionMacroTokens(CXCursor, RangeComparisonResult,
+  void annotateAndAdvanceFunctionMacroTokens(CXCursor, RangeComparisonResult,
                                              SourceRange);
 
 public:
-  AnnotateTokensWorker(CXToken *tokens, CXCursor *cursors, unsigned numTokens,
-                       CXTranslationUnit TU, SourceRange RegionOfInterest)
-    : Tokens(tokens), Cursors(cursors),
+  AnnotateTokensWorker(AnnotateTokensData &annotated,
+                       CXToken *tokens, CXCursor *cursors, unsigned numTokens,
+                       CXTranslationUnit tu, SourceRange RegionOfInterest)
+    : Annotated(annotated), Tokens(tokens), Cursors(cursors),
       NumTokens(numTokens), TokIdx(0), PreprocessingTokIdx(0),
-      AnnotateVis(TU,
+      AnnotateVis(tu,
                   AnnotateTokensVisitor, this,
                   /*VisitPreprocessorLast=*/true,
                   /*VisitIncludedEntities=*/false,
                   RegionOfInterest,
                   /*VisitDeclsOnly=*/false,
                   AnnotateTokensPostChildrenVisitor),
-      SrcMgr(cxtu::getASTUnit(TU)->getSourceManager()),
+      SrcMgr(static_cast<ASTUnit*>(tu->TUData)->getSourceManager()),
       HasContextSensitiveKeywords(false) { }
 
   void VisitChildren(CXCursor C) { AnnotateVis.VisitChildren(C); }
@@ -5534,13 +4935,27 @@ void AnnotateTokensWorker::AnnotateTokens() {
   // Walk the AST within the region of interest, annotating tokens
   // along the way.
   AnnotateVis.visitFileRegion();
-}
 
-static inline void updateCursorAnnotation(CXCursor &Cursor,
-                                          const CXCursor &updateC) {
-  if (clang_isInvalid(updateC.kind) || !clang_isInvalid(Cursor.kind))
+  for (unsigned I = 0 ; I < TokIdx ; ++I) {
+    AnnotateTokensData::iterator Pos = Annotated.find(Tokens[I].int_data[1]);
+    if (Pos != Annotated.end() && 
+        (clang_isInvalid(Cursors[I].kind) ||
+         Pos->second.kind != CXCursor_PreprocessingDirective))
+      Cursors[I] = Pos->second;
+  }
+
+  // Finish up annotating any tokens left.
+  if (!MoreTokens())
     return;
-  Cursor = updateC;
+
+  const CXCursor &C = clang_getNullCursor();
+  for (unsigned I = TokIdx ; I < NumTokens ; ++I) {
+    if (I < PreprocessingTokIdx && clang_isPreprocessing(Cursors[I].kind))
+      continue;
+
+    AnnotateTokensData::iterator Pos = Annotated.find(Tokens[I].int_data[1]);
+    Cursors[I] = (Pos == Annotated.end()) ? C : Pos->second;
+  }
 }
 
 /// \brief It annotates and advances tokens with a cursor until the comparison
@@ -5555,12 +4970,11 @@ void AnnotateTokensWorker::annotateAndAdvanceTokens(CXCursor updateC,
   while (MoreTokens()) {
     const unsigned I = NextToken();
     if (isFunctionMacroToken(I))
-      if (!annotateAndAdvanceFunctionMacroTokens(updateC, compResult, range))
-        return;
+      return annotateAndAdvanceFunctionMacroTokens(updateC, compResult, range);
 
     SourceLocation TokLoc = GetTokenLoc(I);
     if (LocationCompare(SrcMgr, TokLoc, range) == compResult) {
-      updateCursorAnnotation(Cursors[I], updateC);
+      Cursors[I] = updateC;
       AdvanceToken();
       continue;
     }
@@ -5569,8 +4983,7 @@ void AnnotateTokensWorker::annotateAndAdvanceTokens(CXCursor updateC,
 }
 
 /// \brief Special annotation handling for macro argument tokens.
-/// \returns true if it advanced beyond all macro tokens, false otherwise.
-bool AnnotateTokensWorker::annotateAndAdvanceFunctionMacroTokens(
+void AnnotateTokensWorker::annotateAndAdvanceFunctionMacroTokens(
                                                CXCursor updateC,
                                                RangeComparisonResult compResult,
                                                SourceRange range) {
@@ -5600,15 +5013,13 @@ bool AnnotateTokensWorker::annotateAndAdvanceFunctionMacroTokens(
       atLeastOneCompFail = true;
   }
 
-  if (atLeastOneCompFail)
-    return false;
-
-  TokIdx = I; // All of the tokens were handled, advance beyond all of them.
-  return true;
+  if (!atLeastOneCompFail)
+    TokIdx = I; // All of the tokens were handled, advance beyond all of them.
 }
 
 enum CXChildVisitResult
 AnnotateTokensWorker::Visit(CXCursor cursor, CXCursor parent) {  
+  CXSourceLocation Loc = clang_getCursorLocation(cursor);
   SourceRange cursorRange = getRawCursorExtent(cursor);
   if (cursorRange.isInvalid())
     return CXChildVisit_Recurse;
@@ -5616,20 +5027,22 @@ AnnotateTokensWorker::Visit(CXCursor cursor, CXCursor parent) {
   if (!HasContextSensitiveKeywords) {
     // Objective-C properties can have context-sensitive keywords.
     if (cursor.kind == CXCursor_ObjCPropertyDecl) {
-      if (const ObjCPropertyDecl *Property
+      if (ObjCPropertyDecl *Property 
                   = dyn_cast_or_null<ObjCPropertyDecl>(getCursorDecl(cursor)))
         HasContextSensitiveKeywords = Property->getPropertyAttributesAsWritten() != 0;
     }
     // Objective-C methods can have context-sensitive keywords.
     else if (cursor.kind == CXCursor_ObjCInstanceMethodDecl ||
              cursor.kind == CXCursor_ObjCClassMethodDecl) {
-      if (const ObjCMethodDecl *Method
+      if (ObjCMethodDecl *Method
             = dyn_cast_or_null<ObjCMethodDecl>(getCursorDecl(cursor))) {
         if (Method->getObjCDeclQualifier())
           HasContextSensitiveKeywords = true;
         else {
-          for (const auto *P : Method->params()) {
-            if (P->getObjCDeclQualifier()) {
+          for (ObjCMethodDecl::param_iterator P = Method->param_begin(),
+                                           PEnd = Method->param_end();
+               P != PEnd; ++P) {
+            if ((*P)->getObjCDeclQualifier()) {
               HasContextSensitiveKeywords = true;
               break;
             }
@@ -5639,7 +5052,7 @@ AnnotateTokensWorker::Visit(CXCursor cursor, CXCursor parent) {
     }    
     // C++ methods can have context-sensitive keywords.
     else if (cursor.kind == CXCursor_CXXMethod) {
-      if (const CXXMethodDecl *Method
+      if (CXXMethodDecl *Method
                   = dyn_cast_or_null<CXXMethodDecl>(getCursorDecl(cursor))) {
         if (Method->hasAttr<FinalAttr>() || Method->hasAttr<OverrideAttr>())
           HasContextSensitiveKeywords = true;
@@ -5650,18 +5063,20 @@ AnnotateTokensWorker::Visit(CXCursor cursor, CXCursor parent) {
              cursor.kind == CXCursor_ClassDecl ||
              cursor.kind == CXCursor_ClassTemplate ||
              cursor.kind == CXCursor_ClassTemplatePartialSpecialization) {
-      if (const Decl *D = getCursorDecl(cursor))
+      if (Decl *D = getCursorDecl(cursor))
         if (D->hasAttr<FinalAttr>())
           HasContextSensitiveKeywords = true;
     }
   }
-
-  // Don't override a property annotation with its getter/setter method.
-  if (cursor.kind == CXCursor_ObjCInstanceMethodDecl &&
-      parent.kind == CXCursor_ObjCPropertyDecl)
-    return CXChildVisit_Continue;
   
   if (clang_isPreprocessing(cursor.kind)) {    
+    // For macro expansions, just note where the beginning of the macro
+    // expansion occurs.
+    if (cursor.kind == CXCursor_MacroExpansion) {
+      Annotated[Loc.int_data] = cursor;
+      return CXChildVisit_Recurse;
+    }
+    
     // Items in the preprocessing record are kept separate from items in
     // declarations, so we keep a separate token index.
     unsigned SavedTokIdx = TokIdx;
@@ -5693,17 +5108,7 @@ AnnotateTokensWorker::Visit(CXCursor cursor, CXCursor parent) {
       case RangeAfter:
         break;
       case RangeOverlap:
-        // For macro expansions, just note where the beginning of the macro
-        // expansion occurs.
-        if (cursor.kind == CXCursor_MacroExpansion) {
-          if (TokLoc == cursorRange.getBegin())
-            Cursors[I] = cursor;
-          AdvanceToken();
-          break;
-        }
-        // We may have already annotated macro names inside macro definitions.
-        if (Cursors[I].kind != CXCursor_MacroExpansion)
-          Cursors[I] = cursor;
+        Cursors[I] = cursor;
         AdvanceToken();
         continue;
       }
@@ -5719,14 +5124,48 @@ AnnotateTokensWorker::Visit(CXCursor cursor, CXCursor parent) {
 
   if (cursorRange.isInvalid())
     return CXChildVisit_Continue;
+  
+  SourceLocation L = SourceLocation::getFromRawEncoding(Loc.int_data);
 
-  unsigned BeforeReachingCursorIdx = NextToken();
+  // Adjust the annotated range based specific declarations.
   const enum CXCursorKind cursorK = clang_getCursorKind(cursor);
+  if (clang_isDeclaration(cursorK)) {
+    Decl *D = cxcursor::getCursorDecl(cursor);
+    
+    SourceLocation StartLoc;
+    if (const DeclaratorDecl *DD = dyn_cast_or_null<DeclaratorDecl>(D)) {
+      if (TypeSourceInfo *TI = DD->getTypeSourceInfo())
+        StartLoc = TI->getTypeLoc().getLocStart();
+    } else if (TypedefDecl *Typedef = dyn_cast_or_null<TypedefDecl>(D)) {
+      if (TypeSourceInfo *TI = Typedef->getTypeSourceInfo())
+        StartLoc = TI->getTypeLoc().getLocStart();
+    }
+
+    if (StartLoc.isValid() && L.isValid() &&
+        SrcMgr.isBeforeInTranslationUnit(StartLoc, L))
+      cursorRange.setBegin(StartLoc);
+  }
+  
+  // If the location of the cursor occurs within a macro instantiation, record
+  // the spelling location of the cursor in our annotation map.  We can then
+  // paper over the token labelings during a post-processing step to try and
+  // get cursor mappings for tokens that are the *arguments* of a macro
+  // instantiation.
+  if (L.isMacroID()) {
+    unsigned rawEncoding = SrcMgr.getSpellingLoc(L).getRawEncoding();
+    // Only invalidate the old annotation if it isn't part of a preprocessing
+    // directive.  Here we assume that the default construction of CXCursor
+    // results in CXCursor.kind being an initialized value (i.e., 0).  If
+    // this isn't the case, we can fix by doing lookup + insertion.
+    
+    CXCursor &oldC = Annotated[rawEncoding];
+    if (!clang_isPreprocessing(oldC.kind))
+      oldC = cursor;
+  }
+  
   const enum CXCursorKind K = clang_getCursorKind(parent);
   const CXCursor updateC =
-    (clang_isInvalid(K) || K == CXCursor_TranslationUnit ||
-     // Attributes are annotated out-of-order, skip tokens until we reach it.
-     clang_isAttribute(cursor.kind))
+    (clang_isInvalid(K) || K == CXCursor_TranslationUnit)
      ? clang_getNullCursor() : parent;
 
   annotateAndAdvanceTokens(updateC, RangeBefore, cursorRange);
@@ -5736,14 +5175,14 @@ AnnotateTokensWorker::Visit(CXCursor cursor, CXCursor parent) {
   // This can happen for C++ constructor expressions whose range generally
   // include the variable declaration, e.g.:
   //  MyCXXClass foo; // Make sure we don't annotate 'foo' as a CallExpr cursor.
-  if (clang_isExpression(cursorK) && MoreTokens()) {
-    const Expr *E = getCursorExpr(cursor);
-    if (const Decl *D = getCursorParentDecl(cursor)) {
+  if (clang_isExpression(cursorK)) {
+    Expr *E = getCursorExpr(cursor);
+    if (Decl *D = getCursorParentDecl(cursor)) {
       const unsigned I = NextToken();
       if (E->getLocStart().isValid() && D->getLocation().isValid() &&
           E->getLocStart() == D->getLocation() &&
           E->getLocStart() == GetTokenLoc(I)) {
-        updateCursorAnnotation(Cursors[I], updateC);
+        Cursors[I] = updateC;
         AdvanceToken();
       }
     }
@@ -5758,7 +5197,6 @@ AnnotateTokensWorker::Visit(CXCursor cursor, CXCursor parent) {
   PostChildrenInfo Info;
   Info.Cursor = cursor;
   Info.CursorRange = cursorRange;
-  Info.BeforeReachingCursorIdx = BeforeReachingCursorIdx;
   Info.BeforeChildrenTokenIdx = NextToken();
   PostChildrenInfos.push_back(Info);
 
@@ -5788,11 +5226,6 @@ bool AnnotateTokensWorker::postVisitChildren(CXCursor cursor) {
 
     Cursors[I] = cursor;
   }
-
-  // Attributes are annotated out-of-order, rewind TokIdx to when we first
-  // encountered the attribute cursor.
-  if (clang_isAttribute(cursor.kind))
-    TokIdx = Info.BeforeReachingCursorIdx;
 
   PostChildrenInfos.pop_back();
   return false;
@@ -5830,7 +5263,7 @@ public:
     if (cursor.kind != CXCursor_MacroExpansion)
       return CXChildVisit_Continue;
 
-    SourceRange macroRange = getCursorMacroExpansion(cursor).getSourceRange();
+    SourceRange macroRange = getCursorMacroExpansion(cursor)->getSourceRange();
     if (macroRange.getBegin() == macroRange.getEnd())
       return CXChildVisit_Continue; // it's not a function macro.
 
@@ -5858,23 +5291,14 @@ public:
   }
 
 private:
-  CXToken &getTok(unsigned Idx) {
-    assert(Idx < NumTokens);
-    return Tokens[Idx];
-  }
-  const CXToken &getTok(unsigned Idx) const {
-    assert(Idx < NumTokens);
-    return Tokens[Idx];
-  }
-
   SourceLocation getTokenLoc(unsigned tokI) {
-    return SourceLocation::getFromRawEncoding(getTok(tokI).int_data[1]);
+    return SourceLocation::getFromRawEncoding(Tokens[tokI].int_data[1]);
   }
 
   void setFunctionMacroTokenLoc(unsigned tokI, SourceLocation loc) {
     // The third field is reserved and currently not used. Use it here
     // to mark macro arg expanded tokens with their expanded locations.
-    getTok(tokI).int_data[3] = loc.getRawEncoding();
+    Tokens[tokI].int_data[3] = loc.getRawEncoding();
   }
 };
 
@@ -5897,34 +5321,16 @@ namespace {
   };
 }
 
-/// \brief Used by \c annotatePreprocessorTokens.
-/// \returns true if lexing was finished, false otherwise.
-static bool lexNext(Lexer &Lex, Token &Tok,
-                   unsigned &NextIdx, unsigned NumTokens) {
-  if (NextIdx >= NumTokens)
-    return true;
-
-  ++NextIdx;
-  Lex.LexFromRawLexer(Tok);
-  if (Tok.is(tok::eof))
-    return true;
-
-  return false;
-}
-
 static void annotatePreprocessorTokens(CXTranslationUnit TU,
                                        SourceRange RegionOfInterest,
-                                       CXCursor *Cursors,
-                                       CXToken *Tokens,
-                                       unsigned NumTokens) {
-  ASTUnit *CXXUnit = cxtu::getASTUnit(TU);
+                                       AnnotateTokensData &Annotated) {
+  ASTUnit *CXXUnit = static_cast<ASTUnit *>(TU->TUData);
 
-  Preprocessor &PP = CXXUnit->getPreprocessor();
   SourceManager &SourceMgr = CXXUnit->getSourceManager();
   std::pair<FileID, unsigned> BeginLocInfo
-    = SourceMgr.getDecomposedSpellingLoc(RegionOfInterest.getBegin());
+    = SourceMgr.getDecomposedLoc(RegionOfInterest.getBegin());
   std::pair<FileID, unsigned> EndLocInfo
-    = SourceMgr.getDecomposedSpellingLoc(RegionOfInterest.getEnd());
+    = SourceMgr.getDecomposedLoc(RegionOfInterest.getEnd());
 
   if (BeginLocInfo.first != EndLocInfo.first)
     return;
@@ -5941,76 +5347,44 @@ static void annotatePreprocessorTokens(CXTranslationUnit TU,
             Buffer.end());
   Lex.SetCommentRetentionState(true);
   
-  unsigned NextIdx = 0;
   // Lex tokens in raw mode until we hit the end of the range, to avoid
   // entering #includes or expanding macros.
   while (true) {
     Token Tok;
-    if (lexNext(Lex, Tok, NextIdx, NumTokens))
-      break;
-    unsigned TokIdx = NextIdx-1;
-    assert(Tok.getLocation() ==
-             SourceLocation::getFromRawEncoding(Tokens[TokIdx].int_data[1]));
+    Lex.LexFromRawLexer(Tok);
     
   reprocess:
     if (Tok.is(tok::hash) && Tok.isAtStartOfLine()) {
-      // We have found a preprocessing directive. Annotate the tokens
-      // appropriately.
+      // We have found a preprocessing directive. Gobble it up so that we
+      // don't see it while preprocessing these tokens later, but keep track
+      // of all of the token locations inside this preprocessing directive so
+      // that we can annotate them appropriately.
       //
       // FIXME: Some simple tests here could identify macro definitions and
       // #undefs, to provide specific cursor kinds for those.
-
-      SourceLocation BeginLoc = Tok.getLocation();
-      if (lexNext(Lex, Tok, NextIdx, NumTokens))
-        break;
-
-      MacroInfo *MI = nullptr;
-      if (Tok.is(tok::raw_identifier) && Tok.getRawIdentifier() == "define") {
-        if (lexNext(Lex, Tok, NextIdx, NumTokens))
-          break;
-
-        if (Tok.is(tok::raw_identifier)) {
-          IdentifierInfo &II =
-              PP.getIdentifierTable().get(Tok.getRawIdentifier());
-          SourceLocation MappedTokLoc =
-              CXXUnit->mapLocationToPreamble(Tok.getLocation());
-          MI = getMacroInfo(II, MappedTokLoc, TU);
-        }
-      }
-
-      bool finished = false;
+      SmallVector<SourceLocation, 32> Locations;
       do {
-        if (lexNext(Lex, Tok, NextIdx, NumTokens)) {
-          finished = true;
-          break;
-        }
-        // If we are in a macro definition, check if the token was ever a
-        // macro name and annotate it if that's the case.
-        if (MI) {
-          SourceLocation SaveLoc = Tok.getLocation();
-          Tok.setLocation(CXXUnit->mapLocationToPreamble(SaveLoc));
-          MacroDefinition *MacroDef = checkForMacroInMacroDefinition(MI,Tok,TU);
-          Tok.setLocation(SaveLoc);
-          if (MacroDef)
-            Cursors[NextIdx-1] = MakeMacroExpansionCursor(MacroDef,
-                                                         Tok.getLocation(), TU);
-        }
-      } while (!Tok.isAtStartOfLine());
-
-      unsigned LastIdx = finished ? NextIdx-1 : NextIdx-2;
-      assert(TokIdx <= LastIdx);
-      SourceLocation EndLoc =
-          SourceLocation::getFromRawEncoding(Tokens[LastIdx].int_data[1]);
-      CXCursor Cursor =
-          MakePreprocessingDirectiveCursor(SourceRange(BeginLoc, EndLoc), TU);
-
-      for (; TokIdx <= LastIdx; ++TokIdx)
-        updateCursorAnnotation(Cursors[TokIdx], Cursor);
+        Locations.push_back(Tok.getLocation());
+        Lex.LexFromRawLexer(Tok);
+      } while (!Tok.isAtStartOfLine() && !Tok.is(tok::eof));
       
-      if (finished)
-        break;
-      goto reprocess;
+      using namespace cxcursor;
+      CXCursor Cursor
+      = MakePreprocessingDirectiveCursor(SourceRange(Locations.front(),
+                                                     Locations.back()),
+                                         TU);
+      for (unsigned I = 0, N = Locations.size(); I != N; ++I) {
+        Annotated[Locations[I].getRawEncoding()] = Cursor;
+      }
+      
+      if (Tok.isAtStartOfLine())
+        goto reprocess;
+      
+      continue;
     }
+    
+    if (Tok.is(tok::eof))
+      break;
   }
 }
 
@@ -6022,7 +5396,7 @@ static void clang_annotateTokensImpl(void *UserData) {
   const unsigned NumTokens = ((clang_annotateTokens_Data*)UserData)->NumTokens;
   CXCursor *Cursors = ((clang_annotateTokens_Data*)UserData)->Cursors;
 
-  CIndexer *CXXIdx = TU->CIdx;
+  CIndexer *CXXIdx = (CIndexer*)TU->CIdx;
   if (CXXIdx->isOptEnabled(CXGlobalOpt_ThreadBackgroundPriorityForEditing))
     setThreadBackgroundPriority();
 
@@ -6034,20 +5408,14 @@ static void clang_annotateTokensImpl(void *UserData) {
     cxloc::translateSourceLocation(clang_getTokenLocation(TU,
                                                          Tokens[NumTokens-1])));
 
+  // A mapping from the source locations found when re-lexing or traversing the
+  // region of interest to the corresponding cursors.
+  AnnotateTokensData Annotated;
+
   // Relex the tokens within the source range to look for preprocessing
   // directives.
-  annotatePreprocessorTokens(TU, RegionOfInterest, Cursors, Tokens, NumTokens);
-
-  // If begin location points inside a macro argument, set it to the expansion
-  // location so we can have the full context when annotating semantically.
-  {
-    SourceManager &SM = CXXUnit->getSourceManager();
-    SourceLocation Loc =
-        SM.getMacroArgExpandedLocation(RegionOfInterest.getBegin());
-    if (Loc.isMacroID())
-      RegionOfInterest.setBegin(SM.getExpansionLoc(Loc));
-  }
-
+  annotatePreprocessorTokens(TU, RegionOfInterest, Annotated);
+  
   if (CXXUnit->getPreprocessor().getPreprocessingRecord()) {
     // Search and mark tokens that are macro argument expansions.
     MarkMacroArgTokensVisitor Visitor(CXXUnit->getSourceManager(),
@@ -6062,7 +5430,8 @@ static void clang_annotateTokensImpl(void *UserData) {
   
   // Annotate all of the source locations in the region of interest that map to
   // a specific cursor.
-  AnnotateTokensWorker W(Tokens, Cursors, NumTokens, TU, RegionOfInterest);
+  AnnotateTokensWorker W(Annotated, Tokens, Cursors, NumTokens,
+                         TU, RegionOfInterest);
   
   // FIXME: We use a ridiculous stack size here because the data-recursion
   // algorithm uses a large stack frame than the non-data recursive version,
@@ -6080,7 +5449,7 @@ static void clang_annotateTokensImpl(void *UserData) {
       
       if (Cursors[I].kind == CXCursor_ObjCPropertyDecl) {
         IdentifierInfo *II = static_cast<IdentifierInfo *>(Tokens[I].ptr_data);
-        if (const ObjCPropertyDecl *Property
+        if (ObjCPropertyDecl *Property
             = dyn_cast_or_null<ObjCPropertyDecl>(getCursorDecl(Cursors[I]))) {
           if (Property->getPropertyAttributesAsWritten() != 0 &&
               llvm::StringSwitch<bool>(II->getName())
@@ -6131,28 +5500,16 @@ extern "C" {
 void clang_annotateTokens(CXTranslationUnit TU,
                           CXToken *Tokens, unsigned NumTokens,
                           CXCursor *Cursors) {
-  if (isNotUsableTU(TU)) {
-    LOG_BAD_TU(TU);
-    return;
-  }
-  if (NumTokens == 0 || !Tokens || !Cursors) {
-    LOG_FUNC_SECTION { *Log << "<null input>"; }
-    return;
-  }
 
-  LOG_FUNC_SECTION {
-    *Log << TU << ' ';
-    CXSourceLocation bloc = clang_getTokenLocation(TU, Tokens[0]);
-    CXSourceLocation eloc = clang_getTokenLocation(TU, Tokens[NumTokens-1]);
-    *Log << clang_getRange(bloc, eloc);
-  }
+  if (NumTokens == 0 || !Tokens || !Cursors)
+    return;
 
   // Any token we don't specifically annotate will have a NULL cursor.
   CXCursor C = clang_getNullCursor();
   for (unsigned I = 0; I != NumTokens; ++I)
     Cursors[I] = C;
 
-  ASTUnit *CXXUnit = cxtu::getASTUnit(TU);
+  ASTUnit *CXXUnit = static_cast<ASTUnit *>(TU->TUData);
   if (!CXXUnit)
     return;
 
@@ -6177,11 +5534,10 @@ CXLinkageKind clang_getCursorLinkage(CXCursor cursor) {
   if (!clang_isDeclaration(cursor.kind))
     return CXLinkage_Invalid;
 
-  const Decl *D = cxcursor::getCursorDecl(cursor);
-  if (const NamedDecl *ND = dyn_cast_or_null<NamedDecl>(D))
-    switch (ND->getLinkageInternal()) {
-      case NoLinkage:
-      case VisibleNoLinkage: return CXLinkage_NoLinkage;
+  Decl *D = cxcursor::getCursorDecl(cursor);
+  if (NamedDecl *ND = dyn_cast_or_null<NamedDecl>(D))
+    switch (ND->getLinkage()) {
+      case NoLinkage: return CXLinkage_NoLinkage;
       case InternalLinkage: return CXLinkage_Internal;
       case UniqueExternalLinkage: return CXLinkage_UniqueExternal;
       case ExternalLinkage: return CXLinkage_External;
@@ -6245,33 +5601,25 @@ static CXLanguageKind getDeclLanguage(const Decl *D) {
 }
 
 extern "C" {
-
-static CXAvailabilityKind getCursorAvailabilityForDecl(const Decl *D) {
-  if (isa<FunctionDecl>(D) && cast<FunctionDecl>(D)->isDeleted())
-    return CXAvailability_Available;
   
-  switch (D->getAvailability()) {
-  case AR_Available:
-  case AR_NotYetIntroduced:
-    if (const EnumConstantDecl *EnumConst = dyn_cast<EnumConstantDecl>(D))
-      return getCursorAvailabilityForDecl(
-          cast<Decl>(EnumConst->getDeclContext()));
-    return CXAvailability_Available;
-
-  case AR_Deprecated:
-    return CXAvailability_Deprecated;
-
-  case AR_Unavailable:
-    return CXAvailability_NotAvailable;
-  }
-
-  llvm_unreachable("Unknown availability kind!");
-}
-
 enum CXAvailabilityKind clang_getCursorAvailability(CXCursor cursor) {
   if (clang_isDeclaration(cursor.kind))
-    if (const Decl *D = cxcursor::getCursorDecl(cursor))
-      return getCursorAvailabilityForDecl(D);
+    if (Decl *D = cxcursor::getCursorDecl(cursor)) {
+      if (isa<FunctionDecl>(D) && cast<FunctionDecl>(D)->isDeleted())
+        return CXAvailability_Available;
+      
+      switch (D->getAvailability()) {
+      case AR_Available:
+      case AR_NotYetIntroduced:
+        return CXAvailability_Available;
+
+      case AR_Deprecated:
+        return CXAvailability_Deprecated;
+
+      case AR_Unavailable:
+        return CXAvailability_NotAvailable;
+      }
+    }
 
   return CXAvailability_Available;
 }
@@ -6283,80 +5631,17 @@ static CXVersion convertVersion(VersionTuple In) {
 
   Out.Major = In.getMajor();
   
-  Optional<unsigned> Minor = In.getMinor();
-  if (Minor.hasValue())
+  if (llvm::Optional<unsigned> Minor = In.getMinor())
     Out.Minor = *Minor;
   else
     return Out;
 
-  Optional<unsigned> Subminor = In.getSubminor();
-  if (Subminor.hasValue())
+  if (llvm::Optional<unsigned> Subminor = In.getSubminor())
     Out.Subminor = *Subminor;
   
   return Out;
 }
-
-static int getCursorPlatformAvailabilityForDecl(const Decl *D,
-                                                int *always_deprecated,
-                                                CXString *deprecated_message,
-                                                int *always_unavailable,
-                                                CXString *unavailable_message,
-                                           CXPlatformAvailability *availability,
-                                                int availability_size) {
-  bool HadAvailAttr = false;
-  int N = 0;
-  for (auto A : D->attrs()) {
-    if (DeprecatedAttr *Deprecated = dyn_cast<DeprecatedAttr>(A)) {
-      HadAvailAttr = true;
-      if (always_deprecated)
-        *always_deprecated = 1;
-      if (deprecated_message) {
-        clang_disposeString(*deprecated_message);
-        *deprecated_message = cxstring::createDup(Deprecated->getMessage());
-      }
-      continue;
-    }
-    
-    if (UnavailableAttr *Unavailable = dyn_cast<UnavailableAttr>(A)) {
-      HadAvailAttr = true;
-      if (always_unavailable)
-        *always_unavailable = 1;
-      if (unavailable_message) {
-        clang_disposeString(*unavailable_message);
-        *unavailable_message = cxstring::createDup(Unavailable->getMessage());
-      }
-      continue;
-    }
-    
-    if (AvailabilityAttr *Avail = dyn_cast<AvailabilityAttr>(A)) {
-      HadAvailAttr = true;
-      if (N < availability_size) {
-        availability[N].Platform
-          = cxstring::createDup(Avail->getPlatform()->getName());
-        availability[N].Introduced = convertVersion(Avail->getIntroduced());
-        availability[N].Deprecated = convertVersion(Avail->getDeprecated());
-        availability[N].Obsoleted = convertVersion(Avail->getObsoleted());
-        availability[N].Unavailable = Avail->getUnavailable();
-        availability[N].Message = cxstring::createDup(Avail->getMessage());
-      }
-      ++N;
-    }
-  }
-
-  if (!HadAvailAttr)
-    if (const EnumConstantDecl *EnumConst = dyn_cast<EnumConstantDecl>(D))
-      return getCursorPlatformAvailabilityForDecl(
-                                        cast<Decl>(EnumConst->getDeclContext()),
-                                                  always_deprecated,
-                                                  deprecated_message,
-                                                  always_unavailable,
-                                                  unavailable_message,
-                                                  availability,
-                                                  availability_size);
   
-  return N;
-}
-
 int clang_getCursorPlatformAvailability(CXCursor cursor,
                                         int *always_deprecated,
                                         CXString *deprecated_message,
@@ -6367,25 +5652,55 @@ int clang_getCursorPlatformAvailability(CXCursor cursor,
   if (always_deprecated)
     *always_deprecated = 0;
   if (deprecated_message)
-    *deprecated_message = cxstring::createEmpty();
+    *deprecated_message = cxstring::createCXString("", /*DupString=*/false);
   if (always_unavailable)
     *always_unavailable = 0;
   if (unavailable_message)
-    *unavailable_message = cxstring::createEmpty();
-
+    *unavailable_message = cxstring::createCXString("", /*DupString=*/false);
+  
   if (!clang_isDeclaration(cursor.kind))
     return 0;
-
-  const Decl *D = cxcursor::getCursorDecl(cursor);
+  
+  Decl *D = cxcursor::getCursorDecl(cursor);
   if (!D)
     return 0;
-
-  return getCursorPlatformAvailabilityForDecl(D, always_deprecated,
-                                              deprecated_message,
-                                              always_unavailable,
-                                              unavailable_message,
-                                              availability,
-                                              availability_size);
+  
+  int N = 0;
+  for (Decl::attr_iterator A = D->attr_begin(), AEnd = D->attr_end(); A != AEnd;
+       ++A) {
+    if (DeprecatedAttr *Deprecated = dyn_cast<DeprecatedAttr>(*A)) {
+      if (always_deprecated)
+        *always_deprecated = 1;
+      if (deprecated_message)
+        *deprecated_message = cxstring::createCXString(Deprecated->getMessage());
+      continue;
+    }
+    
+    if (UnavailableAttr *Unavailable = dyn_cast<UnavailableAttr>(*A)) {
+      if (always_unavailable)
+        *always_unavailable = 1;
+      if (unavailable_message) {
+        *unavailable_message
+          = cxstring::createCXString(Unavailable->getMessage());
+      }
+      continue;
+    }
+    
+    if (AvailabilityAttr *Avail = dyn_cast<AvailabilityAttr>(*A)) {
+      if (N < availability_size) {
+        availability[N].Platform
+          = cxstring::createCXString(Avail->getPlatform()->getName());
+        availability[N].Introduced = convertVersion(Avail->getIntroduced());
+        availability[N].Deprecated = convertVersion(Avail->getDeprecated());
+        availability[N].Obsoleted = convertVersion(Avail->getObsoleted());
+        availability[N].Unavailable = Avail->getUnavailable();
+        availability[N].Message = cxstring::createCXString(Avail->getMessage());
+      }
+      ++N;
+    }
+  }
+  
+  return N;
 }
   
 void clang_disposeCXPlatformAvailability(CXPlatformAvailability *availability) {
@@ -6403,15 +5718,15 @@ CXLanguageKind clang_getCursorLanguage(CXCursor cursor) {
  /// \brief If the given cursor is the "templated" declaration
  /// descibing a class or function template, return the class or
  /// function template.
-static const Decl *maybeGetTemplateCursor(const Decl *D) {
+static Decl *maybeGetTemplateCursor(Decl *D) {
   if (!D)
-    return nullptr;
+    return 0;
 
-  if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
+  if (FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
     if (FunctionTemplateDecl *FunTmpl = FD->getDescribedFunctionTemplate())
       return FunTmpl;
 
-  if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D))
+  if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D))
     if (ClassTemplateDecl *ClassTmpl = RD->getDescribedClassTemplate())
       return ClassTmpl;
 
@@ -6420,8 +5735,8 @@ static const Decl *maybeGetTemplateCursor(const Decl *D) {
 
 CXCursor clang_getCursorSemanticParent(CXCursor cursor) {
   if (clang_isDeclaration(cursor.kind)) {
-    if (const Decl *D = getCursorDecl(cursor)) {
-      const DeclContext *DC = D->getDeclContext();
+    if (Decl *D = getCursorDecl(cursor)) {
+      DeclContext *DC = D->getDeclContext();
       if (!DC)
         return clang_getNullCursor();
 
@@ -6431,7 +5746,7 @@ CXCursor clang_getCursorSemanticParent(CXCursor cursor) {
   }
   
   if (clang_isStatement(cursor.kind) || clang_isExpression(cursor.kind)) {
-    if (const Decl *D = getCursorDecl(cursor))
+    if (Decl *D = getCursorDecl(cursor))
       return MakeCXCursor(D, getCursorTU(cursor));
   }
   
@@ -6440,8 +5755,8 @@ CXCursor clang_getCursorSemanticParent(CXCursor cursor) {
 
 CXCursor clang_getCursorLexicalParent(CXCursor cursor) {
   if (clang_isDeclaration(cursor.kind)) {
-    if (const Decl *D = getCursorDecl(cursor)) {
-      const DeclContext *DC = D->getLexicalDeclContext();
+    if (Decl *D = getCursorDecl(cursor)) {
+      DeclContext *DC = D->getLexicalDeclContext();
       if (!DC)
         return clang_getNullCursor();
 
@@ -6457,89 +5772,10 @@ CXCursor clang_getCursorLexicalParent(CXCursor cursor) {
 
 CXFile clang_getIncludedFile(CXCursor cursor) {
   if (cursor.kind != CXCursor_InclusionDirective)
-    return nullptr;
-
-  const InclusionDirective *ID = getCursorInclusionDirective(cursor);
-  return const_cast<FileEntry *>(ID->getFile());
-}
-
-unsigned clang_Cursor_getObjCPropertyAttributes(CXCursor C, unsigned reserved) {
-  if (C.kind != CXCursor_ObjCPropertyDecl)
-    return CXObjCPropertyAttr_noattr;
-
-  unsigned Result = CXObjCPropertyAttr_noattr;
-  const ObjCPropertyDecl *PD = dyn_cast<ObjCPropertyDecl>(getCursorDecl(C));
-  ObjCPropertyDecl::PropertyAttributeKind Attr =
-      PD->getPropertyAttributesAsWritten();
-
-#define SET_CXOBJCPROP_ATTR(A) \
-  if (Attr & ObjCPropertyDecl::OBJC_PR_##A) \
-    Result |= CXObjCPropertyAttr_##A
-  SET_CXOBJCPROP_ATTR(readonly);
-  SET_CXOBJCPROP_ATTR(getter);
-  SET_CXOBJCPROP_ATTR(assign);
-  SET_CXOBJCPROP_ATTR(readwrite);
-  SET_CXOBJCPROP_ATTR(retain);
-  SET_CXOBJCPROP_ATTR(copy);
-  SET_CXOBJCPROP_ATTR(nonatomic);
-  SET_CXOBJCPROP_ATTR(setter);
-  SET_CXOBJCPROP_ATTR(atomic);
-  SET_CXOBJCPROP_ATTR(weak);
-  SET_CXOBJCPROP_ATTR(strong);
-  SET_CXOBJCPROP_ATTR(unsafe_unretained);
-#undef SET_CXOBJCPROP_ATTR
-
-  return Result;
-}
-
-unsigned clang_Cursor_getObjCDeclQualifiers(CXCursor C) {
-  if (!clang_isDeclaration(C.kind))
-    return CXObjCDeclQualifier_None;
-
-  Decl::ObjCDeclQualifier QT = Decl::OBJC_TQ_None;
-  const Decl *D = getCursorDecl(C);
-  if (const ObjCMethodDecl *MD = dyn_cast<ObjCMethodDecl>(D))
-    QT = MD->getObjCDeclQualifier();
-  else if (const ParmVarDecl *PD = dyn_cast<ParmVarDecl>(D))
-    QT = PD->getObjCDeclQualifier();
-  if (QT == Decl::OBJC_TQ_None)
-    return CXObjCDeclQualifier_None;
-
-  unsigned Result = CXObjCDeclQualifier_None;
-  if (QT & Decl::OBJC_TQ_In) Result |= CXObjCDeclQualifier_In;
-  if (QT & Decl::OBJC_TQ_Inout) Result |= CXObjCDeclQualifier_Inout;
-  if (QT & Decl::OBJC_TQ_Out) Result |= CXObjCDeclQualifier_Out;
-  if (QT & Decl::OBJC_TQ_Bycopy) Result |= CXObjCDeclQualifier_Bycopy;
-  if (QT & Decl::OBJC_TQ_Byref) Result |= CXObjCDeclQualifier_Byref;
-  if (QT & Decl::OBJC_TQ_Oneway) Result |= CXObjCDeclQualifier_Oneway;
-
-  return Result;
-}
-
-unsigned clang_Cursor_isObjCOptional(CXCursor C) {
-  if (!clang_isDeclaration(C.kind))
     return 0;
-
-  const Decl *D = getCursorDecl(C);
-  if (const ObjCPropertyDecl *PD = dyn_cast<ObjCPropertyDecl>(D))
-    return PD->getPropertyImplementation() == ObjCPropertyDecl::Optional;
-  if (const ObjCMethodDecl *MD = dyn_cast<ObjCMethodDecl>(D))
-    return MD->getImplementationControl() == ObjCMethodDecl::Optional;
-
-  return 0;
-}
-
-unsigned clang_Cursor_isVariadic(CXCursor C) {
-  if (!clang_isDeclaration(C.kind))
-    return 0;
-
-  const Decl *D = getCursorDecl(C);
-  if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
-    return FD->isVariadic();
-  if (const ObjCMethodDecl *MD = dyn_cast<ObjCMethodDecl>(D))
-    return MD->isVariadic();
-
-  return 0;
+  
+  InclusionDirective *ID = getCursorInclusionDirective(cursor);
+  return (void *)ID->getFile();
 }
 
 CXSourceRange clang_Cursor_getCommentRange(CXCursor C) {
@@ -6557,7 +5793,7 @@ CXSourceRange clang_Cursor_getCommentRange(CXCursor C) {
 
 CXString clang_Cursor_getRawCommentText(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
-    return cxstring::createNull();
+    return createCXString((const char *) NULL);
 
   const Decl *D = getCursorDecl(C);
   ASTContext &Context = getCursorContext(C);
@@ -6567,12 +5803,12 @@ CXString clang_Cursor_getRawCommentText(CXCursor C) {
 
   // Don't duplicate the string because RawText points directly into source
   // code.
-  return cxstring::createRef(RawText);
+  return createCXString(RawText, false);
 }
 
 CXString clang_Cursor_getBriefCommentText(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
-    return cxstring::createNull();
+    return createCXString((const char *) NULL);
 
   const Decl *D = getCursorDecl(C);
   const ASTContext &Context = getCursorContext(C);
@@ -6583,107 +5819,69 @@ CXString clang_Cursor_getBriefCommentText(CXCursor C) {
 
     // Don't duplicate the string because RawComment ensures that this memory
     // will not go away.
-    return cxstring::createRef(BriefText);
+    return createCXString(BriefText, false);
   }
 
-  return cxstring::createNull();
+  return createCXString((const char *) NULL);
+}
+
+CXComment clang_Cursor_getParsedComment(CXCursor C) {
+  if (!clang_isDeclaration(C.kind))
+    return cxcomment::createCXComment(NULL, NULL);
+
+  const Decl *D = getCursorDecl(C);
+  const ASTContext &Context = getCursorContext(C);
+  const comments::FullComment *FC = Context.getCommentForDecl(D, /*PP=*/ NULL);
+
+  return cxcomment::createCXComment(FC, getCursorTU(C));
 }
 
 CXModule clang_Cursor_getModule(CXCursor C) {
   if (C.kind == CXCursor_ModuleImportDecl) {
-    if (const ImportDecl *ImportD =
-            dyn_cast_or_null<ImportDecl>(getCursorDecl(C)))
+    if (ImportDecl *ImportD = dyn_cast_or_null<ImportDecl>(getCursorDecl(C)))
       return ImportD->getImportedModule();
   }
 
-  return nullptr;
-}
-
-CXModule clang_getModuleForFile(CXTranslationUnit TU, CXFile File) {
-  if (isNotUsableTU(TU)) {
-    LOG_BAD_TU(TU);
-    return nullptr;
-  }
-  if (!File)
-    return nullptr;
-  FileEntry *FE = static_cast<FileEntry *>(File);
-  
-  ASTUnit &Unit = *cxtu::getASTUnit(TU);
-  HeaderSearch &HS = Unit.getPreprocessor().getHeaderSearchInfo();
-  ModuleMap::KnownHeader Header = HS.findModuleForHeader(FE);
-  
-  if (Module *Mod = Header.getModule()) {
-    if (Header.getRole() != ModuleMap::ExcludedHeader)
-      return Mod;
-  }
-  return nullptr;
-}
-
-CXFile clang_Module_getASTFile(CXModule CXMod) {
-  if (!CXMod)
-    return nullptr;
-  Module *Mod = static_cast<Module*>(CXMod);
-  return const_cast<FileEntry *>(Mod->getASTFile());
+  return 0;
 }
 
 CXModule clang_Module_getParent(CXModule CXMod) {
   if (!CXMod)
-    return nullptr;
+    return 0;
   Module *Mod = static_cast<Module*>(CXMod);
   return Mod->Parent;
 }
 
 CXString clang_Module_getName(CXModule CXMod) {
   if (!CXMod)
-    return cxstring::createEmpty();
+    return createCXString("");
   Module *Mod = static_cast<Module*>(CXMod);
-  return cxstring::createDup(Mod->Name);
+  return createCXString(Mod->Name);
 }
 
 CXString clang_Module_getFullName(CXModule CXMod) {
   if (!CXMod)
-    return cxstring::createEmpty();
+    return createCXString("");
   Module *Mod = static_cast<Module*>(CXMod);
-  return cxstring::createDup(Mod->getFullModuleName());
+  return createCXString(Mod->getFullModuleName());
 }
 
-int clang_Module_isSystem(CXModule CXMod) {
+unsigned clang_Module_getNumTopLevelHeaders(CXModule CXMod) {
   if (!CXMod)
     return 0;
   Module *Mod = static_cast<Module*>(CXMod);
-  return Mod->IsSystem;
+  return Mod->TopHeaders.size();
 }
 
-unsigned clang_Module_getNumTopLevelHeaders(CXTranslationUnit TU,
-                                            CXModule CXMod) {
-  if (isNotUsableTU(TU)) {
-    LOG_BAD_TU(TU);
-    return 0;
-  }
+CXFile clang_Module_getTopLevelHeader(CXModule CXMod, unsigned Index) {
   if (!CXMod)
     return 0;
   Module *Mod = static_cast<Module*>(CXMod);
-  FileManager &FileMgr = cxtu::getASTUnit(TU)->getFileManager();
-  ArrayRef<const FileEntry *> TopHeaders = Mod->getTopHeaders(FileMgr);
-  return TopHeaders.size();
-}
 
-CXFile clang_Module_getTopLevelHeader(CXTranslationUnit TU,
-                                      CXModule CXMod, unsigned Index) {
-  if (isNotUsableTU(TU)) {
-    LOG_BAD_TU(TU);
-    return nullptr;
-  }
-  if (!CXMod)
-    return nullptr;
-  Module *Mod = static_cast<Module*>(CXMod);
-  FileManager &FileMgr = cxtu::getASTUnit(TU)->getFileManager();
+  if (Index < Mod->TopHeaders.size())
+    return const_cast<FileEntry *>(Mod->TopHeaders[Index]);
 
-  ArrayRef<const FileEntry *> TopHeaders = Mod->getTopHeaders(FileMgr);
-  if (Index < TopHeaders.size())
-    return const_cast<FileEntry *>(TopHeaders[Index]);
-
-  return nullptr;
+  return 0;
 }
 
 } // end: extern "C"
@@ -6693,33 +5891,16 @@ CXFile clang_Module_getTopLevelHeader(CXTranslationUnit TU,
 //===----------------------------------------------------------------------===//
 
 extern "C" {
-unsigned clang_CXXMethod_isPureVirtual(CXCursor C) {
-  if (!clang_isDeclaration(C.kind))
-    return 0;
-
-  const Decl *D = cxcursor::getCursorDecl(C);
-  const CXXMethodDecl *Method =
-      D ? dyn_cast_or_null<CXXMethodDecl>(D->getAsFunction()) : nullptr;
-  return (Method && Method->isVirtual() && Method->isPure()) ? 1 : 0;
-}
-
-unsigned clang_CXXMethod_isConst(CXCursor C) {
-  if (!clang_isDeclaration(C.kind))
-    return 0;
-
-  const Decl *D = cxcursor::getCursorDecl(C);
-  const CXXMethodDecl *Method =
-      D ? dyn_cast_or_null<CXXMethodDecl>(D->getAsFunction()) : nullptr;
-  return (Method && (Method->getTypeQualifiers() & Qualifiers::Const)) ? 1 : 0;
-}
-
 unsigned clang_CXXMethod_isStatic(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
     return 0;
   
-  const Decl *D = cxcursor::getCursorDecl(C);
-  const CXXMethodDecl *Method =
-      D ? dyn_cast_or_null<CXXMethodDecl>(D->getAsFunction()) : nullptr;
+  CXXMethodDecl *Method = 0;
+  Decl *D = cxcursor::getCursorDecl(C);
+  if (FunctionTemplateDecl *FunTmpl = dyn_cast_or_null<FunctionTemplateDecl>(D))
+    Method = dyn_cast<CXXMethodDecl>(FunTmpl->getTemplatedDecl());
+  else
+    Method = dyn_cast_or_null<CXXMethodDecl>(D);
   return (Method && Method->isStatic()) ? 1 : 0;
 }
 
@@ -6727,9 +5908,12 @@ unsigned clang_CXXMethod_isVirtual(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
     return 0;
   
-  const Decl *D = cxcursor::getCursorDecl(C);
-  const CXXMethodDecl *Method =
-      D ? dyn_cast_or_null<CXXMethodDecl>(D->getAsFunction()) : nullptr;
+  CXXMethodDecl *Method = 0;
+  Decl *D = cxcursor::getCursorDecl(C);
+  if (FunctionTemplateDecl *FunTmpl = dyn_cast_or_null<FunctionTemplateDecl>(D))
+    Method = dyn_cast<CXXMethodDecl>(FunTmpl->getTemplatedDecl());
+  else
+    Method = dyn_cast_or_null<CXXMethodDecl>(D);
   return (Method && Method->isVirtual()) ? 1 : 0;
 }
 } // end: extern "C"
@@ -6743,7 +5927,7 @@ CXType clang_getIBOutletCollectionType(CXCursor C) {
   if (C.kind != CXCursor_IBOutletCollectionAttr)
     return cxtype::MakeCXType(QualType(), cxcursor::getCursorTU(C));
   
-  const IBOutletCollectionAttr *A =
+  IBOutletCollectionAttr *A =
     cast<IBOutletCollectionAttr>(cxcursor::getCursorAttr(C));
   
   return cxtype::MakeCXType(A->getInterface(), cxcursor::getCursorTU(C));  
@@ -6815,14 +5999,13 @@ const char *clang_getTUResourceUsageName(CXTUResourceUsageKind kind) {
 }
 
 CXTUResourceUsage clang_getCXTUResourceUsage(CXTranslationUnit TU) {
-  if (isNotUsableTU(TU)) {
-    LOG_BAD_TU(TU);
-    CXTUResourceUsage usage = { (void*) nullptr, 0, nullptr };
+  if (!TU) {
+    CXTUResourceUsage usage = { (void*) 0, 0, 0 };
     return usage;
   }
   
-  ASTUnit *astUnit = cxtu::getASTUnit(TU);
-  std::unique_ptr<MemUsageEntries> entries(new MemUsageEntries());
+  ASTUnit *astUnit = static_cast<ASTUnit*>(TU->TUData);
+  OwningPtr<MemUsageEntries> entries(new MemUsageEntries());
   ASTContext &astContext = astUnit->getASTContext();
   
   // How much memory is used by AST nodes and types?
@@ -6844,7 +6027,7 @@ CXTUResourceUsage clang_getCXTUResourceUsage(CXTranslationUnit TU) {
   // How much memory is used for caching global code completion results?
   unsigned long completionBytes = 0;
   if (GlobalCodeCompletionAllocator *completionAllocator =
-      astUnit->getCachedCompletionAllocator().get()) {
+      astUnit->getCachedCompletionAllocator().getPtr()) {
     completionBytes = completionAllocator->getTotalMemory();
   }
   createCXTUResourceUsageEntry(*entries,
@@ -6899,63 +6082,17 @@ CXTUResourceUsage clang_getCXTUResourceUsage(CXTranslationUnit TU) {
   createCXTUResourceUsageEntry(*entries,
                                CXTUResourceUsage_Preprocessor_HeaderSearch,
                                pp.getHeaderSearchInfo().getTotalMemory());
-
+  
   CXTUResourceUsage usage = { (void*) entries.get(),
                             (unsigned) entries->size(),
-                            entries->size() ? &(*entries)[0] : nullptr };
-  entries.release();
+                            entries->size() ? &(*entries)[0] : 0 };
+  entries.take();
   return usage;
 }
 
 void clang_disposeCXTUResourceUsage(CXTUResourceUsage usage) {
   if (usage.data)
     delete (MemUsageEntries*) usage.data;
-}
-
-CXSourceRangeList *clang_getSkippedRanges(CXTranslationUnit TU, CXFile file) {
-  CXSourceRangeList *skipped = new CXSourceRangeList;
-  skipped->count = 0;
-  skipped->ranges = nullptr;
-
-  if (isNotUsableTU(TU)) {
-    LOG_BAD_TU(TU);
-    return skipped;
-  }
-
-  if (!file)
-    return skipped;
-
-  ASTUnit *astUnit = cxtu::getASTUnit(TU);
-  PreprocessingRecord *ppRec = astUnit->getPreprocessor().getPreprocessingRecord();
-  if (!ppRec)
-    return skipped;
-
-  ASTContext &Ctx = astUnit->getASTContext();
-  SourceManager &sm = Ctx.getSourceManager();
-  FileEntry *fileEntry = static_cast<FileEntry *>(file);
-  FileID wantedFileID = sm.translateFile(fileEntry);
-
-  const std::vector<SourceRange> &SkippedRanges = ppRec->getSkippedRanges();
-  std::vector<SourceRange> wantedRanges;
-  for (std::vector<SourceRange>::const_iterator i = SkippedRanges.begin(), ei = SkippedRanges.end();
-       i != ei; ++i) {
-    if (sm.getFileID(i->getBegin()) == wantedFileID || sm.getFileID(i->getEnd()) == wantedFileID)
-      wantedRanges.push_back(*i);
-  }
-
-  skipped->count = wantedRanges.size();
-  skipped->ranges = new CXSourceRange[skipped->count];
-  for (unsigned i = 0, ei = skipped->count; i != ei; ++i)
-    skipped->ranges[i] = cxloc::translateSourceRange(Ctx, wantedRanges[i]);
-
-  return skipped;
-}
-
-void clang_disposeSourceRangeList(CXSourceRangeList *ranges) {
-  if (ranges) {
-    delete[] ranges->ranges;
-    delete ranges;
-  }
 }
 
 } // end extern "C"
@@ -7003,7 +6140,8 @@ void clang::setThreadBackgroundPriority() {
   if (getenv("LIBCLANG_BGPRIO_DISABLE"))
     return;
 
-#ifdef USE_DARWIN_THREADS
+  // FIXME: Move to llvm/Support and make it cross-platform.
+#ifdef __APPLE__
   setpriority(PRIO_DARWIN_THREAD, 0, PRIO_DARWIN_BG);
 #endif
 }
@@ -7015,7 +6153,7 @@ void cxindex::printDiagsToStderr(ASTUnit *Unit) {
   for (ASTUnit::stored_diag_iterator D = Unit->stored_diag_begin(), 
                                   DEnd = Unit->stored_diag_end();
        D != DEnd; ++D) {
-    CXStoredDiagnostic Diag(*D, Unit->getLangOpts());
+    CXStoredDiagnostic Diag(*D, Unit->getASTContext().getLangOpts());
     CXString Msg = clang_formatDiagnostic(&Diag,
                                 clang_defaultDiagnosticDisplayOptions());
     fprintf(stderr, "%s\n", clang_getCString(Msg));
@@ -7029,206 +6167,11 @@ void cxindex::printDiagsToStderr(ASTUnit *Unit) {
 #endif
 }
 
-MacroInfo *cxindex::getMacroInfo(const IdentifierInfo &II,
-                                 SourceLocation MacroDefLoc,
-                                 CXTranslationUnit TU){
-  if (MacroDefLoc.isInvalid() || !TU)
-    return nullptr;
-  if (!II.hadMacroDefinition())
-    return nullptr;
-
-  ASTUnit *Unit = cxtu::getASTUnit(TU);
-  Preprocessor &PP = Unit->getPreprocessor();
-  MacroDirective *MD = PP.getMacroDirectiveHistory(&II);
-  if (MD) {
-    for (MacroDirective::DefInfo
-           Def = MD->getDefinition(); Def; Def = Def.getPreviousDefinition()) {
-      if (MacroDefLoc == Def.getMacroInfo()->getDefinitionLoc())
-        return Def.getMacroInfo();
-    }
-  }
-
-  return nullptr;
-}
-
-const MacroInfo *cxindex::getMacroInfo(const MacroDefinition *MacroDef,
-                                       CXTranslationUnit TU) {
-  if (!MacroDef || !TU)
-    return nullptr;
-  const IdentifierInfo *II = MacroDef->getName();
-  if (!II)
-    return nullptr;
-
-  return getMacroInfo(*II, MacroDef->getLocation(), TU);
-}
-
-MacroDefinition *cxindex::checkForMacroInMacroDefinition(const MacroInfo *MI,
-                                                         const Token &Tok,
-                                                         CXTranslationUnit TU) {
-  if (!MI || !TU)
-    return nullptr;
-  if (Tok.isNot(tok::raw_identifier))
-    return nullptr;
-
-  if (MI->getNumTokens() == 0)
-    return nullptr;
-  SourceRange DefRange(MI->getReplacementToken(0).getLocation(),
-                       MI->getDefinitionEndLoc());
-  ASTUnit *Unit = cxtu::getASTUnit(TU);
-
-  // Check that the token is inside the definition and not its argument list.
-  SourceManager &SM = Unit->getSourceManager();
-  if (SM.isBeforeInTranslationUnit(Tok.getLocation(), DefRange.getBegin()))
-    return nullptr;
-  if (SM.isBeforeInTranslationUnit(DefRange.getEnd(), Tok.getLocation()))
-    return nullptr;
-
-  Preprocessor &PP = Unit->getPreprocessor();
-  PreprocessingRecord *PPRec = PP.getPreprocessingRecord();
-  if (!PPRec)
-    return nullptr;
-
-  IdentifierInfo &II = PP.getIdentifierTable().get(Tok.getRawIdentifier());
-  if (!II.hadMacroDefinition())
-    return nullptr;
-
-  // Check that the identifier is not one of the macro arguments.
-  if (std::find(MI->arg_begin(), MI->arg_end(), &II) != MI->arg_end())
-    return nullptr;
-
-  MacroDirective *InnerMD = PP.getMacroDirectiveHistory(&II);
-  if (!InnerMD)
-    return nullptr;
-
-  return PPRec->findMacroDefinition(InnerMD->getMacroInfo());
-}
-
-MacroDefinition *cxindex::checkForMacroInMacroDefinition(const MacroInfo *MI,
-                                                         SourceLocation Loc,
-                                                         CXTranslationUnit TU) {
-  if (Loc.isInvalid() || !MI || !TU)
-    return nullptr;
-
-  if (MI->getNumTokens() == 0)
-    return nullptr;
-  ASTUnit *Unit = cxtu::getASTUnit(TU);
-  Preprocessor &PP = Unit->getPreprocessor();
-  if (!PP.getPreprocessingRecord())
-    return nullptr;
-  Loc = Unit->getSourceManager().getSpellingLoc(Loc);
-  Token Tok;
-  if (PP.getRawToken(Loc, Tok))
-    return nullptr;
-
-  return checkForMacroInMacroDefinition(MI, Tok, TU);
-}
-
 extern "C" {
 
 CXString clang_getClangVersion() {
-  return cxstring::createDup(getClangFullVersion());
+  return createCXString(getClangFullVersion());
 }
 
 } // end: extern "C"
 
-Logger &cxindex::Logger::operator<<(CXTranslationUnit TU) {
-  if (TU) {
-    if (ASTUnit *Unit = cxtu::getASTUnit(TU)) {
-      LogOS << '<' << Unit->getMainFileName() << '>';
-      if (Unit->isMainFileAST())
-        LogOS << " (" << Unit->getASTFileName() << ')';
-      return *this;
-    }
-  } else {
-    LogOS << "<NULL TU>";
-  }
-  return *this;
-}
-
-Logger &cxindex::Logger::operator<<(const FileEntry *FE) {
-  *this << FE->getName();
-  return *this;
-}
-
-Logger &cxindex::Logger::operator<<(CXCursor cursor) {
-  CXString cursorName = clang_getCursorDisplayName(cursor);
-  *this << cursorName << "@" << clang_getCursorLocation(cursor);
-  clang_disposeString(cursorName);
-  return *this;
-}
-
-Logger &cxindex::Logger::operator<<(CXSourceLocation Loc) {
-  CXFile File;
-  unsigned Line, Column;
-  clang_getFileLocation(Loc, &File, &Line, &Column, nullptr);
-  CXString FileName = clang_getFileName(File);
-  *this << llvm::format("(%s:%d:%d)", clang_getCString(FileName), Line, Column);
-  clang_disposeString(FileName);
-  return *this;
-}
-
-Logger &cxindex::Logger::operator<<(CXSourceRange range) {
-  CXSourceLocation BLoc = clang_getRangeStart(range);
-  CXSourceLocation ELoc = clang_getRangeEnd(range);
-
-  CXFile BFile;
-  unsigned BLine, BColumn;
-  clang_getFileLocation(BLoc, &BFile, &BLine, &BColumn, nullptr);
-
-  CXFile EFile;
-  unsigned ELine, EColumn;
-  clang_getFileLocation(ELoc, &EFile, &ELine, &EColumn, nullptr);
-
-  CXString BFileName = clang_getFileName(BFile);
-  if (BFile == EFile) {
-    *this << llvm::format("[%s %d:%d-%d:%d]", clang_getCString(BFileName),
-                         BLine, BColumn, ELine, EColumn);
-  } else {
-    CXString EFileName = clang_getFileName(EFile);
-    *this << llvm::format("[%s:%d:%d - ", clang_getCString(BFileName),
-                          BLine, BColumn)
-          << llvm::format("%s:%d:%d]", clang_getCString(EFileName),
-                          ELine, EColumn);
-    clang_disposeString(EFileName);
-  }
-  clang_disposeString(BFileName);
-  return *this;
-}
-
-Logger &cxindex::Logger::operator<<(CXString Str) {
-  *this << clang_getCString(Str);
-  return *this;
-}
-
-Logger &cxindex::Logger::operator<<(const llvm::format_object_base &Fmt) {
-  LogOS << Fmt;
-  return *this;
-}
-
-static llvm::ManagedStatic<llvm::sys::Mutex> LoggingMutex;
-
-cxindex::Logger::~Logger() {
-  LogOS.flush();
-
-  llvm::sys::ScopedLock L(*LoggingMutex);
-
-  static llvm::TimeRecord sBeginTR = llvm::TimeRecord::getCurrentTime();
-
-  raw_ostream &OS = llvm::errs();
-  OS << "[libclang:" << Name << ':';
-
-#ifdef USE_DARWIN_THREADS
-  // TODO: Portability.
-  mach_port_t tid = pthread_mach_thread_np(pthread_self());
-  OS << tid << ':';
-#endif
-
-  llvm::TimeRecord TR = llvm::TimeRecord::getCurrentTime();
-  OS << llvm::format("%7.4f] ", TR.getWallTime() - sBeginTR.getWallTime());
-  OS << Msg.str() << '\n';
-
-  if (Trace) {
-    llvm::sys::PrintStackTrace(stderr);
-    OS << "--------------------------------------------------\n";
-  }
-}

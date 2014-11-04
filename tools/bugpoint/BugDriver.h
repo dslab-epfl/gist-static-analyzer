@@ -13,14 +13,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_TOOLS_BUGPOINT_BUGDRIVER_H
-#define LLVM_TOOLS_BUGPOINT_BUGDRIVER_H
+#ifndef BUGDRIVER_H
+#define BUGDRIVER_H
 
-#include "llvm/IR/ValueMap.h"
+#include "llvm/ADT/ValueMap.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
-#include <memory>
-#include <string>
 #include <vector>
+#include <string>
 
 namespace llvm {
 
@@ -192,7 +191,7 @@ public:
   /// this function.
   ///
   bool createReferenceFile(Module *M, const std::string &Filename
-                                            = "bugpoint.reference.out-%%%%%%%");
+                                            = "bugpoint.reference.out");
 
   /// diffProgram - This method executes the specified module and diffs the
   /// output against the file specified by ReferenceOutputFile.  If the output
@@ -203,7 +202,7 @@ public:
                    const std::string &BitcodeFile = "",
                    const std::string &SharedObj = "",
                    bool RemoveBitcode = false,
-                   std::string *Error = nullptr) const;
+                   std::string *Error = 0) const;
 
   /// EmitProgressBitcode - This function is used to output M to a file named
   /// "bugpoint-ID.bc".
@@ -211,46 +210,41 @@ public:
   void EmitProgressBitcode(const Module *M, const std::string &ID,
                            bool NoFlyer = false) const;
 
-  /// This method clones the current Program and deletes the specified
-  /// instruction from the cloned module.  It then runs a series of cleanup
-  /// passes (ADCE and SimplifyCFG) to eliminate any code which depends on the
-  /// value. The modified module is then returned.
+  /// deleteInstructionFromProgram - This method clones the current Program and
+  /// deletes the specified instruction from the cloned module.  It then runs a
+  /// series of cleanup passes (ADCE and SimplifyCFG) to eliminate any code
+  /// which depends on the value.  The modified module is then returned.
   ///
-  std::unique_ptr<Module> deleteInstructionFromProgram(const Instruction *I,
-                                                       unsigned Simp);
+  Module *deleteInstructionFromProgram(const Instruction *I, unsigned Simp);
 
-  /// This method clones the current Program and performs a series of cleanups
-  /// intended to get rid of extra cruft on the module. If the
-  /// MayModifySemantics argument is true, then the cleanups is allowed to
+  /// performFinalCleanups - This method clones the current Program and performs
+  /// a series of cleanups intended to get rid of extra cruft on the module.  If
+  /// the MayModifySemantics argument is true, then the cleanups is allowed to
   /// modify how the code behaves.
   ///
-  std::unique_ptr<Module> performFinalCleanups(Module *M,
-                                               bool MayModifySemantics = false);
+  Module *performFinalCleanups(Module *M, bool MayModifySemantics = false);
 
-  /// Given a module, extract up to one loop from it into a new function. This
-  /// returns null if there are no extractable loops in the program or if the
-  /// loop extractor crashes.
-  std::unique_ptr<Module> extractLoop(Module *M);
+  /// ExtractLoop - Given a module, extract up to one loop from it into a new
+  /// function.  This returns null if there are no extractable loops in the
+  /// program or if the loop extractor crashes.
+  Module *ExtractLoop(Module *M);
 
-  /// Extract all but the specified basic blocks into their own functions. The
-  /// only detail is that M is actually a module cloned from the one the BBs are
-  /// in, so some mapping needs to be performed. If this operation fails for
-  /// some reason (ie the implementation is buggy), this function should return
-  /// null, otherwise it returns a new Module.
-  std::unique_ptr<Module>
-  extractMappedBlocksFromModule(const std::vector<BasicBlock *> &BBs,
-                                Module *M);
+  /// ExtractMappedBlocksFromModule - Extract all but the specified basic blocks
+  /// into their own functions.  The only detail is that M is actually a module
+  /// cloned from the one the BBs are in, so some mapping needs to be performed.
+  /// If this operation fails for some reason (ie the implementation is buggy),
+  /// this function should return null, otherwise it returns a new Module.
+  Module *ExtractMappedBlocksFromModule(const std::vector<BasicBlock*> &BBs,
+                                        Module *M);
 
-  /// Carefully run the specified set of pass on the specified/ module,
-  /// returning the transformed module on success, or a null pointer on failure.
-  /// If AutoDebugCrashes is set to true, then bugpoint will automatically
-  /// attempt to track down a crashing pass if one exists, and this method will
-  /// never return null.
-  std::unique_ptr<Module> runPassesOn(Module *M,
-                                      const std::vector<std::string> &Passes,
-                                      bool AutoDebugCrashes = false,
-                                      unsigned NumExtraArgs = 0,
-                                      const char *const *ExtraArgs = nullptr);
+  /// runPassesOn - Carefully run the specified set of pass on the specified
+  /// module, returning the transformed module on success, or a null pointer on
+  /// failure.  If AutoDebugCrashes is set to true, then bugpoint will
+  /// automatically attempt to track down a crashing pass if one exists, and
+  /// this method will never return null.
+  Module *runPassesOn(Module *M, const std::vector<std::string> &Passes,
+                      bool AutoDebugCrashes = false, unsigned NumExtraArgs = 0,
+                      const char * const *ExtraArgs = NULL);
 
   /// runPasses - Run the specified passes on Program, outputting a bitcode
   /// file and writting the filename into OutputFile if successful.  If the
@@ -265,7 +259,7 @@ public:
                  const std::vector<std::string> &PassesToRun,
                  std::string &OutputFilename, bool DeleteOutput = false,
                  bool Quiet = false, unsigned NumExtraArgs = 0,
-                 const char * const *ExtraArgs = nullptr) const;
+                 const char * const *ExtraArgs = NULL) const;
                  
   /// runManyPasses - Take the specified pass list and create different 
   /// combinations of passes to compile the program with. Compile the program with
@@ -281,8 +275,6 @@ public:
   /// bitcode file.  If an error occurs, true is returned.
   ///
   bool writeProgramToFile(const std::string &Filename, const Module *M) const;
-  bool writeProgramToFile(const std::string &Filename, int FD,
-                          const Module *M) const;
 
 private:
   /// runPasses - Just like the method above, but this just returns true or
@@ -302,11 +294,12 @@ private:
   bool initializeExecutionEnvironment();
 };
 
-///  Given a bitcode or assembly input filename, parse and return it, or return
-///  null if not possible.
+/// ParseInputFile - Given a bitcode or assembly input filename, parse and
+/// return it, or return null if not possible.
 ///
-std::unique_ptr<Module> parseInputFile(StringRef InputFilename,
-                                       LLVMContext &ctxt);
+Module *ParseInputFile(const std::string &InputFilename,
+                       LLVMContext& ctxt);
+
 
 /// getPassesString - Turn a list of passes into a string which indicates the
 /// command line options that must be passed to add the passes.

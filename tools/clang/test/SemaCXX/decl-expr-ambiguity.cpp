@@ -1,5 +1,4 @@
 // RUN: %clang_cc1 -Wno-int-to-pointer-cast -fsyntax-only -verify -pedantic-errors %s
-// RUN: %clang_cc1 -Wno-int-to-pointer-cast -fsyntax-only -verify -pedantic-errors -x objective-c++ %s
 
 void f() {
   int a;
@@ -33,7 +32,7 @@ void f() {
   extern T f3();
   __typeof(*T()) f4(); // expected-warning {{empty parentheses interpreted as a function declaration}} expected-note {{replace parentheses with an initializer}}
   typedef void *V;
-  __typeof(*V()) f5(); // expected-error {{ISO C++ does not allow indirection on operand of type 'V' (aka 'void *')}}
+  __typeof(*V()) f5();
   T multi1,
     multi2(); // expected-warning {{empty parentheses interpreted as a function declaration}} expected-note {{replace parentheses with an initializer}}
   T(d)[5]; // expected-error {{redefinition of 'd'}}

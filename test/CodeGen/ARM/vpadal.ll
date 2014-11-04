@@ -1,7 +1,7 @@
-; RUN: llc -mtriple=arm-eabi -mattr=+neon %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm -mattr=+neon | FileCheck %s
 
 define <4 x i16> @vpadals8(<4 x i16>* %A, <8 x i8>* %B) nounwind {
-;CHECK-LABEL: vpadals8:
+;CHECK: vpadals8:
 ;CHECK: vpadal.s8
 	%tmp1 = load <4 x i16>* %A
 	%tmp2 = load <8 x i8>* %B
@@ -10,7 +10,7 @@ define <4 x i16> @vpadals8(<4 x i16>* %A, <8 x i8>* %B) nounwind {
 }
 
 define <2 x i32> @vpadals16(<2 x i32>* %A, <4 x i16>* %B) nounwind {
-;CHECK-LABEL: vpadals16:
+;CHECK: vpadals16:
 ;CHECK: vpadal.s16
 	%tmp1 = load <2 x i32>* %A
 	%tmp2 = load <4 x i16>* %B
@@ -19,7 +19,7 @@ define <2 x i32> @vpadals16(<2 x i32>* %A, <4 x i16>* %B) nounwind {
 }
 
 define <1 x i64> @vpadals32(<1 x i64>* %A, <2 x i32>* %B) nounwind {
-;CHECK-LABEL: vpadals32:
+;CHECK: vpadals32:
 ;CHECK: vpadal.s32
 	%tmp1 = load <1 x i64>* %A
 	%tmp2 = load <2 x i32>* %B
@@ -28,7 +28,7 @@ define <1 x i64> @vpadals32(<1 x i64>* %A, <2 x i32>* %B) nounwind {
 }
 
 define <4 x i16> @vpadalu8(<4 x i16>* %A, <8 x i8>* %B) nounwind {
-;CHECK-LABEL: vpadalu8:
+;CHECK: vpadalu8:
 ;CHECK: vpadal.u8
 	%tmp1 = load <4 x i16>* %A
 	%tmp2 = load <8 x i8>* %B
@@ -37,7 +37,7 @@ define <4 x i16> @vpadalu8(<4 x i16>* %A, <8 x i8>* %B) nounwind {
 }
 
 define <2 x i32> @vpadalu16(<2 x i32>* %A, <4 x i16>* %B) nounwind {
-;CHECK-LABEL: vpadalu16:
+;CHECK: vpadalu16:
 ;CHECK: vpadal.u16
 	%tmp1 = load <2 x i32>* %A
 	%tmp2 = load <4 x i16>* %B
@@ -46,7 +46,7 @@ define <2 x i32> @vpadalu16(<2 x i32>* %A, <4 x i16>* %B) nounwind {
 }
 
 define <1 x i64> @vpadalu32(<1 x i64>* %A, <2 x i32>* %B) nounwind {
-;CHECK-LABEL: vpadalu32:
+;CHECK: vpadalu32:
 ;CHECK: vpadal.u32
 	%tmp1 = load <1 x i64>* %A
 	%tmp2 = load <2 x i32>* %B
@@ -55,7 +55,7 @@ define <1 x i64> @vpadalu32(<1 x i64>* %A, <2 x i32>* %B) nounwind {
 }
 
 define <8 x i16> @vpadalQs8(<8 x i16>* %A, <16 x i8>* %B) nounwind {
-;CHECK-LABEL: vpadalQs8:
+;CHECK: vpadalQs8:
 ;CHECK: vpadal.s8
 	%tmp1 = load <8 x i16>* %A
 	%tmp2 = load <16 x i8>* %B
@@ -64,7 +64,7 @@ define <8 x i16> @vpadalQs8(<8 x i16>* %A, <16 x i8>* %B) nounwind {
 }
 
 define <4 x i32> @vpadalQs16(<4 x i32>* %A, <8 x i16>* %B) nounwind {
-;CHECK-LABEL: vpadalQs16:
+;CHECK: vpadalQs16:
 ;CHECK: vpadal.s16
 	%tmp1 = load <4 x i32>* %A
 	%tmp2 = load <8 x i16>* %B
@@ -73,7 +73,7 @@ define <4 x i32> @vpadalQs16(<4 x i32>* %A, <8 x i16>* %B) nounwind {
 }
 
 define <2 x i64> @vpadalQs32(<2 x i64>* %A, <4 x i32>* %B) nounwind {
-;CHECK-LABEL: vpadalQs32:
+;CHECK: vpadalQs32:
 ;CHECK: vpadal.s32
 	%tmp1 = load <2 x i64>* %A
 	%tmp2 = load <4 x i32>* %B
@@ -82,7 +82,7 @@ define <2 x i64> @vpadalQs32(<2 x i64>* %A, <4 x i32>* %B) nounwind {
 }
 
 define <8 x i16> @vpadalQu8(<8 x i16>* %A, <16 x i8>* %B) nounwind {
-;CHECK-LABEL: vpadalQu8:
+;CHECK: vpadalQu8:
 ;CHECK: vpadal.u8
 	%tmp1 = load <8 x i16>* %A
 	%tmp2 = load <16 x i8>* %B
@@ -91,7 +91,7 @@ define <8 x i16> @vpadalQu8(<8 x i16>* %A, <16 x i8>* %B) nounwind {
 }
 
 define <4 x i32> @vpadalQu16(<4 x i32>* %A, <8 x i16>* %B) nounwind {
-;CHECK-LABEL: vpadalQu16:
+;CHECK: vpadalQu16:
 ;CHECK: vpadal.u16
 	%tmp1 = load <4 x i32>* %A
 	%tmp2 = load <8 x i16>* %B
@@ -100,7 +100,7 @@ define <4 x i32> @vpadalQu16(<4 x i32>* %A, <8 x i16>* %B) nounwind {
 }
 
 define <2 x i64> @vpadalQu32(<2 x i64>* %A, <4 x i32>* %B) nounwind {
-;CHECK-LABEL: vpadalQu32:
+;CHECK: vpadalQu32:
 ;CHECK: vpadal.u32
 	%tmp1 = load <2 x i64>* %A
 	%tmp2 = load <4 x i32>* %B

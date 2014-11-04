@@ -55,11 +55,6 @@ int is_class();
 #endif
 // CHECK: int is_class();
 
-#if __has_feature(is_constructible)
-int is_constructible();
-#endif
-// CHECK: int is_constructible();
-
 #if __has_feature(is_convertible_to)
 int is_convertible_to();
 #endif

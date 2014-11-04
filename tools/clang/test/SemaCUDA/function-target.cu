@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -fsyntax-only -verify %s
 
-#include "Inputs/cuda.h"
+#include "cuda.h"
 
 __host__ void h1h(void);
 __device__ void h1d(void); // expected-note {{candidate function not viable: call to __device__ function from __host__ function}}

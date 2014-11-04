@@ -11,14 +11,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_AST_COMMENTLEXER_H
-#define LLVM_CLANG_AST_COMMENTLEXER_H
+#ifndef LLVM_CLANG_AST_COMMENT_LEXER_H
+#define LLVM_CLANG_AST_COMMENT_LEXER_H
 
-#include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/SourceManager.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -35,9 +34,8 @@ enum TokenKind {
   eof,
   newline,
   text,
-  unknown_command,   // Command that does not have an ID.
-  backslash_command, // Command with an ID, that used backslash marker.
-  at_command,        // Command with an ID, that used 'at' marker.
+  unknown_command, // Command that does not have an ID.
+  command,         // Command with an ID.
   verbatim_block_begin,
   verbatim_block_line,
   verbatim_block_end,
@@ -77,7 +75,7 @@ class Token {
   /// unused (command spelling can be found with CommandTraits).  Otherwise,
   /// contains the length of the string that starts at TextPtr.
   unsigned IntVal;
-  
+
 public:
   SourceLocation getLocation() const LLVM_READONLY { return Loc; }
   void setLocation(SourceLocation SL) { Loc = SL; }
@@ -120,12 +118,12 @@ public:
   }
 
   unsigned getCommandID() const LLVM_READONLY {
-    assert(is(tok::backslash_command) || is(tok::at_command));
+    assert(is(tok::command));
     return IntVal;
   }
 
   void setCommandID(unsigned ID) {
-    assert(is(tok::backslash_command) || is(tok::at_command));
+    assert(is(tok::command));
     IntVal = ID;
   }
 
@@ -228,8 +226,6 @@ private:
   /// computed (for example, resolved decimal character references).
   llvm::BumpPtrAllocator &Allocator;
 
-  DiagnosticsEngine &Diags;
-  
   const CommandTraits &Traits;
 
   const char *const BufferStart;
@@ -293,7 +289,17 @@ private:
   StringRef resolveHTMLHexCharacterReference(StringRef Name) const;
 
   void formTokenWithChars(Token &Result, const char *TokEnd,
-                          tok::TokenKind Kind);
+                          tok::TokenKind Kind) {
+    const unsigned TokLen = TokEnd - BufferPtr;
+    Result.setLocation(getSourceLocation(BufferPtr));
+    Result.setKind(Kind);
+    Result.setLength(TokLen);
+#ifndef NDEBUG
+    Result.TextPtr = "<UNSET>";
+    Result.IntVal = 7;
+#endif
+    BufferPtr = TokEnd;
+  }
 
   void formTextToken(Token &Result, const char *TokEnd) {
     StringRef Text(BufferPtr, TokEnd - BufferPtr);
@@ -307,10 +313,6 @@ private:
 
     const unsigned CharNo = Loc - BufferStart;
     return FileLoc.getLocWithOffset(CharNo);
-  }
-
-  DiagnosticBuilder Diag(SourceLocation Loc, unsigned DiagID) {
-    return Diags.Report(Loc, DiagID);
   }
 
   /// Eat string matching regexp \code \s*\* \endcode.
@@ -343,8 +345,7 @@ private:
   void lexHTMLEndTag(Token &T);
 
 public:
-  Lexer(llvm::BumpPtrAllocator &Allocator, DiagnosticsEngine &Diags,
-        const CommandTraits &Traits,
+  Lexer(llvm::BumpPtrAllocator &Allocator, const CommandTraits &Traits,
         SourceLocation FileLoc,
         const char *BufferStart, const char *BufferEnd);
 
@@ -352,7 +353,7 @@ public:
 
   StringRef getSpelling(const Token &Tok,
                         const SourceManager &SourceMgr,
-                        bool *Invalid = nullptr) const;
+                        bool *Invalid = NULL) const;
 };
 
 } // end namespace comments

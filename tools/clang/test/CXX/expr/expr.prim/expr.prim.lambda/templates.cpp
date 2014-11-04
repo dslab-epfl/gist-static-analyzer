@@ -2,11 +2,10 @@
 
 template<typename T>
 void test_attributes() {
-  // FIXME: GCC accepts [[gnu::noreturn]] here.
-  auto nrl = []() [[gnu::noreturn]] {}; // expected-warning{{attribute 'noreturn' ignored}}
+  auto nrl = []() [[noreturn]] {}; // expected-error{{lambda declared 'noreturn' should not return}}
 }
 
-template void test_attributes<int>();
+template void test_attributes<int>(); // expected-note{{in instantiation of function}}
 
 template<typename T>
 void call_with_zero() {

@@ -1,13 +1,14 @@
 // RUN: %clang_cc1 -verify %s -std=c++11
+// expected-no-diagnostics
 
 template<const int I> struct S {
   decltype(I) n;
-  int &&r = I; // expected-warning 2{{binding reference member 'r' to a temporary value}} expected-note 2{{declared here}}
+  int &&r = I;
 };
-S<5> s; // expected-note {{instantiation}}
+S<5> s;
 
 template<typename T, T v> struct U {
   decltype(v) n;
-  int &&r = v; // expected-warning {{binding reference member 'r' to a temporary value}} expected-note {{declared here}}
+  int &&r = v;
 };
-U<const int, 6> u; // expected-note {{instantiation}}
+U<const int, 6> u;

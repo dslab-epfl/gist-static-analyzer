@@ -1,8 +1,6 @@
-; RUN: llc < %s -mtriple=x86_64-apple-darwin10 | FileCheck %s
+; RUN: llc < %s -mtriple=x86_64-apple-darwin10 | grep L__ZZ20
 ; Quote should be outside of private prefix.
 ; rdar://6855766x
-
-; CHECK: "l__ZZ20-[Example1 whatever]E4C.91"
 
 	%struct.A = type { i32*, i32 }
 @"_ZZ20-[Example1 whatever]E4C.91" = private constant %struct.A { i32* null, i32 1 }		; <%struct.A*> [#uses=1]

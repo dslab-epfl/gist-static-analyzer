@@ -1,5 +1,4 @@
 // RUN: %clang_cc1 %s -fsyntax-only
-// FIXME: This test needs needs to be run with -verify
 
 @interface NSObject
 + alloc;

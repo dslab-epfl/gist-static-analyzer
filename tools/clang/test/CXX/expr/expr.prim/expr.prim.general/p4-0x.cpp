@@ -6,8 +6,6 @@ struct S {
 
   int arr[sizeof(this)]; // expected-error {{invalid use of 'this' outside of a non-static member function}}
   int sz = sizeof(this); // ok
-
-  typedef auto f() -> decltype(this); // expected-error {{invalid use of 'this' outside of a non-static member function}}
 };
 
 namespace CaptureThis {

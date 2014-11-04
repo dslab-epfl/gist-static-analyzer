@@ -1,5 +1,4 @@
 ; RUN: llvm-as %s -o /dev/null
-; RUN: verify-uselistorder %s
 
 ; %inc2 uses it's own value, but that's ok, as it's unreachable!
 

@@ -1,5 +1,5 @@
 // RUN: llvm-mc -g -triple i386-apple-darwin10 %s -filetype=obj -o %t
-// RUN: llvm-dwarfdump -debug-dump=all %t | FileCheck %s
+// RUN: llvm-dwarfdump %t | FileCheck %s
 
 .globl _bar
 _bar:
@@ -46,12 +46,12 @@ _x:	.long 1
 // CHECK:    DW_AT_name [DW_FORM_string]
 // We don't check the DW_AT_comp_dir which is the current working directory
 // CHECK:    DW_AT_producer [DW_FORM_string]	("llvm-mc (based on {{.*}})")
-// CHECK:    DW_AT_language [DW_FORM_data2]	(DW_LANG_Mips_Assembler)
+// CHECK:    DW_AT_language [DW_FORM_data2]	(0x8001)
 
 // CHECK:    DW_TAG_label [2] *
 // CHECK:      DW_AT_name [DW_FORM_string]	("bar")
-// CHECK:      DW_AT_decl_file [DW_FORM_data4]	([[FILE:".*gen-dwarf.s"]])
-// CHECK:      DW_AT_decl_line [DW_FORM_data4]	(5)
+// CHECK:      DW_AT_decl_file [DW_FORM_data4]	(0x00000001)
+// CHECK:      DW_AT_decl_line [DW_FORM_data4]	(0x00000005)
 // CHECK:      DW_AT_low_pc [DW_FORM_addr]	(0x0000000000000000)
 // CHECK:      DW_AT_prototyped [DW_FORM_flag]	(0x00)
 
@@ -61,8 +61,8 @@ _x:	.long 1
 
 // CHECK:    DW_TAG_label [2] *
 // CHECK:      DW_AT_name [DW_FORM_string]	("foo")
-// CHECK:      DW_AT_decl_file [DW_FORM_data4]	([[FILE]])
-// CHECK:      DW_AT_decl_line [DW_FORM_data4]	(9)
+// CHECK:      DW_AT_decl_file [DW_FORM_data4]	(0x00000001)
+// CHECK:      DW_AT_decl_line [DW_FORM_data4]	(0x00000009)
 // CHECK:      DW_AT_low_pc [DW_FORM_addr]	(0x0000000000000007)
 // CHECK:      DW_AT_prototyped [DW_FORM_flag]	(0x00)
 
@@ -72,8 +72,8 @@ _x:	.long 1
 
 // CHECK:    DW_TAG_label [2] *
 // CHECK:      DW_AT_name [DW_FORM_string]	("baz")
-// CHECK:      DW_AT_decl_file [DW_FORM_data4]	([[FILE]])
-// CHECK:      DW_AT_decl_line [DW_FORM_data4]	(10)
+// CHECK:      DW_AT_decl_file [DW_FORM_data4]	(0x00000001)
+// CHECK:      DW_AT_decl_line [DW_FORM_data4]	(0x0000000a)
 // CHECK:      DW_AT_low_pc [DW_FORM_addr]	(0x0000000000000007)
 // CHECK:      DW_AT_prototyped [DW_FORM_flag]	(0x00)
 
@@ -86,7 +86,7 @@ _x:	.long 1
 // CHECK: .debug_aranges contents:
 // CHECK: Address Range Header: length = 0x0000001c, version = 0x0002, cu_offset = 0x00000000, addr_size = 0x04, seg_size = 0x00
 
-// CHECK: .debug_line contents:
+// CHECK: .debug_lines contents:
 // CHECK: Line table prologue:
 // We don't check the total_length as it includes lengths of temp paths
 // CHECK:         version: 2
@@ -113,10 +113,10 @@ _x:	.long 1
 // CHECK:                 ---- ---------- ---------- ---------------------------
 // CHECK: file_names[  1]    1 0x00000000 0x00000000 gen-dwarf.s
 
-// CHECK: Address            Line   Column File   ISA Discriminator Flags
-// CHECK: ------------------ ------ ------ ------ --- ------------- -------------
-// CHECK: 0x0000000000000000      6      0      1   0             0  is_stmt
-// CHECK: 0x0000000000000005      7      0      1   0             0  is_stmt
-// CHECK: 0x0000000000000006      8      0      1   0             0  is_stmt
-// CHECK: 0x0000000000000007     11      0      1   0             0  is_stmt
-// CHECK: 0x0000000000000008     11      0      1   0             0  is_stmt end_sequence
+// CHECK: Address            Line   Column File   ISA Flags
+// CHECK: ------------------ ------ ------ ------ --- -------------
+// CHECK: 0x0000000000000000      6      0      1   0  is_stmt
+// CHECK: 0x0000000000000005      7      0      1   0  is_stmt
+// CHECK: 0x0000000000000006      8      0      1   0  is_stmt
+// CHECK: 0x0000000000000007     11      0      1   0  is_stmt
+// CHECK: 0x0000000000000008     11      0      1   0  is_stmt end_sequence

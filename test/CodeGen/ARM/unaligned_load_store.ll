@@ -1,18 +1,13 @@
-; RUN: llc -mtriple=arm-eabi -pre-RA-sched=source %s -o - \
-; RUN:	| FileCheck %s -check-prefix=EXPANDED
-
-; RUN: llc -mtriple=armv6-apple-darwin -mcpu=cortex-a8 -mattr=-neon -arm-strict-align -pre-RA-sched=source %s -o - \
-; RUN:	| FileCheck %s -check-prefix=EXPANDED
-
-; RUN: llc -mtriple=armv6-apple-darwin -mcpu=cortex-a8 %s -o - \
-; RUN:	| FileCheck %s -check-prefix=UNALIGNED
+; RUN: llc < %s -march=arm -pre-RA-sched=source | FileCheck %s -check-prefix=EXPANDED
+; RUN: llc < %s -mtriple=armv6-apple-darwin -mcpu=cortex-a8 -mattr=-neon -arm-strict-align -pre-RA-sched=source | FileCheck %s -check-prefix=EXPANDED
+; RUN: llc < %s -mtriple=armv6-apple-darwin -mcpu=cortex-a8 | FileCheck %s -check-prefix=UNALIGNED
 
 ; rdar://7113725
 ; rdar://12091029
 
 define void @t(i8* nocapture %a, i8* nocapture %b) nounwind {
 entry:
-; EXPANDED-LABEL: t:
+; EXPANDED: t:
 ; EXPANDED: ldrb [[R2:r[0-9]+]]
 ; EXPANDED: ldrb [[R3:r[0-9]+]]
 ; EXPANDED: ldrb [[R12:r[0-9]+]]
@@ -22,7 +17,7 @@ entry:
 ; EXPANDED: strb [[R3]]
 ; EXPANDED: strb [[R2]]
 
-; UNALIGNED-LABEL: t:
+; UNALIGNED: t:
 ; UNALIGNED: ldr r1
 ; UNALIGNED: str r1
 
@@ -35,13 +30,13 @@ entry:
 
 define void @hword(double* %a, double* %b) nounwind {
 entry:
-; EXPANDED-LABEL: hword:
+; EXPANDED: hword:
 ; EXPANDED-NOT: vld1
 ; EXPANDED: ldrh
 ; EXPANDED-NOT: str1
 ; EXPANDED: strh
 
-; UNALIGNED-LABEL: hword:
+; UNALIGNED: hword:
 ; UNALIGNED: vld1.16
 ; UNALIGNED: vst1.16
   %tmp = load double* %a, align 2
@@ -51,13 +46,13 @@ entry:
 
 define void @byte(double* %a, double* %b) nounwind {
 entry:
-; EXPANDED-LABEL: byte:
+; EXPANDED: byte:
 ; EXPANDED-NOT: vld1
 ; EXPANDED: ldrb
 ; EXPANDED-NOT: str1
 ; EXPANDED: strb
 
-; UNALIGNED-LABEL: byte:
+; UNALIGNED: byte:
 ; UNALIGNED: vld1.8
 ; UNALIGNED: vst1.8
   %tmp = load double* %a, align 1
@@ -67,11 +62,11 @@ entry:
 
 define void @byte_word_ops(i32* %a, i32* %b) nounwind {
 entry:
-; EXPANDED-LABEL: byte_word_ops:
+; EXPANDED: byte_word_ops:
 ; EXPANDED: ldrb
 ; EXPANDED: strb
 
-; UNALIGNED-LABEL: byte_word_ops:
+; UNALIGNED: byte_word_ops:
 ; UNALIGNED-NOT: ldrb
 ; UNALIGNED: ldr
 ; UNALIGNED-NOT: strb

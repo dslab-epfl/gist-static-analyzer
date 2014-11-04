@@ -1,10 +1,11 @@
-// RUN: %clang_cc1 -emit-llvm -g %s -o - | FileCheck %s
+// RUN: %clang_cc1  -emit-llvm -g %s -o %t
+// RUN: grep DW_TAG_enumeration_type %t
+// Radar 8195980
 
-// CHECK: metadata [[TEST3_ENUMS:![0-9]*]], null, null, null} ; [ DW_TAG_enumeration_type ] [e]
-// CHECK: [[TEST3_ENUMS]] = metadata !{metadata [[TEST3_E:![0-9]*]]}
-// CHECK: [[TEST3_E]] = metadata !{metadata !"0x28\00E\00-1"} ; [ DW_TAG_enumerator ] [E :: -1]
+enum vtag {
+  VT_ONE
+};
 
-enum e;
-void func(enum e *p) {
+int foo(int i) {
+  return i == VT_ONE;
 }
-enum e { E = -1 };

@@ -1,5 +1,4 @@
-; RUN: opt < %s  -basicaa -loop-vectorize -force-vector-width=4 -force-vector-interleave=1 -dce -instcombine -S | FileCheck %s
-; RUN: opt < %s  -basicaa -loop-vectorize -force-vector-width=4 -force-vector-interleave=4 -dce -instcombine -S | FileCheck %s -check-prefix=UNROLL
+; RUN: opt < %s  -loop-vectorize -force-vector-width=4 -dce -instcombine -licm -S | FileCheck %s
 
 target datalayout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v64:64:64-v128:128:128-a0:0:64-s0:64:64-f80:128:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx10.8.0"
@@ -20,25 +19,11 @@ target triple = "x86_64-apple-macosx10.8.0"
 @dd = common global [1024 x float] zeroinitializer, align 16
 @dj = common global [1024 x i32] zeroinitializer, align 16
 
-;CHECK-LABEL: @example1(
+;CHECK: @example1
 ;CHECK: load <4 x i32>
 ;CHECK: add nsw <4 x i32>
 ;CHECK: store <4 x i32>
 ;CHECK: ret void
-;UNROLL-LABEL: @example1(
-;UNROLL: load <4 x i32>
-;UNROLL: load <4 x i32>
-;UNROLL: load <4 x i32>
-;UNROLL: load <4 x i32>
-;UNROLL: add nsw <4 x i32>
-;UNROLL: add nsw <4 x i32>
-;UNROLL: add nsw <4 x i32>
-;UNROLL: add nsw <4 x i32>
-;UNROLL: store <4 x i32>
-;UNROLL: store <4 x i32>
-;UNROLL: store <4 x i32>
-;UNROLL: store <4 x i32>
-;UNROLL: ret void
 define void @example1() nounwind uwtable ssp {
   br label %1
 
@@ -60,15 +45,9 @@ define void @example1() nounwind uwtable ssp {
   ret void
 }
 
-;CHECK-LABEL: @example2(
+;CHECK: @example2
 ;CHECK: store <4 x i32>
 ;CHECK: ret void
-;UNROLL-LABEL: @example2(
-;UNROLL: store <4 x i32>
-;UNROLL: store <4 x i32>
-;UNROLL: store <4 x i32>
-;UNROLL: store <4 x i32>
-;UNROLL: ret void
 define void @example2(i32 %n, i32 %x) nounwind uwtable ssp {
   %1 = icmp sgt i32 %n, 0
   br i1 %1, label %.lr.ph5, label %.preheader
@@ -110,15 +89,10 @@ define void @example2(i32 %n, i32 %x) nounwind uwtable ssp {
   ret void
 }
 
-;CHECK-LABEL: @example3(
-;CHECK: <4 x i32>
+; We can't vectorize this loop because it has non constant loop bounds.
+;CHECK: @example3
+;CHECK-NOT: <4 x i32>
 ;CHECK: ret void
-;UNROLL-LABEL: @example3(
-;UNROLL: <4 x i32>
-;UNROLL: <4 x i32>
-;UNROLL: <4 x i32>
-;UNROLL: <4 x i32>
-;UNROLL: ret void
 define void @example3(i32 %n, i32* noalias nocapture %p, i32* noalias nocapture %q) nounwind uwtable ssp {
   %1 = icmp eq i32 %n, 0
   br i1 %1, label %._crit_edge, label %.lr.ph
@@ -139,15 +113,9 @@ define void @example3(i32 %n, i32* noalias nocapture %p, i32* noalias nocapture 
   ret void
 }
 
-;CHECK-LABEL: @example4(
+;CHECK: @example4
 ;CHECK: load <4 x i32>
 ;CHECK: ret void
-;UNROLL-LABEL: @example4(
-;UNROLL: load <4 x i32>
-;UNROLL: load <4 x i32>
-;UNROLL: load <4 x i32>
-;UNROLL: load <4 x i32>
-;UNROLL: ret void
 define void @example4(i32 %n, i32* noalias nocapture %p, i32* noalias nocapture %q) nounwind uwtable ssp {
   %1 = add nsw i32 %n, -1
   %2 = icmp eq i32 %n, 0
@@ -205,15 +173,9 @@ define void @example4(i32 %n, i32* noalias nocapture %p, i32* noalias nocapture 
   ret void
 }
 
-;CHECK-LABEL: @example8(
+;CHECK: @example8
 ;CHECK: store <4 x i32>
 ;CHECK: ret void
-;UNROLL-LABEL: @example8(
-;UNROLL: store <4 x i32>
-;UNROLL: store <4 x i32>
-;UNROLL: store <4 x i32>
-;UNROLL: store <4 x i32>
-;UNROLL: ret void
 define void @example8(i32 %x) nounwind uwtable ssp {
   br label %.preheader
 
@@ -240,7 +202,7 @@ define void @example8(i32 %x) nounwind uwtable ssp {
   ret void
 }
 
-;CHECK-LABEL: @example9(
+;CHECK: @example9
 ;CHECK: phi <4 x i32>
 ;CHECK: ret i32
 define i32 @example9() nounwind uwtable readonly ssp {
@@ -264,7 +226,7 @@ define i32 @example9() nounwind uwtable readonly ssp {
   ret i32 %7
 }
 
-;CHECK-LABEL: @example10a(
+;CHECK: @example10a
 ;CHECK: load <4 x i32>
 ;CHECK: add nsw <4 x i32>
 ;CHECK: load <4 x i16>
@@ -299,7 +261,7 @@ define void @example10a(i16* noalias nocapture %sa, i16* noalias nocapture %sb, 
   ret void
 }
 
-;CHECK-LABEL: @example10b(
+;CHECK: @example10b
 ;CHECK: load <4 x i16>
 ;CHECK: sext <4 x i16>
 ;CHECK: store <4 x i32>
@@ -323,7 +285,7 @@ define void @example10b(i16* noalias nocapture %sa, i16* noalias nocapture %sb, 
   ret void
 }
 
-;CHECK-LABEL: @example11(
+;CHECK: @example11
 ;CHECK: load i32
 ;CHECK: load i32
 ;CHECK: load i32
@@ -367,8 +329,8 @@ define void @example11() nounwind uwtable ssp {
   ret void
 }
 
-;CHECK-LABEL: @example12(
-;CHECK: trunc i64
+;CHECK: @example12
+;CHECK: trunc <4 x i64>
 ;CHECK: store <4 x i32>
 ;CHECK: ret void
 define void @example12() nounwind uwtable ssp {
@@ -389,7 +351,7 @@ define void @example12() nounwind uwtable ssp {
 }
 
 ; Can't vectorize because of reductions.
-;CHECK-LABEL: @example13(
+;CHECK: @example13
 ;CHECK-NOT: <4 x i32>
 ;CHECK: ret void
 define void @example13(i32** nocapture %A, i32** nocapture %B, i32* nocapture %out) nounwind uwtable ssp {
@@ -429,9 +391,9 @@ define void @example13(i32** nocapture %A, i32** nocapture %B, i32* nocapture %o
   ret void
 }
 
-; Can vectorize.
-;CHECK-LABEL: @example14(
-;CHECK: <4 x i32>
+; Can't vectorize because of reductions.
+;CHECK: @example14
+;CHECK-NOT: <4 x i32>
 ;CHECK: ret void
 define void @example14(i32** nocapture %in, i32** nocapture %coeff, i32* nocapture %out) nounwind uwtable ssp {
 .preheader3:
@@ -575,9 +537,9 @@ define void @example14(i32** nocapture %in, i32** nocapture %coeff, i32* nocaptu
   ret void
 }
 
-;CHECK-LABEL: @example21(
-;CHECK: load <4 x i32>
-;CHECK: shufflevector {{.*}} <i32 3, i32 2, i32 1, i32 0>
+; Can't vectorize because the src and dst pointers are not disjoint.
+;CHECK: @example21
+;CHECK-NOT: <4 x i32>
 ;CHECK: ret i32
 define i32 @example21(i32* nocapture %b, i32 %n) nounwind uwtable readonly ssp {
   %1 = icmp sgt i32 %n, 0
@@ -603,8 +565,9 @@ define i32 @example21(i32* nocapture %b, i32 %n) nounwind uwtable readonly ssp {
   ret i32 %a.0.lcssa
 }
 
-;CHECK-LABEL: @example23(
-;CHECK: <4 x i32>
+; Can't vectorize because there are multiple PHIs.
+;CHECK: @example23
+;CHECK-NOT: <4 x i32>
 ;CHECK: ret void
 define void @example23(i16* nocapture %src, i32* nocapture %dst) nounwind uwtable ssp {
   br label %1
@@ -627,7 +590,7 @@ define void @example23(i16* nocapture %src, i32* nocapture %dst) nounwind uwtabl
   ret void
 }
 
-;CHECK-LABEL: @example24(
+;CHECK: @example24
 ;CHECK: shufflevector <4 x i16>
 ;CHECK: ret void
 define void @example24(i16 signext %x, i16 signext %y) nounwind uwtable ssp {
@@ -653,7 +616,7 @@ define void @example24(i16 signext %x, i16 signext %y) nounwind uwtable ssp {
   ret void
 }
 
-;CHECK-LABEL: @example25(
+;CHECK: @example25
 ;CHECK: and <4 x i1>
 ;CHECK: zext <4 x i1>
 ;CHECK: ret void

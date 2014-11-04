@@ -15,7 +15,8 @@ void test_f1(int *ip, float fv) {
   f1(ip, fv);
 }
 
-template<typename T> void f2(T*, T*); // expected-note {{candidate template ignored: could not match 'T *' against 'ConvToIntPtr'}} \
+// TODO: this diagnostic can and should improve
+template<typename T> void f2(T*, T*); // expected-note {{candidate template ignored: failed template argument deduction}} \
 // expected-note{{candidate template ignored: deduced conflicting types for parameter 'T' ('int' vs. 'float')}}
 
 struct ConvToIntPtr {
@@ -26,22 +27,4 @@ void test_f2(int *ip, float *fp) {
   f2(ip, ConvToIntPtr()); // expected-error{{no matching function}}
   f2(ip, ip); // okay
   f2(ip, fp); // expected-error{{no matching function}}
-}
-
-namespace test3 {
-  template<typename T>
-  struct bar { };
-
-  template<typename T>
-  struct foo {
-    operator bar<T>();
-  };
-
-  template<typename T>
-  void func(bar<T>) { // expected-note {{candidate template ignored: could not match 'bar' against 'foo'}}
-  }
-
-  void test() {
-    func(foo<int>()); // expected-error {{no matching function}}
-  }
 }

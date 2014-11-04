@@ -34,12 +34,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_ANALYSIS_ALIASANALYSIS_H
-#define LLVM_ANALYSIS_ALIASANALYSIS_H
+#ifndef LLVM_ANALYSIS_ALIAS_ANALYSIS_H
+#define LLVM_ANALYSIS_ALIAS_ANALYSIS_H
 
+#include "llvm/Support/CallSite.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/IR/CallSite.h"
-#include "llvm/IR/Metadata.h"
 
 namespace llvm {
 
@@ -56,7 +55,7 @@ class DominatorTree;
 
 class AliasAnalysis {
 protected:
-  const DataLayout *DL;
+  const DataLayout *TD;
   const TargetLibraryInfo *TLI;
 
 private:
@@ -76,7 +75,7 @@ protected:
 
 public:
   static char ID; // Class identification, replacement for typeinfo
-  AliasAnalysis() : DL(nullptr), TLI(nullptr), AA(nullptr) {}
+  AliasAnalysis() : TD(0), TLI(0), AA(0) {}
   virtual ~AliasAnalysis();  // We want to be subclassed
 
   /// UnknownSize - This is a special value which can be used with the
@@ -87,7 +86,7 @@ public:
   /// getDataLayout - Return a pointer to the current DataLayout object, or
   /// null if no DataLayout object is available.
   ///
-  const DataLayout *getDataLayout() const { return DL; }
+  const DataLayout *getDataLayout() const { return TD; }
 
   /// getTargetLibraryInfo - Return a pointer to the current TargetLibraryInfo
   /// object, or null if no TargetLibraryInfo object is available.
@@ -113,14 +112,13 @@ public:
     /// there are restrictions on stepping out of one object and into another.
     /// See http://llvm.org/docs/LangRef.html#pointeraliasing
     uint64_t Size;
-    /// AATags - The metadata nodes which describes the aliasing of the
-    /// location (each member is null if that kind of information is
-    /// unavailable)..
-    AAMDNodes AATags;
+    /// TBAATag - The metadata node which describes the TBAA type of
+    /// the location, or null if there is no known unique tag.
+    const MDNode *TBAATag;
 
-    explicit Location(const Value *P = nullptr, uint64_t S = UnknownSize,
-                      const AAMDNodes &N = AAMDNodes())
-      : Ptr(P), Size(S), AATags(N) {}
+    explicit Location(const Value *P = 0, uint64_t S = UnknownSize,
+                      const MDNode *N = 0)
+      : Ptr(P), Size(S), TBAATag(N) {}
 
     Location getWithNewPtr(const Value *NewPtr) const {
       Location Copy(*this);
@@ -134,9 +132,9 @@ public:
       return Copy;
     }
 
-    Location getWithoutAATags() const {
+    Location getWithoutTBAATag() const {
       Location Copy(*this);
-      Copy.AATags = AAMDNodes();
+      Copy.TBAATag = 0;
       return Copy;
     }
   };
@@ -276,14 +274,6 @@ public:
     UnknownModRefBehavior = Anywhere | ModRef
   };
 
-  /// Get the location associated with a pointer argument of a callsite.
-  /// The mask bits are set to indicate the allowed aliasing ModRef kinds.
-  /// Note that these mask bits do not necessarily account for the overall
-  /// behavior of the function, but rather only provide additional
-  /// per-argument information.
-  virtual Location getArgLocation(ImmutableCallSite CS, unsigned ArgIdx,
-                                  ModRefResult &Mask);
-
   /// getModRefBehavior - Return the behavior when calling the given call site.
   virtual ModRefBehavior getModRefBehavior(ImmutableCallSite CS);
 
@@ -383,7 +373,7 @@ public:
     return getModRefInfo(I, Location(P, Size));
   }
 
-  /// getModRefInfo (for call sites) - Return information about whether
+  /// getModRefInfo (for call sites) - Return whether information about whether
   /// a particular call site modifies or reads the specified memory location.
   virtual ModRefResult getModRefInfo(ImmutableCallSite CS,
                                      const Location &Loc);
@@ -394,7 +384,7 @@ public:
     return getModRefInfo(CS, Location(P, Size));
   }
 
-  /// getModRefInfo (for calls) - Return information about whether
+  /// getModRefInfo (for calls) - Return whether information about whether
   /// a particular call modifies or reads the specified memory location.
   ModRefResult getModRefInfo(const CallInst *C, const Location &Loc) {
     return getModRefInfo(ImmutableCallSite(C), Loc);
@@ -405,7 +395,7 @@ public:
     return getModRefInfo(C, Location(P, Size));
   }
 
-  /// getModRefInfo (for invokes) - Return information about whether
+  /// getModRefInfo (for invokes) - Return whether information about whether
   /// a particular invoke modifies or reads the specified memory location.
   ModRefResult getModRefInfo(const InvokeInst *I,
                              const Location &Loc) {
@@ -418,7 +408,7 @@ public:
     return getModRefInfo(I, Location(P, Size));
   }
 
-  /// getModRefInfo (for loads) - Return information about whether
+  /// getModRefInfo (for loads) - Return whether information about whether
   /// a particular load modifies or reads the specified memory location.
   ModRefResult getModRefInfo(const LoadInst *L, const Location &Loc);
 
@@ -427,7 +417,7 @@ public:
     return getModRefInfo(L, Location(P, Size));
   }
 
-  /// getModRefInfo (for stores) - Return information about whether
+  /// getModRefInfo (for stores) - Return whether information about whether
   /// a particular store modifies or reads the specified memory location.
   ModRefResult getModRefInfo(const StoreInst *S, const Location &Loc);
 
@@ -436,7 +426,7 @@ public:
     return getModRefInfo(S, Location(P, Size));
   }
 
-  /// getModRefInfo (for fences) - Return information about whether
+  /// getModRefInfo (for fences) - Return whether information about whether
   /// a particular store modifies or reads the specified memory location.
   ModRefResult getModRefInfo(const FenceInst *S, const Location &Loc) {
     // Conservatively correct.  (We could possibly be a bit smarter if
@@ -449,7 +439,7 @@ public:
     return getModRefInfo(S, Location(P, Size));
   }
 
-  /// getModRefInfo (for cmpxchges) - Return information about whether
+  /// getModRefInfo (for cmpxchges) - Return whether information about whether
   /// a particular cmpxchg modifies or reads the specified memory location.
   ModRefResult getModRefInfo(const AtomicCmpXchgInst *CX, const Location &Loc);
 
@@ -459,7 +449,7 @@ public:
     return getModRefInfo(CX, Location(P, Size));
   }
 
-  /// getModRefInfo (for atomicrmws) - Return information about whether
+  /// getModRefInfo (for atomicrmws) - Return whether information about whether
   /// a particular atomicrmw modifies or reads the specified memory location.
   ModRefResult getModRefInfo(const AtomicRMWInst *RMW, const Location &Loc);
 
@@ -469,7 +459,7 @@ public:
     return getModRefInfo(RMW, Location(P, Size));
   }
 
-  /// getModRefInfo (for va_args) - Return information about whether
+  /// getModRefInfo (for va_args) - Return whether information about whether
   /// a particular va_arg modifies or reads the specified memory location.
   ModRefResult getModRefInfo(const VAArgInst* I, const Location &Loc);
 
@@ -568,23 +558,25 @@ public:
 template<>
 struct DenseMapInfo<AliasAnalysis::Location> {
   static inline AliasAnalysis::Location getEmptyKey() {
-    return AliasAnalysis::Location(DenseMapInfo<const Value *>::getEmptyKey(),
-                                   0);
+    return
+      AliasAnalysis::Location(DenseMapInfo<const Value *>::getEmptyKey(),
+                              0, 0);
   }
   static inline AliasAnalysis::Location getTombstoneKey() {
-    return AliasAnalysis::Location(
-        DenseMapInfo<const Value *>::getTombstoneKey(), 0);
+    return
+      AliasAnalysis::Location(DenseMapInfo<const Value *>::getTombstoneKey(),
+                              0, 0);
   }
   static unsigned getHashValue(const AliasAnalysis::Location &Val) {
     return DenseMapInfo<const Value *>::getHashValue(Val.Ptr) ^
            DenseMapInfo<uint64_t>::getHashValue(Val.Size) ^
-           DenseMapInfo<AAMDNodes>::getHashValue(Val.AATags);
+           DenseMapInfo<const MDNode *>::getHashValue(Val.TBAATag);
   }
   static bool isEqual(const AliasAnalysis::Location &LHS,
                       const AliasAnalysis::Location &RHS) {
     return LHS.Ptr == RHS.Ptr &&
            LHS.Size == RHS.Size &&
-           LHS.AATags == RHS.AATags;
+           LHS.TBAATag == RHS.TBAATag;
   }
 };
 
@@ -592,25 +584,19 @@ struct DenseMapInfo<AliasAnalysis::Location> {
 /// function.
 bool isNoAliasCall(const Value *V);
 
-/// isNoAliasArgument - Return true if this is an argument with the noalias
-/// attribute.
-bool isNoAliasArgument(const Value *V);
-
 /// isIdentifiedObject - Return true if this pointer refers to a distinct and
 /// identifiable object.  This returns true for:
 ///    Global Variables and Functions (but not Global Aliases)
-///    Allocas
+///    Allocas and Mallocs
 ///    ByVal and NoAlias Arguments
-///    NoAlias returns (e.g. calls to malloc)
+///    NoAlias returns
 ///
 bool isIdentifiedObject(const Value *V);
 
-/// isIdentifiedFunctionLocal - Return true if V is umabigously identified
-/// at the function-level. Different IdentifiedFunctionLocals can't alias.
-/// Further, an IdentifiedFunctionLocal can not alias with any function
-/// arguments other than itself, which is not necessarily true for
-/// IdentifiedObjects.
-bool isIdentifiedFunctionLocal(const Value *V);
+/// isKnownNonNull - Return true if this pointer couldn't possibly be null by
+/// its definition.  This returns true for allocas, non-extern-weak globals and
+/// byval arguments.
+bool isKnownNonNull(const Value *V);
 
 } // End llvm namespace
 

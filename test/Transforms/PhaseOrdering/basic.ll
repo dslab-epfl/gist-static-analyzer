@@ -1,4 +1,4 @@
-; RUN: opt -O3 -S < %s | FileCheck %s
+; RUN: opt -O3 -S %s | FileCheck %s
 
 target datalayout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v64:64:64-v128:128:128-a0:0:64-s0:64:64-f80:128:128-n8:16:32:64"
 target triple = "x86_64-apple-macosx10.6.7"
@@ -19,7 +19,7 @@ define void @test1() nounwind ssp {
   call void @free(i8* %tmp1)
   ret void
 
-; CHECK-LABEL: @test1(
+; CHECK: @test1
 ; CHECK-NEXT: ret void
 }
 
@@ -44,7 +44,7 @@ entry:
   %sub = sub i32 %0, %mul
   ret i32 %sub
 
-; CHECK-LABEL: @test2(
+; CHECK: @test2
 ; CHECK: %div = lshr i32 %a, 2
 ; CHECK: %add = shl nuw nsw i32 %div, 1
 ; CHECK: ret i32 0

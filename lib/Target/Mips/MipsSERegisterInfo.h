@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_MIPS_MIPSSEREGISTERINFO_H
-#define LLVM_LIB_TARGET_MIPS_MIPSSEREGISTERINFO_H
+#ifndef MIPSSEREGISTERINFO_H
+#define MIPSSEREGISTERINFO_H
 
 #include "MipsRegisterInfo.h"
 
@@ -21,19 +21,24 @@ namespace llvm {
 class MipsSEInstrInfo;
 
 class MipsSERegisterInfo : public MipsRegisterInfo {
+  const MipsSEInstrInfo &TII;
+
 public:
-  MipsSERegisterInfo(const MipsSubtarget &Subtarget);
+  MipsSERegisterInfo(const MipsSubtarget &Subtarget,
+                     const MipsSEInstrInfo &TII);
 
-  bool requiresRegisterScavenging(const MachineFunction &MF) const override;
+  bool requiresRegisterScavenging(const MachineFunction &MF) const;
 
-  bool requiresFrameIndexScavenging(const MachineFunction &MF) const override;
+  bool requiresFrameIndexScavenging(const MachineFunction &MF) const;
 
-  const TargetRegisterClass *intRegClass(unsigned Size) const override;
+  void eliminateCallFramePseudoInstr(MachineFunction &MF,
+                                     MachineBasicBlock &MBB,
+                                     MachineBasicBlock::iterator I) const;
 
 private:
-  void eliminateFI(MachineBasicBlock::iterator II, unsigned OpNo,
-                   int FrameIndex, uint64_t StackSize,
-                   int64_t SPOffset) const override;
+  virtual void eliminateFI(MachineBasicBlock::iterator II, unsigned OpNo,
+                           int FrameIndex, uint64_t StackSize,
+                           int64_t SPOffset) const;
 };
 
 } // end namespace llvm

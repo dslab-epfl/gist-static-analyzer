@@ -9,8 +9,8 @@
 #ifndef LLVM_ADT_DELTAALGORITHM_H
 #define LLVM_ADT_DELTAALGORITHM_H
 
-#include <set>
 #include <vector>
+#include <set>
 
 namespace llvm {
 

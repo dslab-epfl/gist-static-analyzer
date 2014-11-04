@@ -1,18 +1,18 @@
-#include "llvm/Analysis/Passes.h"
+#include "llvm/DerivedTypes.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
-#include "llvm/IR/DataLayout.h"
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IR/Verifier.h"
+#include "llvm/ExecutionEngine/JIT.h"
+#include "llvm/IRBuilder.h"
+#include "llvm/LLVMContext.h"
+#include "llvm/Module.h"
 #include "llvm/PassManager.h"
-#include "llvm/Support/TargetSelect.h"
+#include "llvm/Analysis/Verifier.h"
+#include "llvm/Analysis/Passes.h"
+#include "llvm/DataLayout.h"
 #include "llvm/Transforms/Scalar.h"
-#include <cctype>
+#include "llvm/Support/TargetSelect.h"
 #include <cstdio>
-#include <map>
 #include <string>
+#include <map>
 #include <vector>
 using namespace llvm;
 
@@ -95,7 +95,7 @@ static int gettok() {
 //===----------------------------------------------------------------------===//
 // Abstract Syntax Tree (aka Parse Tree)
 //===----------------------------------------------------------------------===//
-namespace {
+
 /// ExprAST - Base class for all expression nodes.
 class ExprAST {
 public:
@@ -182,7 +182,6 @@ public:
   
   Function *Codegen();
 };
-} // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
 // Parser
@@ -816,13 +815,11 @@ int main() {
   getNextToken();
 
   // Make the module, which holds all the code.
-  std::unique_ptr<Module> Owner = make_unique<Module>("my cool jit", Context);
-  TheModule = Owner.get();
+  TheModule = new Module("my cool jit", Context);
 
   // Create the JIT.  This takes ownership of the module.
   std::string ErrStr;
-  TheExecutionEngine =
-      EngineBuilder(std::move(Owner)).setErrorStr(&ErrStr).create();
+  TheExecutionEngine = EngineBuilder(TheModule).setErrorStr(&ErrStr).create();
   if (!TheExecutionEngine) {
     fprintf(stderr, "Could not create ExecutionEngine: %s\n", ErrStr.c_str());
     exit(1);
@@ -832,8 +829,7 @@ int main() {
 
   // Set up the optimizer pipeline.  Start with registering info about how the
   // target lays out data structures.
-  TheModule->setDataLayout(TheExecutionEngine->getDataLayout());
-  OurFPM.add(new DataLayoutPass());
+  OurFPM.add(new DataLayout(*TheExecutionEngine->getDataLayout()));
   // Provide basic AliasAnalysis support for GVN.
   OurFPM.add(createBasicAliasAnalysisPass());
   // Do simple "peephole" optimizations and bit-twiddling optzns.

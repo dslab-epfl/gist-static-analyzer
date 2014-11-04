@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_MC_MCPARSER_ASMLEXER_H
-#define LLVM_MC_MCPARSER_ASMLEXER_H
+#ifndef ASMLEXER_H
+#define ASMLEXER_H
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/MC/MCParser/MCAsmLexer.h"
@@ -28,7 +28,7 @@ class AsmLexer : public MCAsmLexer {
   const MCAsmInfo &MAI;
 
   const char *CurPtr;
-  StringRef CurBuf;
+  const MemoryBuffer *CurBuf;
   bool isAtStartOfLine;
 
   void operator=(const AsmLexer&) LLVM_DELETED_FUNCTION;
@@ -36,20 +36,18 @@ class AsmLexer : public MCAsmLexer {
 
 protected:
   /// LexToken - Read the next token and return its code.
-  AsmToken LexToken() override;
+  virtual AsmToken LexToken();
 
 public:
   AsmLexer(const MCAsmInfo &MAI);
   ~AsmLexer();
 
-  void setBuffer(StringRef Buf, const char *ptr = nullptr);
+  void setBuffer(const MemoryBuffer *buf, const char *ptr = NULL);
 
-  StringRef LexUntilEndOfStatement() override;
+  virtual StringRef LexUntilEndOfStatement();
   StringRef LexUntilEndOfLine();
 
-  const AsmToken peekTok(bool ShouldSkipSpace = true) override;
-
-  bool isAtStartOfComment(const char *Ptr);
+  bool isAtStartOfComment(char Char);
   bool isAtStatementSeparator(const char *Ptr);
 
   const MCAsmInfo &getMAI() const { return MAI; }
@@ -65,7 +63,6 @@ private:
   AsmToken LexSingleQuote();
   AsmToken LexQuote();
   AsmToken LexFloatLiteral();
-  AsmToken LexHexFloatLiteral(bool NoIntDigits);
 };
 
 } // end namespace llvm

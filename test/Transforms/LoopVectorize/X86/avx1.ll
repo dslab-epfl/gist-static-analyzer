@@ -3,7 +3,7 @@
 target datalayout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v64:64:64-v128:128:128-a0:0:64-s0:64:64-f80:128:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx10.8.0"
 
-;CHECK-LABEL: @read_mod_write_single_ptr(
+;CHECK: @read_mod_write_single_ptr
 ;CHECK: load <8 x float>
 ;CHECK: ret i32
 define i32 @read_mod_write_single_ptr(float* nocapture %a, i32 %n) nounwind uwtable ssp {
@@ -26,8 +26,8 @@ define i32 @read_mod_write_single_ptr(float* nocapture %a, i32 %n) nounwind uwta
 }
 
 
-;CHECK-LABEL: @read_mod_i64(
-;CHECK: load <2 x i64>
+;CHECK: @read_mod_i64
+;CHECK: load <8 x i64>
 ;CHECK: ret i32
 define i32 @read_mod_i64(i64* nocapture %a, i32 %n) nounwind uwtable ssp {
   %1 = icmp sgt i32 %n, 0
@@ -37,7 +37,7 @@ define i32 @read_mod_i64(i64* nocapture %a, i32 %n) nounwind uwtable ssp {
   %indvars.iv = phi i64 [ %indvars.iv.next, %.lr.ph ], [ 0, %0 ]
   %2 = getelementptr inbounds i64* %a, i64 %indvars.iv
   %3 = load i64* %2, align 4
-  %4 = add i64 %3, 3
+  %4 = mul i64 %3, 3
   store i64 %4, i64* %2, align 4
   %indvars.iv.next = add i64 %indvars.iv, 1
   %lftr.wideiv = trunc i64 %indvars.iv.next to i32

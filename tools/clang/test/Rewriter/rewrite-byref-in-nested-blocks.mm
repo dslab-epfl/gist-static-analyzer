@@ -19,7 +19,7 @@ void f(void (^block)(void));
 - (void)foo {
         __block int kerfluffle;
         // radar 7692183
-        __block int x;
+        __block x; 
         f(^{
                 f(^{
                                 y = 42;

@@ -11,21 +11,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_ANALYSIS_ANALYSES_DOMINATORS_H
-#define LLVM_CLANG_ANALYSIS_ANALYSES_DOMINATORS_H
+#ifndef LLVM_CLANG_DOMINATORS_H
+#define LLVM_CLANG_DOMINATORS_H
 
 #include "clang/Analysis/AnalysisContext.h"
-#include "clang/Analysis/CFG.h"
-#include "llvm/ADT/GraphTraits.h"
-#include "llvm/Support/GenericDomTree.h"
-#include "llvm/Support/GenericDomTreeConstruction.h"
 
-// FIXME: There is no good reason for the domtree to require a print method
-// which accepts an LLVM Module, so remove this (and the method's argument that
-// needs it) when that is fixed.
-namespace llvm {
-class Module;
-}
+#include "llvm/Module.h"
+#include "llvm/ADT/GraphTraits.h"
+#include "clang/Analysis/CFG.h"
+#include "llvm/Analysis/Dominators.h"
+#include "llvm/Analysis/DominatorInternals.h"
 
 namespace clang {
 
@@ -153,13 +148,18 @@ public:
 
   /// \brief This method converts the dominator tree to human readable form.
   ///
-  virtual void print(raw_ostream &OS, const llvm::Module* M= nullptr) const {
+  virtual void print(raw_ostream &OS, const llvm::Module* M= 0) const {
     DT->print(OS);
   }
 
 private:
   CFG *cfg;
 };
+
+inline void WriteAsOperand(raw_ostream &OS, const CFGBlock *BB,
+                          bool t) {
+  OS << "BB#" << BB->getBlockID();
+}
 
 } // end namespace clang
 

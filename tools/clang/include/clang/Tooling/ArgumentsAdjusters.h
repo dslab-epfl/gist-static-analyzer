@@ -49,13 +49,7 @@ public:
 /// This class implements ArgumentsAdjuster interface and converts input
 /// command line arguments to the "syntax check only" variant.
 class ClangSyntaxOnlyAdjuster : public ArgumentsAdjuster {
-  CommandLineArguments Adjust(const CommandLineArguments &Args) override;
-};
-
-/// \brief An argument adjuster which removes output-related command line
-/// arguments.
-class ClangStripOutputAdjuster : public ArgumentsAdjuster {
-  CommandLineArguments Adjust(const CommandLineArguments &Args) override;
+  virtual CommandLineArguments Adjust(const CommandLineArguments &Args);
 };
 
 } // end namespace tooling

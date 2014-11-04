@@ -3,7 +3,7 @@
 ; This load is safe to speculate, as it's from a safe offset
 ; within an alloca.
 
-; CHECK-LABEL: @yes(
+; CHECK: @yes
 ; CHECK-NOT: br
 
 define void @yes(i1 %c) nounwind {
@@ -25,7 +25,7 @@ return:                                           ; preds = %if.end, %if.then
   ret void
 }
 
-; CHECK-LABEL: @no0(
+; CHECK: @no0
 ; CHECK: br i1 %c
 
 define void @no0(i1 %c) nounwind {
@@ -47,7 +47,7 @@ return:                                           ; preds = %if.end, %if.then
   ret void
 }
 
-; CHECK-LABEL: @no1(
+; CHECK: @no1
 ; CHECK: br i1 %c
 
 define void @no1(i1 %c, i64 %n) nounwind {
@@ -69,7 +69,7 @@ return:                                           ; preds = %if.end, %if.then
   ret void
 }
 
-; CHECK-LABEL: @no2(
+; CHECK: @no2
 ; CHECK: br i1 %c
 
 define void @no2(i1 %c, i64 %n) nounwind {

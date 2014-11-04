@@ -11,16 +11,15 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Object/MachO.h"
+#include "llvm/Object/MachOObject.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/Twine.h"
-#include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
-#include <system_error>
+#include "llvm/Support/system_error.h"
 using namespace llvm;
 using namespace llvm::object;
 
@@ -67,8 +66,7 @@ static void DumpSegmentCommandData(StringRef Name,
   outs() << "  ('flags', " << Flags << ")\n";
 }
 
-static int DumpSectionData(const MachOObjectFile &Obj, unsigned Index,
-                           StringRef Name,
+static int DumpSectionData(MachOObject &Obj, unsigned Index, StringRef Name,
                            StringRef SegmentName, uint64_t Address,
                            uint64_t Size, uint32_t Offset,
                            uint32_t Align, uint32_t RelocationTableOffset,
@@ -94,22 +92,26 @@ static int DumpSectionData(const MachOObjectFile &Obj, unsigned Index,
   outs() << "   ),\n";
 
   // Dump the relocation entries.
+  int Res = 0;
   outs() << "  ('_relocations', [\n";
-  unsigned RelNum = 0;
-  for (relocation_iterator I = Obj.section_rel_begin(Index),
-                           E = Obj.section_rel_end(Index);
-       I != E; ++I, ++RelNum) {
-    MachO::any_relocation_info RE = Obj.getRelocation(I->getRawDataRefImpl());
-    outs() << "    # Relocation " << RelNum << "\n";
-    outs() << "    (('word-0', " << format("0x%x", RE.r_word0) << "),\n";
-    outs() << "     ('word-1', " << format("0x%x", RE.r_word1) << ")),\n";
+  for (unsigned i = 0; i != NumRelocationTableEntries; ++i) {
+    InMemoryStruct<macho::RelocationEntry> RE;
+    Obj.ReadRelocationEntry(RelocationTableOffset, i, RE);
+    if (!RE) {
+      Res = Error("unable to read relocation table entry '" + Twine(i) + "'");
+      break;
+    }
+    
+    outs() << "    # Relocation " << i << "\n";
+    outs() << "    (('word-0', " << format("0x%x", RE->Word0) << "),\n";
+    outs() << "     ('word-1', " << format("0x%x", RE->Word1) << ")),\n";
   }
   outs() << "  ])\n";
 
   // Dump the section data, if requested.
   if (ShowSectionData) {
     outs() << "  ('_section_data', '";
-    StringRef Data = Obj.getData().substr(Offset, Size);
+    StringRef Data = Obj.getData(Offset, Size);
     for (unsigned i = 0; i != Data.size(); ++i) {
       if (i && (i % 4) == 0)
         outs() << ' ';
@@ -119,153 +121,208 @@ static int DumpSectionData(const MachOObjectFile &Obj, unsigned Index,
     outs() << "')\n";
   }
 
-  return 0;
+  return Res;
 }
 
-static int DumpSegmentCommand(const MachOObjectFile &Obj,
-                              const MachOObjectFile::LoadCommandInfo &LCI) {
-  MachO::segment_command SLC = Obj.getSegmentLoadCommand(LCI);
+static int DumpSegmentCommand(MachOObject &Obj,
+                               const MachOObject::LoadCommandInfo &LCI) {
+  InMemoryStruct<macho::SegmentLoadCommand> SLC;
+  Obj.ReadSegmentLoadCommand(LCI, SLC);
+  if (!SLC)
+    return Error("unable to read segment load command");
 
-  DumpSegmentCommandData(StringRef(SLC.segname, 16), SLC.vmaddr,
-                         SLC.vmsize, SLC.fileoff, SLC.filesize,
-                         SLC.maxprot, SLC.initprot, SLC.nsects, SLC.flags);
+  DumpSegmentCommandData(StringRef(SLC->Name, 16), SLC->VMAddress,
+                         SLC->VMSize, SLC->FileOffset, SLC->FileSize,
+                         SLC->MaxVMProtection, SLC->InitialVMProtection,
+                         SLC->NumSections, SLC->Flags);
 
   // Dump the sections.
+  int Res = 0;
   outs() << "  ('sections', [\n";
-  for (unsigned i = 0; i != SLC.nsects; ++i) {
-    MachO::section Sect = Obj.getSection(LCI, i);
-    DumpSectionData(Obj, i, StringRef(Sect.sectname, 16),
-                    StringRef(Sect.segname, 16), Sect.addr,
-                    Sect.size, Sect.offset, Sect.align,
-                    Sect.reloff, Sect.nreloc, Sect.flags,
-                    Sect.reserved1, Sect.reserved2);
+  for (unsigned i = 0; i != SLC->NumSections; ++i) {
+    InMemoryStruct<macho::Section> Sect;
+    Obj.ReadSection(LCI, i, Sect);
+    if (!SLC) {
+      Res = Error("unable to read section '" + Twine(i) + "'");
+      break;
+    }
+
+    if ((Res = DumpSectionData(Obj, i, StringRef(Sect->Name, 16),
+                               StringRef(Sect->SegmentName, 16), Sect->Address,
+                               Sect->Size, Sect->Offset, Sect->Align,
+                               Sect->RelocationTableOffset,
+                               Sect->NumRelocationTableEntries, Sect->Flags,
+                               Sect->Reserved1, Sect->Reserved2)))
+      break;
   }
   outs() << "  ])\n";
 
-  return 0;
+  return Res;
 }
 
-static int DumpSegment64Command(const MachOObjectFile &Obj,
-                                const MachOObjectFile::LoadCommandInfo &LCI) {
-  MachO::segment_command_64 SLC = Obj.getSegment64LoadCommand(LCI);
-  DumpSegmentCommandData(StringRef(SLC.segname, 16), SLC.vmaddr,
-                         SLC.vmsize, SLC.fileoff, SLC.filesize,
-                         SLC.maxprot, SLC.initprot, SLC.nsects, SLC.flags);
+static int DumpSegment64Command(MachOObject &Obj,
+                               const MachOObject::LoadCommandInfo &LCI) {
+  InMemoryStruct<macho::Segment64LoadCommand> SLC;
+  Obj.ReadSegment64LoadCommand(LCI, SLC);
+  if (!SLC)
+    return Error("unable to read segment load command");
+
+  DumpSegmentCommandData(StringRef(SLC->Name, 16), SLC->VMAddress,
+                         SLC->VMSize, SLC->FileOffset, SLC->FileSize,
+                         SLC->MaxVMProtection, SLC->InitialVMProtection,
+                         SLC->NumSections, SLC->Flags);
 
   // Dump the sections.
+  int Res = 0;
   outs() << "  ('sections', [\n";
-  for (unsigned i = 0; i != SLC.nsects; ++i) {
-    MachO::section_64 Sect = Obj.getSection64(LCI, i);
+  for (unsigned i = 0; i != SLC->NumSections; ++i) {
+    InMemoryStruct<macho::Section64> Sect;
+    Obj.ReadSection64(LCI, i, Sect);
+    if (!SLC) {
+      Res = Error("unable to read section '" + Twine(i) + "'");
+      break;
+    }
 
-    DumpSectionData(Obj, i, StringRef(Sect.sectname, 16),
-                    StringRef(Sect.segname, 16), Sect.addr,
-                    Sect.size, Sect.offset, Sect.align,
-                    Sect.reloff, Sect.nreloc, Sect.flags,
-                    Sect.reserved1, Sect.reserved2,
-                    Sect.reserved3);
+    if ((Res = DumpSectionData(Obj, i, StringRef(Sect->Name, 16),
+                               StringRef(Sect->SegmentName, 16), Sect->Address,
+                               Sect->Size, Sect->Offset, Sect->Align,
+                               Sect->RelocationTableOffset,
+                               Sect->NumRelocationTableEntries, Sect->Flags,
+                               Sect->Reserved1, Sect->Reserved2,
+                               Sect->Reserved3)))
+      break;
   }
   outs() << "  ])\n";
 
-  return 0;
+  return Res;
 }
 
-static void DumpSymbolTableEntryData(const MachOObjectFile &Obj,
+static void DumpSymbolTableEntryData(MachOObject &Obj,
                                      unsigned Index, uint32_t StringIndex,
                                      uint8_t Type, uint8_t SectionIndex,
-                                     uint16_t Flags, uint64_t Value,
-                                     StringRef StringTable) {
-  const char *Name = &StringTable.data()[StringIndex];
+                                     uint16_t Flags, uint64_t Value) {
   outs() << "    # Symbol " << Index << "\n";
   outs() << "   (('n_strx', " << StringIndex << ")\n";
   outs() << "    ('n_type', " << format("0x%x", Type) << ")\n";
   outs() << "    ('n_sect', " << uint32_t(SectionIndex) << ")\n";
   outs() << "    ('n_desc', " << Flags << ")\n";
   outs() << "    ('n_value', " << Value << ")\n";
-  outs() << "    ('_string', '" << Name << "')\n";
+  outs() << "    ('_string', '" << Obj.getStringAtIndex(StringIndex) << "')\n";
   outs() << "   ),\n";
 }
 
-static int DumpSymtabCommand(const MachOObjectFile &Obj) {
-  MachO::symtab_command SLC = Obj.getSymtabLoadCommand();
+static int DumpSymtabCommand(MachOObject &Obj,
+                             const MachOObject::LoadCommandInfo &LCI) {
+  InMemoryStruct<macho::SymtabLoadCommand> SLC;
+  Obj.ReadSymtabLoadCommand(LCI, SLC);
+  if (!SLC)
+    return Error("unable to read segment load command");
 
-  outs() << "  ('symoff', " << SLC.symoff << ")\n";
-  outs() << "  ('nsyms', " << SLC.nsyms << ")\n";
-  outs() << "  ('stroff', " << SLC.stroff << ")\n";
-  outs() << "  ('strsize', " << SLC.strsize << ")\n";
+  outs() << "  ('symoff', " << SLC->SymbolTableOffset << ")\n";
+  outs() << "  ('nsyms', " << SLC->NumSymbolTableEntries << ")\n";
+  outs() << "  ('stroff', " << SLC->StringTableOffset << ")\n";
+  outs() << "  ('strsize', " << SLC->StringTableSize << ")\n";
+
+  // Cache the string table data.
+  Obj.RegisterStringTable(*SLC);
 
   // Dump the string data.
   outs() << "  ('_string_data', '";
-  StringRef StringTable = Obj.getStringTableData();
-  outs().write_escaped(StringTable,
+  outs().write_escaped(Obj.getStringTableData(),
                        /*UseHexEscapes=*/true) << "')\n";
 
   // Dump the symbol table.
+  int Res = 0;
   outs() << "  ('_symbols', [\n";
-  unsigned SymNum = 0;
-  for (const SymbolRef &Symbol : Obj.symbols()) {
-    DataRefImpl DRI = Symbol.getRawDataRefImpl();
+  for (unsigned i = 0; i != SLC->NumSymbolTableEntries; ++i) {
     if (Obj.is64Bit()) {
-      MachO::nlist_64 STE = Obj.getSymbol64TableEntry(DRI);
-      DumpSymbolTableEntryData(Obj, SymNum, STE.n_strx, STE.n_type,
-                               STE.n_sect, STE.n_desc, STE.n_value,
-                               StringTable);
+      InMemoryStruct<macho::Symbol64TableEntry> STE;
+      Obj.ReadSymbol64TableEntry(SLC->SymbolTableOffset, i, STE);
+      if (!STE) {
+        Res = Error("unable to read symbol: '" + Twine(i) + "'");
+        break;
+      }
+
+      DumpSymbolTableEntryData(Obj, i, STE->StringIndex, STE->Type,
+                               STE->SectionIndex, STE->Flags, STE->Value);
     } else {
-      MachO::nlist STE = Obj.getSymbolTableEntry(DRI);
-      DumpSymbolTableEntryData(Obj, SymNum, STE.n_strx, STE.n_type,
-                               STE.n_sect, STE.n_desc, STE.n_value,
-                               StringTable);
+      InMemoryStruct<macho::SymbolTableEntry> STE;
+      Obj.ReadSymbolTableEntry(SLC->SymbolTableOffset, i, STE);
+      if (!SLC) {
+        Res = Error("unable to read symbol: '" + Twine(i) + "'");
+        break;
+      }
+
+      DumpSymbolTableEntryData(Obj, i, STE->StringIndex, STE->Type,
+                               STE->SectionIndex, STE->Flags, STE->Value);
     }
-    SymNum++;
   }
   outs() << "  ])\n";
 
-  return 0;
+  return Res;
 }
 
-static int DumpDysymtabCommand(const MachOObjectFile &Obj) {
-  MachO::dysymtab_command DLC = Obj.getDysymtabLoadCommand();
+static int DumpDysymtabCommand(MachOObject &Obj,
+                             const MachOObject::LoadCommandInfo &LCI) {
+  InMemoryStruct<macho::DysymtabLoadCommand> DLC;
+  Obj.ReadDysymtabLoadCommand(LCI, DLC);
+  if (!DLC)
+    return Error("unable to read segment load command");
 
-  outs() << "  ('ilocalsym', " << DLC.ilocalsym << ")\n";
-  outs() << "  ('nlocalsym', " << DLC.nlocalsym << ")\n";
-  outs() << "  ('iextdefsym', " << DLC.iextdefsym << ")\n";
-  outs() << "  ('nextdefsym', " << DLC.nextdefsym << ")\n";
-  outs() << "  ('iundefsym', " << DLC.iundefsym << ")\n";
-  outs() << "  ('nundefsym', " << DLC.nundefsym << ")\n";
-  outs() << "  ('tocoff', " << DLC.tocoff << ")\n";
-  outs() << "  ('ntoc', " << DLC.ntoc << ")\n";
-  outs() << "  ('modtaboff', " << DLC.modtaboff << ")\n";
-  outs() << "  ('nmodtab', " << DLC.nmodtab << ")\n";
-  outs() << "  ('extrefsymoff', " << DLC.extrefsymoff << ")\n";
-  outs() << "  ('nextrefsyms', " << DLC.nextrefsyms << ")\n";
-  outs() << "  ('indirectsymoff', " << DLC.indirectsymoff << ")\n";
-  outs() << "  ('nindirectsyms', " << DLC.nindirectsyms << ")\n";
-  outs() << "  ('extreloff', " << DLC.extreloff << ")\n";
-  outs() << "  ('nextrel', " << DLC.nextrel << ")\n";
-  outs() << "  ('locreloff', " << DLC.locreloff << ")\n";
-  outs() << "  ('nlocrel', " << DLC.nlocrel << ")\n";
+  outs() << "  ('ilocalsym', " << DLC->LocalSymbolsIndex << ")\n";
+  outs() << "  ('nlocalsym', " << DLC->NumLocalSymbols << ")\n";
+  outs() << "  ('iextdefsym', " << DLC->ExternalSymbolsIndex << ")\n";
+  outs() << "  ('nextdefsym', " << DLC->NumExternalSymbols << ")\n";
+  outs() << "  ('iundefsym', " << DLC->UndefinedSymbolsIndex << ")\n";
+  outs() << "  ('nundefsym', " << DLC->NumUndefinedSymbols << ")\n";
+  outs() << "  ('tocoff', " << DLC->TOCOffset << ")\n";
+  outs() << "  ('ntoc', " << DLC->NumTOCEntries << ")\n";
+  outs() << "  ('modtaboff', " << DLC->ModuleTableOffset << ")\n";
+  outs() << "  ('nmodtab', " << DLC->NumModuleTableEntries << ")\n";
+  outs() << "  ('extrefsymoff', " << DLC->ReferenceSymbolTableOffset << ")\n";
+  outs() << "  ('nextrefsyms', "
+         << DLC->NumReferencedSymbolTableEntries << ")\n";
+  outs() << "  ('indirectsymoff', " << DLC->IndirectSymbolTableOffset << ")\n";
+  outs() << "  ('nindirectsyms', "
+         << DLC->NumIndirectSymbolTableEntries << ")\n";
+  outs() << "  ('extreloff', " << DLC->ExternalRelocationTableOffset << ")\n";
+  outs() << "  ('nextrel', " << DLC->NumExternalRelocationTableEntries << ")\n";
+  outs() << "  ('locreloff', " << DLC->LocalRelocationTableOffset << ")\n";
+  outs() << "  ('nlocrel', " << DLC->NumLocalRelocationTableEntries << ")\n";
 
   // Dump the indirect symbol table.
+  int Res = 0;
   outs() << "  ('_indirect_symbols', [\n";
-  for (unsigned i = 0; i != DLC.nindirectsyms; ++i) {
-    uint32_t ISTE = Obj.getIndirectSymbolTableEntry(DLC, i);
+  for (unsigned i = 0; i != DLC->NumIndirectSymbolTableEntries; ++i) {
+    InMemoryStruct<macho::IndirectSymbolTableEntry> ISTE;
+    Obj.ReadIndirectSymbolTableEntry(*DLC, i, ISTE);
+    if (!ISTE) {
+      Res = Error("unable to read segment load command");
+      break;
+    }
+
     outs() << "    # Indirect Symbol " << i << "\n";
-    outs() << "    (('symbol_index', " << format("0x%x", ISTE) << "),),\n";
+    outs() << "    (('symbol_index', "
+           << format("0x%x", ISTE->Index) << "),),\n";
   }
   outs() << "  ])\n";
 
-  return 0;
+  return Res;
 }
 
-static int
-DumpLinkeditDataCommand(const MachOObjectFile &Obj,
-                        const MachOObjectFile::LoadCommandInfo &LCI) {
-  MachO::linkedit_data_command LLC = Obj.getLinkeditDataLoadCommand(LCI);
-  outs() << "  ('dataoff', " << LLC.dataoff << ")\n"
-         << "  ('datasize', " << LLC.datasize << ")\n"
+static int DumpLinkeditDataCommand(MachOObject &Obj,
+                                   const MachOObject::LoadCommandInfo &LCI) {
+  InMemoryStruct<macho::LinkeditDataLoadCommand> LLC;
+  Obj.ReadLinkeditDataLoadCommand(LCI, LLC);
+  if (!LLC)
+    return Error("unable to read segment load command");
+
+  outs() << "  ('dataoff', " << LLC->DataOffset << ")\n"
+         << "  ('datasize', " << LLC->DataSize << ")\n"
          << "  ('_addresses', [\n";
 
   SmallVector<uint64_t, 8> Addresses;
-  Obj.ReadULEB128s(LLC.dataoff, Addresses);
+  Obj.ReadULEB128s(LLC->DataOffset, Addresses);
   for (unsigned i = 0, e = Addresses.size(); i != e; ++i)
     outs() << "    # Address " << i << '\n'
            << "    ('address', " << format("0x%x", Addresses[i]) << "),\n";
@@ -275,21 +332,28 @@ DumpLinkeditDataCommand(const MachOObjectFile &Obj,
   return 0;
 }
 
-static int
-DumpDataInCodeDataCommand(const MachOObjectFile &Obj,
-                          const MachOObjectFile::LoadCommandInfo &LCI) {
-  MachO::linkedit_data_command LLC = Obj.getLinkeditDataLoadCommand(LCI);
-  outs() << "  ('dataoff', " << LLC.dataoff << ")\n"
-         << "  ('datasize', " << LLC.datasize << ")\n"
+static int DumpDataInCodeDataCommand(MachOObject &Obj,
+                                     const MachOObject::LoadCommandInfo &LCI) {
+  InMemoryStruct<macho::LinkeditDataLoadCommand> LLC;
+  Obj.ReadLinkeditDataLoadCommand(LCI, LLC);
+  if (!LLC)
+    return Error("unable to read segment load command");
+
+  outs() << "  ('dataoff', " << LLC->DataOffset << ")\n"
+         << "  ('datasize', " << LLC->DataSize << ")\n"
          << "  ('_data_regions', [\n";
 
-  unsigned NumRegions = LLC.datasize / sizeof(MachO::data_in_code_entry);
+
+  unsigned NumRegions = LLC->DataSize / 8;
   for (unsigned i = 0; i < NumRegions; ++i) {
-    MachO::data_in_code_entry DICE= Obj.getDataInCodeTableEntry(LLC.dataoff, i);
+    InMemoryStruct<macho::DataInCodeTableEntry> DICE;
+    Obj.ReadDataInCodeTableEntry(LLC->DataOffset, i, DICE);
+    if (!DICE)
+      return Error("unable to read DataInCodeTableEntry");
     outs() << "    # DICE " << i << "\n"
-           << "    ('offset', " << DICE.offset << ")\n"
-           << "    ('length', " << DICE.length << ")\n"
-           << "    ('kind', " << DICE.kind << ")\n";
+           << "    ('offset', " << DICE->Offset << ")\n"
+           << "    ('length', " << DICE->Length << ")\n"
+           << "    ('kind', " << DICE->Kind << ")\n";
   }
 
   outs() <<"  ])\n";
@@ -297,104 +361,42 @@ DumpDataInCodeDataCommand(const MachOObjectFile &Obj,
   return 0;
 }
 
-static int
-DumpLinkerOptionsCommand(const MachOObjectFile &Obj,
-                         const MachOObjectFile::LoadCommandInfo &LCI) {
-  MachO::linker_options_command LOLC = Obj.getLinkerOptionsLoadCommand(LCI);
-  outs() << "  ('count', " << LOLC.count << ")\n"
-         << "  ('_strings', [\n";
 
-  uint64_t DataSize = LOLC.cmdsize - sizeof(MachO::linker_options_command);
-  const char *P = LCI.Ptr + sizeof(MachO::linker_options_command);
-  StringRef Data(P, DataSize);
-  for (unsigned i = 0; i != LOLC.count; ++i) {
-    std::pair<StringRef,StringRef> Split = Data.split('\0');
-    outs() << "\t\"";
-    outs().write_escaped(Split.first);
-    outs() << "\",\n";
-    Data = Split.second;
-  }
-  outs() <<"  ])\n";
+static int DumpLoadCommand(MachOObject &Obj, unsigned Index) {
+  const MachOObject::LoadCommandInfo &LCI = Obj.getLoadCommandInfo(Index);
+  int Res = 0;
 
-  return 0;
-}
-
-static int
-DumpVersionMin(const MachOObjectFile &Obj,
-               const MachOObjectFile::LoadCommandInfo &LCI) {
-  MachO::version_min_command VMLC = Obj.getVersionMinLoadCommand(LCI);
-  outs() << "  ('version, " << VMLC.version << ")\n"
-         << "  ('sdk, " << VMLC.sdk << ")\n";
-  return 0;
-}
-
-static int
-DumpDylibID(const MachOObjectFile &Obj,
-            const MachOObjectFile::LoadCommandInfo &LCI) {
-  MachO::dylib_command DLLC = Obj.getDylibIDLoadCommand(LCI);
-  outs() << "  ('install_name', '" << LCI.Ptr + DLLC.dylib.name << "')\n"
-         << "  ('timestamp, " << DLLC.dylib.timestamp << ")\n"
-         << "  ('cur_version, " << DLLC.dylib.current_version << ")\n"
-         << "  ('compat_version, " << DLLC.dylib.compatibility_version << ")\n";
-  return 0;
-}
-
-static int DumpLoadCommand(const MachOObjectFile &Obj,
-                           MachOObjectFile::LoadCommandInfo &LCI) {
-  switch (LCI.C.cmd) {
-  case MachO::LC_SEGMENT:
-    return DumpSegmentCommand(Obj, LCI);
-  case MachO::LC_SEGMENT_64:
-    return DumpSegment64Command(Obj, LCI);
-  case MachO::LC_SYMTAB:
-    return DumpSymtabCommand(Obj);
-  case MachO::LC_DYSYMTAB:
-    return DumpDysymtabCommand(Obj);
-  case MachO::LC_CODE_SIGNATURE:
-  case MachO::LC_SEGMENT_SPLIT_INFO:
-  case MachO::LC_FUNCTION_STARTS:
-    return DumpLinkeditDataCommand(Obj, LCI);
-  case MachO::LC_DATA_IN_CODE:
-    return DumpDataInCodeDataCommand(Obj, LCI);
-  case MachO::LC_LINKER_OPTIONS:
-    return DumpLinkerOptionsCommand(Obj, LCI);
-  case MachO::LC_VERSION_MIN_IPHONEOS:
-  case MachO::LC_VERSION_MIN_MACOSX:
-    return DumpVersionMin(Obj, LCI);
-  case MachO::LC_ID_DYLIB:
-    return DumpDylibID(Obj, LCI);
-  default:
-    Warning("unknown load command: " + Twine(LCI.C.cmd));
-    return 0;
-  }
-}
-
-
-static int DumpLoadCommand(const MachOObjectFile &Obj, unsigned Index,
-                           MachOObjectFile::LoadCommandInfo &LCI) {
   outs() << "  # Load Command " << Index << "\n"
-         << " (('command', " << LCI.C.cmd << ")\n"
-         << "  ('size', " << LCI.C.cmdsize << ")\n";
-  int Res = DumpLoadCommand(Obj, LCI);
-  outs() << " ),\n";
-  return Res;
-}
-
-static void printHeader(const MachOObjectFile *Obj,
-                        const MachO::mach_header &Header) {
-  outs() << "('cputype', " << Header.cputype << ")\n";
-  outs() << "('cpusubtype', " << Header.cpusubtype << ")\n";
-  outs() << "('filetype', " << Header.filetype << ")\n";
-  outs() << "('num_load_commands', " << Header.ncmds << ")\n";
-  outs() << "('load_commands_size', " << Header.sizeofcmds << ")\n";
-  outs() << "('flag', " << Header.flags << ")\n";
-
-  // Print extended header if 64-bit.
-  if (Obj->is64Bit()) {
-    const MachO::mach_header_64 *Header64 =
-      reinterpret_cast<const MachO::mach_header_64 *>(&Header);
-    outs() << "('reserved', " << Header64->reserved << ")\n";
+         << " (('command', " << LCI.Command.Type << ")\n"
+         << "  ('size', " << LCI.Command.Size << ")\n";
+  switch (LCI.Command.Type) {
+  case macho::LCT_Segment:
+    Res = DumpSegmentCommand(Obj, LCI);
+    break;
+  case macho::LCT_Segment64:
+    Res = DumpSegment64Command(Obj, LCI);
+    break;
+  case macho::LCT_Symtab:
+    Res = DumpSymtabCommand(Obj, LCI);
+    break;
+  case macho::LCT_Dysymtab:
+    Res = DumpDysymtabCommand(Obj, LCI);
+    break;
+  case macho::LCT_CodeSignature:
+  case macho::LCT_SegmentSplitInfo:
+  case macho::LCT_FunctionStarts:
+    Res = DumpLinkeditDataCommand(Obj, LCI);
+    break;
+  case macho::LCT_DataInCode:
+    Res = DumpDataInCodeDataCommand(Obj, LCI);
+    break;
+  default:
+    Warning("unknown load command: " + Twine(LCI.Command.Type));
+    break;
   }
+  outs() << " ),\n";
+
+  return Res;
 }
 
 int main(int argc, char **argv) {
@@ -403,37 +405,27 @@ int main(int argc, char **argv) {
 
   cl::ParseCommandLineOptions(argc, argv, "llvm Mach-O dumping tool\n");
 
-  ErrorOr<OwningBinary<Binary>> BinaryOrErr = createBinary(InputFile);
-  if (std::error_code EC = BinaryOrErr.getError())
-    return Error("unable to read input: '" + EC.message() + "'");
-  Binary &Binary = *BinaryOrErr.get().getBinary();
+  // Load the input file.
+  std::string ErrorStr;
+  OwningPtr<MemoryBuffer> InputBuffer;
+  if (error_code ec = MemoryBuffer::getFileOrSTDIN(InputFile, InputBuffer))
+    return Error("unable to read input: '" + ec.message() + "'");
 
-  const MachOObjectFile *InputObject = dyn_cast<MachOObjectFile>(&Binary);
+  // Construct the Mach-O wrapper object.
+  OwningPtr<MachOObject> InputObject(
+    MachOObject::LoadFromBuffer(InputBuffer.take(), &ErrorStr));
   if (!InputObject)
-    return Error("Not a MachO object");
+    return Error("unable to load object: '" + ErrorStr + "'");
 
   // Print the header
-  MachO::mach_header_64 Header64;
-  MachO::mach_header *Header = reinterpret_cast<MachO::mach_header*>(&Header64);
-  if (InputObject->is64Bit())
-    Header64 = InputObject->getHeader64();
-  else
-    *Header = InputObject->getHeader();
-  printHeader(InputObject, *Header);
+  InputObject->printHeader(outs());
 
   // Print the load commands.
   int Res = 0;
-  MachOObjectFile::LoadCommandInfo Command =
-    InputObject->getFirstLoadCommandInfo();
   outs() << "('load_commands', [\n";
-  for (unsigned i = 0; ; ++i) {
-    if (DumpLoadCommand(*InputObject, i, Command))
+  for (unsigned i = 0; i != InputObject->getHeader().NumLoadCommands; ++i)
+    if ((Res = DumpLoadCommand(*InputObject, i)))
       break;
-
-    if (i == Header->ncmds - 1)
-      break;
-    Command = InputObject->getNextLoadCommandInfo(Command);
-  }
   outs() << "])\n";
 
   return Res;

@@ -16,11 +16,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/CodeGen/VirtRegMap.h"
+#define DEBUG_TYPE "regalloc"
+#include "VirtRegMap.h"
 #include "LiveDebugVariables.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SparseSet.h"
-#include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/LiveIntervalAnalysis.h"
 #include "llvm/CodeGen/LiveStackAnalysis.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -28,19 +26,17 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/Passes.h"
-#include "llvm/IR/Function.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/TargetInstrInfo.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetRegisterInfo.h"
-#include "llvm/Target/TargetSubtargetInfo.h"
+#include "llvm/ADT/Statistic.h"
+#include "llvm/ADT/STLExtras.h"
 #include <algorithm>
 using namespace llvm;
-
-#define DEBUG_TYPE "regalloc"
 
 STATISTIC(NumSpillSlots, "Number of spill slots allocated");
 STATISTIC(NumIdCopies,   "Number of identity moves eliminated after rewriting");
@@ -55,8 +51,8 @@ INITIALIZE_PASS(VirtRegMap, "virtregmap", "Virtual Register Map", false, false)
 
 bool VirtRegMap::runOnMachineFunction(MachineFunction &mf) {
   MRI = &mf.getRegInfo();
-  TII = mf.getSubtarget().getInstrInfo();
-  TRI = mf.getSubtarget().getRegisterInfo();
+  TII = mf.getTarget().getInstrInfo();
+  TRI = mf.getTarget().getRegisterInfo();
   MF = &mf;
 
   Virt2PhysMap.clear();
@@ -81,22 +77,15 @@ unsigned VirtRegMap::createSpillSlot(const TargetRegisterClass *RC) {
   return SS;
 }
 
-bool VirtRegMap::hasPreferredPhys(unsigned VirtReg) {
-  unsigned Hint = MRI->getSimpleHint(VirtReg);
-  if (!Hint)
-    return 0;
-  if (TargetRegisterInfo::isVirtualRegister(Hint))
-    Hint = getPhys(Hint);
-  return getPhys(VirtReg) == Hint;
-}
-
-bool VirtRegMap::hasKnownPreference(unsigned VirtReg) {
-  std::pair<unsigned, unsigned> Hint = MRI->getRegAllocationHint(VirtReg);
-  if (TargetRegisterInfo::isPhysicalRegister(Hint.second))
-    return true;
-  if (TargetRegisterInfo::isVirtualRegister(Hint.second))
-    return hasPhys(Hint.second);
-  return false;
+unsigned VirtRegMap::getRegAllocPref(unsigned virtReg) {
+  std::pair<unsigned, unsigned> Hint = MRI->getRegAllocationHint(virtReg);
+  unsigned physReg = Hint.second;
+  if (TargetRegisterInfo::isVirtualRegister(physReg) && hasPhys(physReg))
+    physReg = getPhys(physReg);
+  if (Hint.first == 0)
+    return (TargetRegisterInfo::isPhysicalRegister(physReg))
+      ? physReg : 0;
+  return TRI->ResolveRegAllocHint(Hint.first, physReg, *MF);
 }
 
 int VirtRegMap::assignVirt2StackSlot(unsigned virtReg) {
@@ -163,7 +152,6 @@ class VirtRegRewriter : public MachineFunctionPass {
   SlotIndexes *Indexes;
   LiveIntervals *LIS;
   VirtRegMap *VRM;
-  SparseSet<unsigned> PhysRegs;
 
   void rewrite();
   void addMBBLiveIns();
@@ -171,9 +159,9 @@ public:
   static char ID;
   VirtRegRewriter() : MachineFunctionPass(ID) {}
 
-  void getAnalysisUsage(AnalysisUsage &AU) const override;
+  virtual void getAnalysisUsage(AnalysisUsage &AU) const;
 
-  bool runOnMachineFunction(MachineFunction&) override;
+  virtual bool runOnMachineFunction(MachineFunction&);
 };
 } // end anonymous namespace
 
@@ -206,8 +194,8 @@ void VirtRegRewriter::getAnalysisUsage(AnalysisUsage &AU) const {
 bool VirtRegRewriter::runOnMachineFunction(MachineFunction &fn) {
   MF = &fn;
   TM = &MF->getTarget();
-  TRI = MF->getSubtarget().getRegisterInfo();
-  TII = MF->getSubtarget().getInstrInfo();
+  TRI = TM->getRegisterInfo();
+  TII = TM->getInstrInfo();
   MRI = &MF->getRegInfo();
   Indexes = &getAnalysis<SlotIndexes>();
   LIS = &getAnalysis<LiveIntervals>();
@@ -269,53 +257,14 @@ void VirtRegRewriter::rewrite() {
   SmallVector<unsigned, 8> SuperDeads;
   SmallVector<unsigned, 8> SuperDefs;
   SmallVector<unsigned, 8> SuperKills;
-  SmallPtrSet<const MachineInstr *, 4> NoReturnInsts;
-
-  // Here we have a SparseSet to hold which PhysRegs are actually encountered
-  // in the MF we are about to iterate over so that later when we call
-  // setPhysRegUsed, we are only doing it for physRegs that were actually found
-  // in the program and not for all of the possible physRegs for the given
-  // target architecture. If the target has a lot of physRegs, then for a small
-  // program there will be a significant compile time reduction here.
-  PhysRegs.clear();
-  PhysRegs.setUniverse(TRI->getNumRegs());
-
-  // The function with uwtable should guarantee that the stack unwinder
-  // can unwind the stack to the previous frame.  Thus, we can't apply the
-  // noreturn optimization if the caller function has uwtable attribute.
-  bool HasUWTable = MF->getFunction()->hasFnAttribute(Attribute::UWTable);
 
   for (MachineFunction::iterator MBBI = MF->begin(), MBBE = MF->end();
        MBBI != MBBE; ++MBBI) {
     DEBUG(MBBI->print(dbgs(), Indexes));
-    bool IsExitBB = MBBI->succ_empty();
     for (MachineBasicBlock::instr_iterator
            MII = MBBI->instr_begin(), MIE = MBBI->instr_end(); MII != MIE;) {
       MachineInstr *MI = MII;
       ++MII;
-
-      // Check if this instruction is a call to a noreturn function.  If this
-      // is a call to noreturn function and we don't need the stack unwinding
-      // functionality (i.e. this function does not have uwtable attribute and
-      // the callee function has the nounwind attribute), then we can ignore
-      // the definitions set by this instruction.
-      if (!HasUWTable && IsExitBB && MI->isCall()) {
-        for (MachineInstr::mop_iterator MOI = MI->operands_begin(),
-               MOE = MI->operands_end(); MOI != MOE; ++MOI) {
-          MachineOperand &MO = *MOI;
-          if (!MO.isGlobal())
-            continue;
-          const Function *Func = dyn_cast<Function>(MO.getGlobal());
-          if (!Func || !Func->hasFnAttribute(Attribute::NoReturn) ||
-              // We need to keep correct unwind information
-              // even if the function will not return, since the
-              // runtime may need it.
-              !Func->hasFnAttribute(Attribute::NoUnwind))
-            continue;
-          NoReturnInsts.insert(MI);
-          break;
-        }
-      }
 
       for (MachineInstr::mop_iterator MOI = MI->operands_begin(),
            MOE = MI->operands_end(); MOI != MOE; ++MOI) {
@@ -324,15 +273,6 @@ void VirtRegRewriter::rewrite() {
         // Make sure MRI knows about registers clobbered by regmasks.
         if (MO.isRegMask())
           MRI->addPhysRegsUsedFromRegMask(MO.getRegMask());
-
-        // If we encounter a VirtReg or PhysReg then get at the PhysReg and add
-        // it to the physreg bitset.  Later we use only the PhysRegs that were
-        // actually encountered in the MF to populate the MRI's used physregs.
-        if (MO.isReg() && MO.getReg())
-          PhysRegs.insert(
-              TargetRegisterInfo::isVirtualRegister(MO.getReg()) ?
-              VRM->getPhys(MO.getReg()) :
-              MO.getReg());
 
         if (!MO.isReg() || !TargetRegisterInfo::isVirtualRegister(MO.getReg()))
           continue;
@@ -406,27 +346,7 @@ void VirtRegRewriter::rewrite() {
   }
 
   // Tell MRI about physical registers in use.
-  if (NoReturnInsts.empty()) {
-    for (SparseSet<unsigned>::iterator
-        RegI = PhysRegs.begin(), E = PhysRegs.end(); RegI != E; ++RegI)
-      if (!MRI->reg_nodbg_empty(*RegI))
-        MRI->setPhysRegUsed(*RegI);
-  } else {
-    for (SparseSet<unsigned>::iterator
-        I = PhysRegs.begin(), E = PhysRegs.end(); I != E; ++I) {
-      unsigned Reg = *I;
-      if (MRI->reg_nodbg_empty(Reg))
-        continue;
-      // Check if this register has a use that will impact the rest of the
-      // code. Uses in debug and noreturn instructions do not impact the
-      // generated code.
-      for (MachineInstr &It : MRI->reg_nodbg_instructions(Reg)) {
-        if (!NoReturnInsts.count(&It)) {
-          MRI->setPhysRegUsed(Reg);
-          break;
-        }
-      }
-    }
-  }
+  for (unsigned Reg = 1, RegE = TRI->getNumRegs(); Reg != RegE; ++Reg)
+    if (!MRI->reg_nodbg_empty(Reg))
+      MRI->setPhysRegUsed(Reg);
 }
-

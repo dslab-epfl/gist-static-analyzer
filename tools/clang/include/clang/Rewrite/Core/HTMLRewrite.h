@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_REWRITE_CORE_HTMLREWRITE_H
-#define LLVM_CLANG_REWRITE_CORE_HTMLREWRITE_H
+#ifndef LLVM_CLANG_HTMLREWRITER_H
+#define LLVM_CLANG_HTMLREWRITER_H
 
 #include "clang/Basic/SourceLocation.h"
 #include <string>
@@ -57,13 +57,13 @@ namespace html {
   ///  in 's' are not interpreted as HTML tags.  Unlike the version of
   ///  EscapeText that rewrites a file, this version by default replaces tabs
   ///  with spaces.
-  std::string EscapeText(StringRef s,
+  std::string EscapeText(const std::string& s,
                          bool EscapeSpaces = false, bool ReplaceTabs = false);
 
   void AddLineNumbers(Rewriter& R, FileID FID);
 
   void AddHeaderFooterInternalBuiltinCSS(Rewriter& R, FileID FID,
-                                         const char *title = nullptr);
+                                         const char *title = NULL);
 
   /// SyntaxHighlight - Relex the specified FileID and annotate the HTML with
   /// information about keywords, comments, etc.

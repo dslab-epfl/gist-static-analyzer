@@ -37,7 +37,7 @@ void test_unqual_references(struct X x, const struct X xc) {
 
 struct Redecl {
   int x; // expected-note{{previous declaration is here}}
-  struct y { }; // expected-warning{{declaration does not declare anything}}
+  struct y { };
 
   union {
     int x; // expected-error{{member of anonymous union redeclares 'x'}}
@@ -78,7 +78,7 @@ void g() {
 struct s0 { union { int f0; }; };
 
 // <rdar://problem/6481130>
-typedef struct { }; // expected-warning{{typedef requires a name}}
+typedef struct { }; // expected-warning{{declaration does not declare anything}}
 
 // PR3675
 struct s1 {

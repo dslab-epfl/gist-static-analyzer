@@ -14,7 +14,6 @@
 #ifndef LLVM_CLANG_AST_DECLLOOKUPS_H
 #define LLVM_CLANG_AST_DECLLOOKUPS_H
 
-#include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/DeclContextInternals.h"
 #include "clang/AST/DeclarationName.h"
@@ -36,8 +35,6 @@ public:
   all_lookups_iterator(StoredDeclsMap::iterator It,
                        StoredDeclsMap::iterator End)
       : It(It), End(End) {}
-
-  DeclarationName getLookupName() const { return It->first; }
 
   reference operator*() const { return It->second.getLookupResult(); }
   pointer operator->() const { return It->second.getLookupResult(); }
@@ -68,40 +65,22 @@ public:
   }
 };
 
-inline DeclContext::lookups_range DeclContext::lookups() const {
+DeclContext::all_lookups_iterator DeclContext::lookups_begin() const {
   DeclContext *Primary = const_cast<DeclContext*>(this)->getPrimaryContext();
   if (Primary->hasExternalVisibleStorage())
     getParentASTContext().getExternalSource()->completeVisibleDeclsMap(Primary);
   if (StoredDeclsMap *Map = Primary->buildLookup())
-    return lookups_range(all_lookups_iterator(Map->begin(), Map->end()),
-                         all_lookups_iterator(Map->end(), Map->end()));
-  return lookups_range();
+    return all_lookups_iterator(Map->begin(), Map->end());
+  return all_lookups_iterator();
 }
 
-inline DeclContext::all_lookups_iterator DeclContext::lookups_begin() const {
-  return lookups().begin();
-}
-
-inline DeclContext::all_lookups_iterator DeclContext::lookups_end() const {
-  return lookups().end();
-}
-
-inline DeclContext::lookups_range DeclContext::noload_lookups() const {
+DeclContext::all_lookups_iterator DeclContext::lookups_end() const {
   DeclContext *Primary = const_cast<DeclContext*>(this)->getPrimaryContext();
-  if (StoredDeclsMap *Map = Primary->getLookupPtr())
-    return lookups_range(all_lookups_iterator(Map->begin(), Map->end()),
-                         all_lookups_iterator(Map->end(), Map->end()));
-  return lookups_range();
-}
-
-inline
-DeclContext::all_lookups_iterator DeclContext::noload_lookups_begin() const {
-  return noload_lookups().begin();
-}
-
-inline
-DeclContext::all_lookups_iterator DeclContext::noload_lookups_end() const {
-  return noload_lookups().end();
+  if (Primary->hasExternalVisibleStorage())
+    getParentASTContext().getExternalSource()->completeVisibleDeclsMap(Primary);
+  if (StoredDeclsMap *Map = Primary->buildLookup())
+    return all_lookups_iterator(Map->end(), Map->end());
+  return all_lookups_iterator();
 }
 
 } // end namespace clang

@@ -8,50 +8,72 @@
 //===----------------------------------------------------------------------===//
 
 #include "ToolChains.h"
-#include "clang/Basic/CharInfo.h"
-#include "clang/Basic/Version.h"
+
+#include "clang/Driver/Arg.h"
+#include "clang/Driver/ArgList.h"
 #include "clang/Driver/Compilation.h"
 #include "clang/Driver/Driver.h"
-#include "clang/Driver/DriverDiagnostic.h"
 #include "clang/Driver/Options.h"
-#include "llvm/Config/llvm-config.h"
-#include "llvm/Option/Arg.h"
-#include "llvm/Option/ArgList.h"
+#include "clang/Basic/Version.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Path.h"
 
 // Include the necessary headers to interface with the Windows registry and
 // environment.
-#if defined(LLVM_ON_WIN32)
-#define USE_WIN32
-#endif
-
-#ifdef USE_WIN32
+#ifdef _MSC_VER
   #define WIN32_LEAN_AND_MEAN
   #define NOGDI
   #define NOMINMAX
-  #include <windows.h>
+  #include <Windows.h>
 #endif
 
 using namespace clang::driver;
 using namespace clang::driver::toolchains;
 using namespace clang;
-using namespace llvm::opt;
 
-Windows::Windows(const Driver &D, const llvm::Triple& Triple,
-                 const ArgList &Args)
-  : ToolChain(D, Triple, Args) {
+Windows::Windows(const Driver &D, const llvm::Triple& Triple)
+  : ToolChain(D, Triple) {
 }
 
-Tool *Windows::buildLinker() const {
-  return new tools::visualstudio::Link(*this);
-}
+Tool &Windows::SelectTool(const Compilation &C, const JobAction &JA,
+                          const ActionList &Inputs) const {
+  Action::ActionClass Key;
+  if (getDriver().ShouldUseClangCompiler(C, JA, getTriple()))
+    Key = Action::AnalyzeJobClass;
+  else
+    Key = JA.getKind();
 
-Tool *Windows::buildAssembler() const {
-  if (getTriple().isOSBinFormatMachO())
-    return new tools::darwin::Assemble(*this);
-  getDriver().Diag(clang::diag::err_no_external_assembler);
-  return nullptr;
+  bool UseIntegratedAs = C.getArgs().hasFlag(options::OPT_integrated_as,
+                                             options::OPT_no_integrated_as,
+                                             IsIntegratedAssemblerDefault());
+
+  Tool *&T = Tools[Key];
+  if (!T) {
+    switch (Key) {
+    case Action::InputClass:
+    case Action::BindArchClass:
+    case Action::LipoJobClass:
+    case Action::DsymutilJobClass:
+    case Action::VerifyJobClass:
+      llvm_unreachable("Invalid tool kind.");
+    case Action::PreprocessJobClass:
+    case Action::PrecompileJobClass:
+    case Action::AnalyzeJobClass:
+    case Action::MigrateJobClass:
+    case Action::CompileJobClass:
+      T = new tools::Clang(*this); break;
+    case Action::AssembleJobClass:
+      if (!UseIntegratedAs && getTriple().getEnvironment() == llvm::Triple::MachO)
+        T = new tools::darwin::Assemble(*this);
+      else
+        T = new tools::ClangAs(*this);
+      break;
+    case Action::LinkJobClass:
+      T = new tools::visualstudio::Link(*this); break;
+    }
+  }
+
+  return *T;
 }
 
 bool Windows::IsIntegratedAssemblerDefault() const {
@@ -59,9 +81,6 @@ bool Windows::IsIntegratedAssemblerDefault() const {
 }
 
 bool Windows::IsUnwindTablesDefault() const {
-  // Emit unwind tables by default on Win64. All non-x86_32 Windows platforms
-  // such as ARM and PPC actually require unwind tables, but LLVM doesn't know
-  // how to generate them yet.
   return getArch() == llvm::Triple::x86_64;
 }
 
@@ -69,13 +88,12 @@ bool Windows::isPICDefault() const {
   return getArch() == llvm::Triple::x86_64;
 }
 
-bool Windows::isPIEDefault() const {
-  return false;
-}
-
 bool Windows::isPICDefaultForced() const {
   return getArch() == llvm::Triple::x86_64;
 }
+
+// FIXME: This probably should goto to some platform utils place.
+#ifdef _MSC_VER
 
 /// \brief Read registry string.
 /// This also supports a means to look for high-versioned keys by use
@@ -87,9 +105,6 @@ bool Windows::isPICDefaultForced() const {
 /// characters are compared.
 static bool getSystemRegistryString(const char *keyPath, const char *valueName,
                                     char *value, size_t maxLength) {
-#ifndef USE_WIN32
-  return false;
-#else
   HKEY hRootKey = NULL;
   HKEY hKey = NULL;
   const char* subKey = NULL;
@@ -134,8 +149,7 @@ static bool getSystemRegistryString(const char *keyPath, const char *valueName,
     strncpy(partialKey, subKey, partialKeyLength);
     partialKey[partialKeyLength] = '\0';
     HKEY hTopKey = NULL;
-    lResult = RegOpenKeyEx(hRootKey, partialKey, 0, KEY_READ | KEY_WOW64_32KEY,
-                           &hTopKey);
+    lResult = RegOpenKeyEx(hRootKey, partialKey, 0, KEY_READ, &hTopKey);
     if (lResult == ERROR_SUCCESS) {
       char keyName[256];
       int bestIndex = -1;
@@ -144,44 +158,43 @@ static bool getSystemRegistryString(const char *keyPath, const char *valueName,
       for (index = 0; RegEnumKeyEx(hTopKey, index, keyName, &size, NULL,
           NULL, NULL, NULL) == ERROR_SUCCESS; index++) {
         const char *sp = keyName;
-        while (*sp && !isDigit(*sp))
+        while (*sp && !isdigit(*sp))
           sp++;
         if (!*sp)
           continue;
         const char *ep = sp + 1;
-        while (*ep && (isDigit(*ep) || (*ep == '.')))
+        while (*ep && (isdigit(*ep) || (*ep == '.')))
           ep++;
         char numBuf[32];
         strncpy(numBuf, sp, sizeof(numBuf) - 1);
         numBuf[sizeof(numBuf) - 1] = '\0';
-        double dvalue = strtod(numBuf, NULL);
-        if (dvalue > bestValue) {
-          // Test that InstallDir is indeed there before keeping this index.
-          // Open the chosen key path remainder.
+        double value = strtod(numBuf, NULL);
+        if (value > bestValue) {
+          bestIndex = (int)index;
+          bestValue = value;
           strcpy(bestName, keyName);
-          // Append rest of key.
-          strncat(bestName, nextKey, sizeof(bestName) - 1);
-          bestName[sizeof(bestName) - 1] = '\0';
-          lResult = RegOpenKeyEx(hTopKey, bestName, 0,
-                                 KEY_READ | KEY_WOW64_32KEY, &hKey);
-          if (lResult == ERROR_SUCCESS) {
-            lResult = RegQueryValueEx(hKey, valueName, NULL, &valueType,
-              (LPBYTE)value, &valueSize);
-            if (lResult == ERROR_SUCCESS) {
-              bestIndex = (int)index;
-              bestValue = dvalue;
-              returnValue = true;
-            }
-            RegCloseKey(hKey);
-          }
         }
         size = sizeof(keyName) - 1;
+      }
+      // If we found the highest versioned key, open the key and get the value.
+      if (bestIndex != -1) {
+        // Append rest of key.
+        strncat(bestName, nextKey, sizeof(bestName) - 1);
+        bestName[sizeof(bestName) - 1] = '\0';
+        // Open the chosen key path remainder.
+        lResult = RegOpenKeyEx(hTopKey, bestName, 0, KEY_READ, &hKey);
+        if (lResult == ERROR_SUCCESS) {
+          lResult = RegQueryValueEx(hKey, valueName, NULL, &valueType,
+            (LPBYTE)value, &valueSize);
+          if (lResult == ERROR_SUCCESS)
+            returnValue = true;
+          RegCloseKey(hKey);
+        }
       }
       RegCloseKey(hTopKey);
     }
   } else {
-    lResult = RegOpenKeyEx(hRootKey, subKey, 0, KEY_READ | KEY_WOW64_32KEY,
-                           &hKey);
+    lResult = RegOpenKeyEx(hRootKey, subKey, 0, KEY_READ, &hKey);
     if (lResult == ERROR_SUCCESS) {
       lResult = RegQueryValueEx(hKey, valueName, NULL, &valueType,
         (LPBYTE)value, &valueSize);
@@ -191,7 +204,6 @@ static bool getSystemRegistryString(const char *keyPath, const char *valueName,
     }
   }
   return returnValue;
-#endif // USE_WIN32
 }
 
 /// \brief Get Windows SDK installation directory.
@@ -211,7 +223,7 @@ static bool getWindowsSDKDir(std::string &path) {
   return false;
 }
 
-// Get Visual Studio installation directory.
+  // Get Visual Studio installation directory.
 static bool getVisualStudioDir(std::string &path) {
   // First check the environment variables that vsvars32.bat sets.
   const char* vcinstalldir = getenv("VCINSTALLDIR");
@@ -253,11 +265,25 @@ static bool getVisualStudioDir(std::string &path) {
   const char *vs100comntools = getenv("VS100COMNTOOLS");
   const char *vs90comntools = getenv("VS90COMNTOOLS");
   const char *vs80comntools = getenv("VS80COMNTOOLS");
+  const char *vscomntools = NULL;
 
-  const char *vscomntools = nullptr;
-
-  // Find any version we can
-  if (vs100comntools)
+  // Try to find the version that we were compiled with
+  if(false) {}
+  #if (_MSC_VER >= 1600)  // VC100
+  else if(vs100comntools) {
+    vscomntools = vs100comntools;
+  }
+  #elif (_MSC_VER == 1500) // VC80
+  else if(vs90comntools) {
+    vscomntools = vs90comntools;
+  }
+  #elif (_MSC_VER == 1400) // VC80
+  else if(vs80comntools) {
+    vscomntools = vs80comntools;
+  }
+  #endif
+  // Otherwise find any version we can
+  else if (vs100comntools)
     vscomntools = vs100comntools;
   else if (vs90comntools)
     vscomntools = vs90comntools;
@@ -272,29 +298,37 @@ static bool getVisualStudioDir(std::string &path) {
   return false;
 }
 
+#endif // _MSC_VER
+
 void Windows::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
                                         ArgStringList &CC1Args) const {
   if (DriverArgs.hasArg(options::OPT_nostdinc))
     return;
 
   if (!DriverArgs.hasArg(options::OPT_nobuiltininc)) {
-    SmallString<128> P(getDriver().ResourceDir);
-    llvm::sys::path::append(P, "include");
+    llvm::sys::Path P(getDriver().ResourceDir);
+    P.appendComponent("include");
     addSystemInclude(DriverArgs, CC1Args, P.str());
   }
 
   if (DriverArgs.hasArg(options::OPT_nostdlibinc))
     return;
 
+#ifdef _MSC_VER
   // Honor %INCLUDE%. It should know essential search paths with vcvarsall.bat.
   if (const char *cl_include_dir = getenv("INCLUDE")) {
     SmallVector<StringRef, 8> Dirs;
-    StringRef(cl_include_dir)
-        .split(Dirs, ";", /*MaxSplit=*/-1, /*KeepEmpty=*/false);
-    for (StringRef Dir : Dirs)
-      addSystemInclude(DriverArgs, CC1Args, Dir);
-    if (!Dirs.empty())
-      return;
+    StringRef(cl_include_dir).split(Dirs, ";");
+    int n = 0;
+    for (SmallVectorImpl<StringRef>::iterator I = Dirs.begin(), E = Dirs.end();
+         I != E; ++I) {
+      StringRef d = *I;
+      if (d.size() == 0)
+        continue;
+      ++n;
+      addSystemInclude(DriverArgs, CC1Args, d);
+    }
+    if (n) return;
   }
 
   std::string VSDir;
@@ -303,24 +337,17 @@ void Windows::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
   // When built with access to the proper Windows APIs, try to actually find
   // the correct include paths first.
   if (getVisualStudioDir(VSDir)) {
-    SmallString<128> P;
-    P = VSDir;
-    llvm::sys::path::append(P, "VC\\include");
-    addSystemInclude(DriverArgs, CC1Args, P.str());
-    if (getWindowsSDKDir(WindowsSDKDir)) {
-      P = WindowsSDKDir;
-      llvm::sys::path::append(P, "include");
-      addSystemInclude(DriverArgs, CC1Args, P.str());
-    } else {
-      P = VSDir;
-      llvm::sys::path::append(P, "VC\\PlatformSDK\\Include");
-      addSystemInclude(DriverArgs, CC1Args, P.str());
-    }
+    addSystemInclude(DriverArgs, CC1Args, VSDir + "\\VC\\include");
+    if (getWindowsSDKDir(WindowsSDKDir))
+      addSystemInclude(DriverArgs, CC1Args, WindowsSDKDir + "\\include");
+    else
+      addSystemInclude(DriverArgs, CC1Args,
+                       VSDir + "\\VC\\PlatformSDK\\Include");
     return;
   }
+#endif // _MSC_VER
 
   // As a fallback, select default install paths.
-  // FIXME: Don't guess drives and paths like this on Windows.
   const StringRef Paths[] = {
     "C:/Program Files/Microsoft Visual Studio 10.0/VC/include",
     "C:/Program Files/Microsoft Visual Studio 9.0/VC/include",

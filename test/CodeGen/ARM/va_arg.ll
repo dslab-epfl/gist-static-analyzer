@@ -1,7 +1,7 @@
 ; RUN: llc < %s -mtriple=armv7-none-linux-gnueabi -pre-RA-sched=source | FileCheck %s
 ; Test that we correctly align elements when using va_arg
 
-; CHECK-LABEL: test1:
+; CHECK: test1:
 ; CHECK-NOT: bfc
 ; CHECK: add	[[REG:(r[0-9]+)|(lr)]], {{(r[0-9]+)|(lr)}}, #7
 ; CHECK: bfc	[[REG]], #0, #3
@@ -17,20 +17,20 @@ entry:
   ret i64 %0
 }
 
-; CHECK-LABEL: test2:
+; CHECK: test2:
 ; CHECK-NOT: bfc
 ; CHECK: add	[[REG:(r[0-9]+)|(lr)]], {{(r[0-9]+)|(lr)}}, #7
 ; CHECK: bfc	[[REG]], #0, #3
 ; CHECK-NOT:	bfc
 ; CHECK: bx	lr
 
-define double @test2(i32 %a, i32* %b, ...) nounwind optsize {
+define double @test2(i32 %a, i32 %b, ...) nounwind optsize {
 entry:
   %ap = alloca i8*, align 4                       ; <i8**> [#uses=3]
   %ap1 = bitcast i8** %ap to i8*                  ; <i8*> [#uses=2]
   call void @llvm.va_start(i8* %ap1)
   %0 = va_arg i8** %ap, i32                       ; <i32> [#uses=0]
-  store i32 %0, i32* %b
+  store i32 %0, i32* undef
   %1 = va_arg i8** %ap, double                    ; <double> [#uses=1]
   call void @llvm.va_end(i8* %ap1)
   ret double %1

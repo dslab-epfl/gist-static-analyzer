@@ -50,7 +50,7 @@ void t10 () {
 
 void t11 () {
   char *p = (char*)__builtin_alloca(2);
-  free(p); // expected-warning {{Memory allocated by alloca() should not be deallocated}}
+  free(p); // expected-warning {{Argument to free() was allocated by alloca(), not malloc()}}
 }
 
 void t12 () {

@@ -7,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_DRIVER_PHASES_H
-#define LLVM_CLANG_DRIVER_PHASES_H
+#ifndef CLANG_DRIVER_PHASES_H_
+#define CLANG_DRIVER_PHASES_H_
 
 namespace clang {
 namespace driver {
@@ -21,10 +21,6 @@ namespace phases {
     Compile,
     Assemble,
     Link
-  };
-
-  enum {
-    MaxNumberOfPhases = Link + 1
   };
 
   const char *getPhaseName(ID Id);

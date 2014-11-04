@@ -1,4 +1,5 @@
-// RUN: %clang_cc1 -fsyntax-only -verify %s -fblocks -std=c++1y
+// RUN: %clang_cc1 -fsyntax-only -verify %s -fblocks -std=c++11
+// expected-no-diagnostics
 
 extern "C" int exit(int);
 
@@ -55,19 +56,4 @@ namespace rdar11055105 {
     A a;
     foo(a);
   };
-}
-
-namespace LocalDecls {
-  void f() {
-    (void) ^{
-      extern int a; // expected-note {{previous}}
-      extern int b(); // expected-note {{previous}}
-    };
-  }
-  void g() {
-    (void) ^{
-      extern float a; // expected-error {{different type}}
-      extern float b(); // expected-error {{cannot be overloaded}}
-    };
-  }
 }

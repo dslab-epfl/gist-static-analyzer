@@ -17,16 +17,17 @@
 // call into the JIT at the same time (or the best possible approximation of the
 // same time). This test had assertion errors until I got the locking right.
 
-#include "llvm/ExecutionEngine/GenericValue.h"
+#include <pthread.h>
+#include "llvm/LLVMContext.h"
+#include "llvm/Module.h"
+#include "llvm/Constants.h"
+#include "llvm/DerivedTypes.h"
+#include "llvm/Instructions.h"
+#include "llvm/ExecutionEngine/JIT.h"
 #include "llvm/ExecutionEngine/Interpreter.h"
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
+#include "llvm/ExecutionEngine/GenericValue.h"
 #include "llvm/Support/TargetSelect.h"
 #include <iostream>
-#include <pthread.h>
 using namespace llvm;
 
 static Function* createAdd1(Module *M) {
@@ -138,7 +139,6 @@ public:
   ~WaitForThreads()
   {
     int result = pthread_cond_destroy( &condition );
-    (void)result;
     assert( result == 0 );
 
     result = pthread_mutex_destroy( &mutex );
@@ -149,7 +149,6 @@ public:
   void block()
   {
     int result = pthread_mutex_lock( &mutex );
-    (void)result;
     assert( result == 0 );
     n ++;
     //~ std::cout << "block() n " << n << " waitFor " << waitFor << std::endl;
@@ -179,7 +178,6 @@ public:
   void releaseThreads( size_t num )
   {
     int result = pthread_mutex_lock( &mutex );
-    (void)result;
     assert( result == 0 );
 
     if ( n >= num ) {
@@ -242,14 +240,13 @@ int main() {
   LLVMContext Context;
 
   // Create some module to put our function into it.
-  std::unique_ptr<Module> Owner = make_unique<Module>("test", Context);
-  Module *M = Owner.get();
+  Module *M = new Module("test", Context);
 
   Function* add1F = createAdd1( M );
   Function* fibF = CreateFibFunction( M );
 
   // Now we create the JIT.
-  ExecutionEngine* EE = EngineBuilder(std::move(Owner)).create();
+  ExecutionEngine* EE = EngineBuilder(M).create();
 
   //~ std::cout << "We just constructed this LLVM module:\n\n" << *M;
   //~ std::cout << "\n\nRunning foo: " << std::flush;

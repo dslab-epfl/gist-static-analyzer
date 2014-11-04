@@ -8,7 +8,7 @@ define i32 @inner1() alwaysinline {
   ret i32 1
 }
 define i32 @outer1() {
-; CHECK-LABEL: @outer1(
+; CHECK: @outer1
 ; CHECK-NOT: call
 ; CHECK: ret
 
@@ -17,7 +17,7 @@ define i32 @outer1() {
 }
 
 ; The always inliner can't DCE internal functions. PR2945
-; CHECK-LABEL: @pr2945(
+; CHECK: @pr2945
 define internal i32 @pr2945() nounwind {
   ret i32 0
 }
@@ -31,7 +31,7 @@ define void @outer2(i32 %N) {
 ; a function with a dynamic alloca into one without a dynamic alloca.
 ; rdar://6655932
 ;
-; CHECK-LABEL: @outer2(
+; CHECK: @outer2
 ; CHECK-NOT: call void @inner2
 ; CHECK-NOT: call void @inner2
 ; CHECK: ret void
@@ -51,7 +51,7 @@ entry:
 }
 define i32 @outer3() {
 entry:
-; CHECK-LABEL: @outer3(
+; CHECK: @outer3
 ; CHECK-NOT: call i32 @a
 ; CHECK: ret
 
@@ -69,7 +69,7 @@ entry:
 
 define i32 @outer4() {
 entry:
-; CHECK-LABEL: @outer4(
+; CHECK: @outer4
 ; CHECK: call i32 @b()
 ; CHECK: ret
 
@@ -89,7 +89,7 @@ two:
   ret i32 44
 }
 define i32 @outer5(i32 %x) {
-; CHECK-LABEL: @outer5(
+; CHECK: @outer5
 ; CHECK: call i32 @inner5
 ; CHECK: ret
 
@@ -113,7 +113,7 @@ return:
   ret void
 }
 define void @outer6() {
-; CHECK-LABEL: @outer6(
+; CHECK: @outer6
 ; CHECK: call void @inner6(i32 42)
 ; CHECK: ret
 
@@ -122,14 +122,3 @@ entry:
   ret void
 }
 
-define i32 @inner7() {
-  ret i32 1
-}
-define i32 @outer7() {
-; CHECK-LABEL: @outer7(
-; CHECK-NOT: call
-; CHECK: ret
-
-   %r = call i32 @inner7() alwaysinline
-   ret i32 %r
-}

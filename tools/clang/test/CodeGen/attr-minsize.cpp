@@ -1,5 +1,5 @@
 // RUN: %clang_cc1 -Oz -emit-llvm %s -o - | FileCheck %s -check-prefix=Oz
-// RUN: %clang_cc1     -emit-llvm %s -o - | FileCheck %s -check-prefix=OTHER
+// RUN: %clang_cc1 -O0 -emit-llvm %s -o - | FileCheck %s -check-prefix=OTHER
 // RUN: %clang_cc1 -O1 -emit-llvm %s -o - | FileCheck %s -check-prefix=OTHER
 // RUN: %clang_cc1 -O2 -emit-llvm %s -o - | FileCheck %s -check-prefix=OTHER
 // RUN: %clang_cc1 -O3 -emit-llvm %s -o - | FileCheck %s -check-prefix=OTHER
@@ -7,29 +7,29 @@
 // Check that we set the minsize attribute on each function
 // when Oz optimization level is set.
 
-__attribute__((minsize))
 int test1() {
   return 42;
-// Oz: @{{.*}}test1{{.*}}[[MINSIZE:#[0-9]+]]
-// OTHER: @{{.*}}test1{{.*}}[[MS:#[0-9]+]]
+// Oz: @{{.*}}test1{{.*}}minsize
+// Oz: ret
+// OTHER: @{{.*}}test1
+// OTHER-NOT: minsize
+// OTHER: ret
 }
 
 int test2() {
   return 42;
-// Oz: @{{.*}}test2{{.*}}[[MINSIZE]]
+// Oz: @{{.*}}test2{{.*}}minsize
 // Oz: ret
 // OTHER: @{{.*}}test2
-// OTHER-NOT: [[MS]]
+// OTHER-NOT: minsize
 // OTHER: ret
 }
 
+__attribute__((minsize))
 int test3() {
   return 42;
-// Oz: @{{.*}}test3{{.*}}[[MINSIZE]]
-// Oz: ret
-// OTHER: @{{.*}}test3
-// OTHER-NOT: [[MS]]
-// OTHER: ret
+// Oz: @{{.*}}test3{{.*}}minsize
+// OTHER: @{{.*}}test3{{.*}}minsize
 }
 
 // Check that the minsize attribute is well propagated through
@@ -44,16 +44,16 @@ void test4(T arg) {
 template
 void test4<int>(int arg);
 // Oz: define{{.*}}void @{{.*}}test4
-// Oz: [[MINSIZE]]
+// Oz: minsize
 // OTHER: define{{.*}}void @{{.*}}test4
-// OTHER: [[MS]]
+// OTHER: minsize
 
 template
 void test4<float>(float arg);
 // Oz: define{{.*}}void @{{.*}}test4
-// Oz: [[MINSIZE]]
+// Oz: minsize
 // OTHER: define{{.*}}void @{{.*}}test4
-// OTHER: [[MS]]
+// OTHER: minsize
 
 template<typename T>
 void test5(T arg) {
@@ -63,17 +63,13 @@ void test5(T arg) {
 template
 void test5<int>(int arg);
 // Oz: define{{.*}}void @{{.*}}test5
-// Oz: [[MINSIZE]]
+// Oz: minsize
 // OTHER: define{{.*}}void @{{.*}}test5
-// OTHER-NOT: define{{.*}}void @{{.*}}test5{{.*}}[[MS]]
+// OTHER-NOT: minsize
 
 template
 void test5<float>(float arg);
 // Oz: define{{.*}}void @{{.*}}test5
-// Oz: [[MINSIZE]]
+// Oz: minsize
 // OTHER: define{{.*}}void @{{.*}}test5
-// OTHER-NOT: define{{.*}}void @{{.*}}test5{{.*}}[[MS]]
-
-// Oz: attributes [[MINSIZE]] = { minsize{{.*}} }
-
-// OTHER: attributes [[MS]] = { minsize nounwind{{.*}} }
+// OTHER-NOT: minsize

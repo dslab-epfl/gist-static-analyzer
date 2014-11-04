@@ -7,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_EXECUTIONENGINE_RUNTIMEDYLD_JITREGISTRAR_H
-#define LLVM_LIB_EXECUTIONENGINE_RUNTIMEDYLD_JITREGISTRAR_H
+#ifndef LLVM_EXECUTION_ENGINE_JIT_REGISTRAR_H
+#define LLVM_EXECUTION_ENGINE_JIT_REGISTRAR_H
 
 #include "llvm/ExecutionEngine/ObjectBuffer.h"
 
@@ -16,7 +16,6 @@ namespace llvm {
 
 /// Global access point for the JIT debugging interface.
 class JITRegistrar {
-  virtual void anchor();
 public:
   /// Instantiates the JIT service.
   JITRegistrar() {}
@@ -41,4 +40,4 @@ public:
 
 } // end namespace llvm
 
-#endif
+#endif // LLVM_EXECUTION_ENGINE_JIT_REGISTRAR_H

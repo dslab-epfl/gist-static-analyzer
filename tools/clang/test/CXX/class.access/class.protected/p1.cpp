@@ -329,7 +329,7 @@ namespace test8 {
 
 namespace test9 {
   class A { // expected-note {{member is declared here}}
-  protected: int foo(); // expected-note 4 {{declared}} expected-note 3 {{can only access this member on an object of type}} expected-note 2 {{member is declared here}}
+  protected: int foo(); // expected-note 4 {{declared}} expected-note 2 {{can only access this member on an object of type}} expected-note {{member is declared here}}
   };
 
   class B : public A { // expected-note {{member is declared here}}
@@ -344,15 +344,14 @@ namespace test9 {
     static void test(A &a) {
       a.foo(); // expected-error {{'foo' is a protected member}}
       a.A::foo(); // expected-error {{'foo' is a protected member}}
-      a.B::foo(); // expected-error {{'foo' is a protected member}}
+      a.B::foo();
       a.C::foo(); // expected-error {{'foo' is a protected member}}
-      a.D::foo(); // expected-error {{'foo' is a protected member}}
     }
 
     static void test(B &b) {
       b.foo();
       b.A::foo();
-      b.B::foo(); // accessible as named in A
+      b.B::foo();
       b.C::foo(); // expected-error {{'foo' is a protected member}}
     }
 

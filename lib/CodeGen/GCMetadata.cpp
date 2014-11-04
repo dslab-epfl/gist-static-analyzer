@@ -14,10 +14,10 @@
 #include "llvm/CodeGen/GCMetadata.h"
 #include "llvm/CodeGen/GCStrategy.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
-#include "llvm/CodeGen/Passes.h"
-#include "llvm/IR/Function.h"
-#include "llvm/MC/MCSymbol.h"
 #include "llvm/Pass.h"
+#include "llvm/CodeGen/Passes.h"
+#include "llvm/Function.h"
+#include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
@@ -32,14 +32,26 @@ namespace {
   public:
     explicit Printer(raw_ostream &OS) : FunctionPass(ID), OS(OS) {}
 
-
-    const char *getPassName() const override;
-    void getAnalysisUsage(AnalysisUsage &AU) const override;
-
-    bool runOnFunction(Function &F) override;
-    bool doFinalization(Module &M) override;
+    
+    const char *getPassName() const;
+    void getAnalysisUsage(AnalysisUsage &AU) const;
+    
+    bool runOnFunction(Function &F);
   };
-
+  
+  class Deleter : public FunctionPass {
+    static char ID;
+    
+  public:
+    Deleter();
+    
+    const char *getPassName() const;
+    void getAnalysisUsage(AnalysisUsage &AU) const;
+    
+    bool runOnFunction(Function &F);
+    bool doFinalization(Module &M);
+  };
+  
 }
 
 INITIALIZE_PASS(GCModuleInfo, "collector-metadata",
@@ -61,6 +73,10 @@ GCModuleInfo::GCModuleInfo()
   initializeGCModuleInfoPass(*PassRegistry::getPassRegistry());
 }
 
+GCModuleInfo::~GCModuleInfo() {
+  clear();
+}
+
 GCStrategy *GCModuleInfo::getOrCreateStrategy(const Module *M,
                                               const std::string &Name) {
   strategy_map_type::iterator NMI = StrategyMap.find(Name);
@@ -70,17 +86,17 @@ GCStrategy *GCModuleInfo::getOrCreateStrategy(const Module *M,
   for (GCRegistry::iterator I = GCRegistry::begin(),
                             E = GCRegistry::end(); I != E; ++I) {
     if (Name == I->getName()) {
-      std::unique_ptr<GCStrategy> S = I->instantiate();
+      GCStrategy *S = I->instantiate();
       S->M = M;
       S->Name = Name;
-      StrategyMap.GetOrCreateValue(Name).setValue(S.get());
-      StrategyList.push_back(std::move(S));
-      return StrategyList.back().get();
+      StrategyMap.GetOrCreateValue(Name).setValue(S);
+      StrategyList.push_back(S);
+      return S;
     }
   }
  
   dbgs() << "unsupported GC: " << Name << "\n";
-  llvm_unreachable(nullptr);
+  llvm_unreachable(0);
 }
 
 GCFunctionInfo &GCModuleInfo::getFunctionInfo(const Function &F) {
@@ -100,6 +116,9 @@ GCFunctionInfo &GCModuleInfo::getFunctionInfo(const Function &F) {
 void GCModuleInfo::clear() {
   FInfoMap.clear();
   StrategyMap.clear();
+  
+  for (iterator I = begin(), E = end(); I != E; ++I)
+    delete *I;
   StrategyList.clear();
 }
 
@@ -163,9 +182,32 @@ bool Printer::runOnFunction(Function &F) {
   return false;
 }
 
-bool Printer::doFinalization(Module &M) {
+// -----------------------------------------------------------------------------
+
+char Deleter::ID = 0;
+
+FunctionPass *llvm::createGCInfoDeleter() {
+  return new Deleter();
+}
+
+Deleter::Deleter() : FunctionPass(ID) {}
+
+const char *Deleter::getPassName() const {
+  return "Delete Garbage Collector Information";
+}
+
+void Deleter::getAnalysisUsage(AnalysisUsage &AU) const {
+  AU.setPreservesAll();
+  AU.addRequired<GCModuleInfo>();
+}
+
+bool Deleter::runOnFunction(Function &MF) {
+  return false;
+}
+
+bool Deleter::doFinalization(Module &M) {
   GCModuleInfo *GMI = getAnalysisIfAvailable<GCModuleInfo>();
-  assert(GMI && "Printer didn't require GCModuleInfo?!");
+  assert(GMI && "Deleter didn't require GCModuleInfo?!");
   GMI->clear();
   return false;
 }

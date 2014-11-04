@@ -165,7 +165,6 @@ template<typename T, typename... Types>
 struct alignas(Types) TestUnexpandedDecls : T{ // expected-error{{expression contains unexpanded parameter pack 'Types'}}
   void member_function(Types);  // expected-error{{declaration type contains unexpanded parameter pack 'Types'}}
   void member_function () throw(Types); // expected-error{{exception type contains unexpanded parameter pack 'Types'}}
-  void member_function2() noexcept(Types()); // expected-error{{expression contains unexpanded parameter pack 'Types'}}
   operator Types() const; // expected-error{{declaration type contains unexpanded parameter pack 'Types'}}
   Types data_member;  // expected-error{{data member type contains unexpanded parameter pack 'Types'}}
   static Types static_data_member; // expected-error{{declaration type contains unexpanded parameter pack 'Types'}}
@@ -310,10 +309,10 @@ void test_unexpanded_exprs(Types ...values) {
   t.~Types(); // expected-error{{expression contains unexpanded parameter pack 'Types'}}
   t.Types::~T(); // expected-error{{expression contains unexpanded parameter pack 'Types'}}
 
-  // Unary TypeTraitExpr
+  // UnaryTypeTraitExpr
   __is_pod(Types); // expected-error{{expression contains unexpanded parameter pack 'Types'}}
 
-  // Binary TypeTraitExpr
+  // BinaryTypeTraitExpr
   __is_base_of(Types, T); // expected-error{{expression contains unexpanded parameter pack 'Types'}}
   __is_base_of(T, Types); // expected-error{{expression contains unexpanded parameter pack 'Types'}}
 
@@ -352,15 +351,6 @@ void test_unexpanded_exprs(Types ...values) {
   // FIXME: Objective-C expressions will need to go elsewhere
 
   for (auto t : values) { } // expected-error{{expression contains unexpanded parameter pack 'values'}}
-
-  switch (values) { } // expected-error{{expression contains unexpanded parameter pack 'values'}}
-
-  do { } while (values); // expected-error{{expression contains unexpanded parameter pack 'values'}}
-
-test:
-  goto *values; // expected-error{{expression contains unexpanded parameter pack 'values'}}
-
-  void f(int arg = values); // expected-error{{default argument contains unexpanded parameter pack 'values'}}
 }
 
 // Test unexpanded parameter packs in partial specializations.
@@ -410,15 +400,4 @@ namespace WorkingPaperExample {
     f(args); // expected-error{{expression contains unexpanded parameter pack 'args'}}
     f(h(args ...) + args ...);
   }
-}
-
-namespace PR16303 {
-  template<int> struct A { A(int); };
-  template<int...N> struct B {
-    template<int...M> struct C : A<N>... {
-      C() : A<N>(M)... {} // expected-error{{pack expansion contains parameter packs 'N' and 'M' that have different lengths (2 vs. 3)}} expected-error{{pack expansion contains parameter packs 'N' and 'M' that have different lengths (4 vs. 3)}}
-    };
-  };
-  B<1,2>::C<4,5,6> c1; // expected-note{{in instantiation of}}
-  B<1,2,3,4>::C<4,5,6> c2; // expected-note{{in instantiation of}}
 }

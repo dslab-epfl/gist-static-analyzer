@@ -8,11 +8,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "PPC.h"
-#include "llvm/IR/Module.h"
+#include "llvm/Module.h"
 #include "llvm/Support/TargetRegistry.h"
 using namespace llvm;
 
-Target llvm::ThePPC32Target, llvm::ThePPC64Target, llvm::ThePPC64LETarget;
+Target llvm::ThePPC32Target, llvm::ThePPC64Target;
 
 extern "C" void LLVMInitializePowerPCTargetInfo() { 
   RegisterTarget<Triple::ppc, /*HasJIT=*/true>
@@ -20,7 +20,4 @@ extern "C" void LLVMInitializePowerPCTargetInfo() {
 
   RegisterTarget<Triple::ppc64, /*HasJIT=*/true>
     Y(ThePPC64Target, "ppc64", "PowerPC 64");
-
-  RegisterTarget<Triple::ppc64le, /*HasJIT=*/true>
-    Z(ThePPC64LETarget, "ppc64le", "PowerPC 64 LE");
 }

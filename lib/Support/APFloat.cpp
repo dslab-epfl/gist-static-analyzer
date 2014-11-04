@@ -16,26 +16,20 @@
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/Hashing.h"
-#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
-#include <cstring>
 #include <limits.h>
+#include <cstring>
 
 using namespace llvm;
 
-/// A macro used to combine two fcCategory enums into one key which can be used
-/// in a switch statement to classify how the interaction of two APFloat's
-/// categories affects an operation.
-///
-/// TODO: If clang source code is ever allowed to use constexpr in its own
-/// codebase, change this into a static inline function.
-#define PackCategoriesIntoKey(_lhs, _rhs) ((_lhs) * 4 + (_rhs))
+#define convolve(lhs, rhs) ((lhs) * 4 + (rhs))
 
 /* Assumed in hexadecimal significand parsing, and conversion to
    hexadecimal strings.  */
-static_assert(integerPartWidth % 4 == 0, "Part width must be divisible by 4!");
+#define COMPILE_TIME_ASSERT(cond) extern int CTAssert[(cond) ? 1 : -1]
+COMPILE_TIME_ASSERT(integerPartWidth % 4 == 0);
 
 namespace llvm {
 
@@ -43,11 +37,11 @@ namespace llvm {
   struct fltSemantics {
     /* The largest E such that 2^E is representable; this matches the
        definition of IEEE 754.  */
-    APFloat::ExponentType maxExponent;
+    exponent_t maxExponent;
 
     /* The smallest E such that 2^E is a normalized number; this
        matches the definition of IEEE 754.  */
-    APFloat::ExponentType minExponent;
+    exponent_t minExponent;
 
     /* Number of bits in the significand.  This includes the integer
        bit.  */
@@ -105,6 +99,26 @@ static inline unsigned int
 decDigitValue(unsigned int c)
 {
   return c - '0';
+}
+
+static unsigned int
+hexDigitValue(unsigned int c)
+{
+  unsigned int r;
+
+  r = c - '0';
+  if (r <= 9)
+    return r;
+
+  r = c - 'A';
+  if (r <= 5)
+    return r + 10;
+
+  r = c - 'a';
+  if (r <= 5)
+    return r + 10;
+
+  return -1U;
 }
 
 /* Return the value of a decimal exponent of the form
@@ -211,15 +225,15 @@ skipLeadingZeroesAndAnyDot(StringRef::iterator begin, StringRef::iterator end,
 {
   StringRef::iterator p = begin;
   *dot = end;
-  while (p != end && *p == '0')
+  while (*p == '0' && p != end)
     p++;
 
-  if (p != end && *p == '.') {
+  if (*p == '.') {
     *dot = p++;
 
     assert(end - begin != 1 && "Significand has no digits");
 
-    while (p != end && *p == '0')
+    while (*p == '0' && p != end)
       p++;
   }
 
@@ -293,9 +307,9 @@ interpretDecimal(StringRef::iterator begin, StringRef::iterator end,
     }
 
     /* Adjust the exponents for any decimal point.  */
-    D->exponent += static_cast<APFloat::ExponentType>((dot - p) - (dot > p));
+    D->exponent += static_cast<exponent_t>((dot - p) - (dot > p));
     D->normalizedExponent = (D->exponent +
-              static_cast<APFloat::ExponentType>((p - D->firstSigDigit)
+              static_cast<exponent_t>((p - D->firstSigDigit)
                                       - (dot > D->firstSigDigit && dot < p)));
   }
 
@@ -318,8 +332,8 @@ trailingHexadecimalFraction(StringRef::iterator p, StringRef::iterator end,
   else if (digitValue < 8 && digitValue > 0)
     return lfLessThanHalf;
 
-  // Otherwise we need to find the first non-zero digit.
-  while (p != end && (*p == '0' || *p == '.'))
+  /* Otherwise we need to find the first non-zero digit.  */
+  while (*p == '0')
     p++;
 
   assert(p != end && "Invalid trailing hexadecimal fraction!");
@@ -585,7 +599,7 @@ APFloat::initialize(const fltSemantics *ourSemantics)
 void
 APFloat::freeSignificand()
 {
-  if (needsCleanup())
+  if (partCount() > 1)
     delete [] significand.parts;
 }
 
@@ -597,14 +611,14 @@ APFloat::assign(const APFloat &rhs)
   sign = rhs.sign;
   category = rhs.category;
   exponent = rhs.exponent;
-  if (isFiniteNonZero() || category == fcNaN)
+  if (category == fcNormal || category == fcNaN)
     copySignificand(rhs);
 }
 
 void
 APFloat::copySignificand(const APFloat &rhs)
 {
-  assert(isFiniteNonZero() || category == fcNaN);
+  assert(category == fcNormal || category == fcNaN);
   assert(rhs.partCount() >= partCount());
 
   APInt::tcAssign(significandParts(), rhs.significandParts(),
@@ -682,88 +696,6 @@ APFloat::operator=(const APFloat &rhs)
   return *this;
 }
 
-APFloat &
-APFloat::operator=(APFloat &&rhs) {
-  freeSignificand();
-
-  semantics = rhs.semantics;
-  significand = rhs.significand;
-  exponent = rhs.exponent;
-  category = rhs.category;
-  sign = rhs.sign;
-
-  rhs.semantics = &Bogus;
-  return *this;
-}
-
-bool
-APFloat::isDenormal() const {
-  return isFiniteNonZero() && (exponent == semantics->minExponent) &&
-         (APInt::tcExtractBit(significandParts(), 
-                              semantics->precision - 1) == 0);
-}
-
-bool
-APFloat::isSmallest() const {
-  // The smallest number by magnitude in our format will be the smallest
-  // denormal, i.e. the floating point number with exponent being minimum
-  // exponent and significand bitwise equal to 1 (i.e. with MSB equal to 0).
-  return isFiniteNonZero() && exponent == semantics->minExponent &&
-    significandMSB() == 0;
-}
-
-bool APFloat::isSignificandAllOnes() const {
-  // Test if the significand excluding the integral bit is all ones. This allows
-  // us to test for binade boundaries.
-  const integerPart *Parts = significandParts();
-  const unsigned PartCount = partCount();
-  for (unsigned i = 0; i < PartCount - 1; i++)
-    if (~Parts[i])
-      return false;
-
-  // Set the unused high bits to all ones when we compare.
-  const unsigned NumHighBits =
-    PartCount*integerPartWidth - semantics->precision + 1;
-  assert(NumHighBits <= integerPartWidth && "Can not have more high bits to "
-         "fill than integerPartWidth");
-  const integerPart HighBitFill =
-    ~integerPart(0) << (integerPartWidth - NumHighBits);
-  if (~(Parts[PartCount - 1] | HighBitFill))
-    return false;
-
-  return true;
-}
-
-bool APFloat::isSignificandAllZeros() const {
-  // Test if the significand excluding the integral bit is all zeros. This
-  // allows us to test for binade boundaries.
-  const integerPart *Parts = significandParts();
-  const unsigned PartCount = partCount();
-
-  for (unsigned i = 0; i < PartCount - 1; i++)
-    if (Parts[i])
-      return false;
-
-  const unsigned NumHighBits =
-    PartCount*integerPartWidth - semantics->precision + 1;
-  assert(NumHighBits <= integerPartWidth && "Can not have more high bits to "
-         "clear than integerPartWidth");
-  const integerPart HighBitMask = ~integerPart(0) >> NumHighBits;
-
-  if (Parts[PartCount - 1] & HighBitMask)
-    return false;
-
-  return true;
-}
-
-bool
-APFloat::isLargest() const {
-  // The largest number by magnitude in our format will be the floating point
-  // number with maximum exponent and with significand that is all ones.
-  return isFiniteNonZero() && exponent == semantics->maxExponent
-    && isSignificandAllOnes();
-}
-
 bool
 APFloat::bitwiseIsEqual(const APFloat &rhs) const {
   if (this == &rhs)
@@ -774,7 +706,7 @@ APFloat::bitwiseIsEqual(const APFloat &rhs) const {
     return false;
   if (category==fcZero || category==fcInfinity)
     return true;
-  else if (isFiniteNonZero() && exponent!=rhs.exponent)
+  else if (category==fcNormal && exponent!=rhs.exponent)
     return false;
   else {
     int i= partCount();
@@ -791,7 +723,6 @@ APFloat::bitwiseIsEqual(const APFloat &rhs) const {
 APFloat::APFloat(const fltSemantics &ourSemantics, integerPart value) {
   initialize(&ourSemantics);
   sign = 0;
-  category = fcNormal;
   zeroSignificand();
   exponent = ourSemantics.precision - 1;
   significandParts()[0] = value;
@@ -809,6 +740,17 @@ APFloat::APFloat(const fltSemantics &ourSemantics, uninitializedTag tag) {
   initialize(&ourSemantics);
 }
 
+APFloat::APFloat(const fltSemantics &ourSemantics,
+                 fltCategory ourCategory, bool negative) {
+  initialize(&ourSemantics);
+  category = ourCategory;
+  sign = negative;
+  if (category == fcNormal)
+    category = fcZero;
+  else if (ourCategory == fcNaN)
+    makeNaN();
+}
+
 APFloat::APFloat(const fltSemantics &ourSemantics, StringRef text) {
   initialize(&ourSemantics);
   convertFromString(text, rmNearestTiesToEven);
@@ -817,10 +759,6 @@ APFloat::APFloat(const fltSemantics &ourSemantics, StringRef text) {
 APFloat::APFloat(const APFloat &rhs) {
   initialize(rhs.semantics);
   assign(rhs);
-}
-
-APFloat::APFloat(APFloat &&rhs) : semantics(&Bogus) {
-  *this = std::move(rhs);
 }
 
 APFloat::~APFloat()
@@ -854,6 +792,8 @@ APFloat::significandParts() const
 integerPart *
 APFloat::significandParts()
 {
+  assert(category == fcNormal || category == fcNaN);
+
   if (partCount() > 1)
     return significand.parts;
   else
@@ -863,6 +803,7 @@ APFloat::significandParts()
 void
 APFloat::zeroSignificand()
 {
+  category = fcNormal;
   APInt::tcSet(significandParts(), 0, partCount());
 }
 
@@ -943,21 +884,7 @@ APFloat::multiplySignificand(const APFloat &rhs, const APFloat *addend)
   omsb = APInt::tcMSB(fullSignificand, newPartsCount) + 1;
   exponent += rhs.exponent;
 
-  // Assume the operands involved in the multiplication are single-precision
-  // FP, and the two multiplicants are:
-  //   *this = a23 . a22 ... a0 * 2^e1
-  //     rhs = b23 . b22 ... b0 * 2^e2
-  // the result of multiplication is:
-  //   *this = c47 c46 . c45 ... c0 * 2^(e1+e2)
-  // Note that there are two significant bits at the left-hand side of the 
-  // radix point. Move the radix point toward left by one bit, and adjust
-  // exponent accordingly.
-  exponent += 1;
-
-  if (addend && addend->isNonZero()) {
-    // The intermediate result of the multiplication has "2 * precision" 
-    // signicant bit; adjust the addend to be consistent with mul result.
-    //
+  if (addend) {
     Significand savedSignificand = significand;
     const fltSemantics *savedSemantics = semantics;
     fltSemantics extendedSemantics;
@@ -965,9 +892,8 @@ APFloat::multiplySignificand(const APFloat &rhs, const APFloat *addend)
     unsigned int extendedPrecision;
 
     /* Normalize our MSB.  */
-    extendedPrecision = 2 * precision;
+    extendedPrecision = precision + precision - 1;
     if (omsb != extendedPrecision) {
-      assert(extendedPrecision > omsb);
       APInt::tcShiftLeft(fullSignificand, newPartsCount,
                          extendedPrecision - omsb);
       exponent -= extendedPrecision - omsb;
@@ -998,18 +924,8 @@ APFloat::multiplySignificand(const APFloat &rhs, const APFloat *addend)
     omsb = APInt::tcMSB(fullSignificand, newPartsCount) + 1;
   }
 
-  // Convert the result having "2 * precision" significant-bits back to the one
-  // having "precision" significant-bits. First, move the radix point from 
-  // poision "2*precision - 1" to "precision - 1". The exponent need to be
-  // adjusted by "2*precision - 1" - "precision - 1" = "precision".
-  exponent -= precision;
+  exponent -= (precision - 1);
 
-  // In case MSB resides at the left-hand side of radix point, shift the
-  // mantissa right by some amount to make sure the MSB reside right before
-  // the radix point (i.e. "MSB . rest-significant-bits").
-  //
-  // Note that the result is not normalized when "omsb < precision". So, the
-  // caller needs to call APFloat::normalize() if normalized value is expected.
   if (omsb > precision) {
     unsigned int bits, significantParts;
     lostFraction lf;
@@ -1131,7 +1047,7 @@ lostFraction
 APFloat::shiftSignificandRight(unsigned int bits)
 {
   /* Our exponent should not overflow.  */
-  assert((ExponentType) (exponent + bits) >= exponent);
+  assert((exponent_t) (exponent + bits) >= exponent);
 
   exponent += bits;
 
@@ -1160,8 +1076,8 @@ APFloat::compareAbsoluteValue(const APFloat &rhs) const
   int compare;
 
   assert(semantics == rhs.semantics);
-  assert(isFiniteNonZero());
-  assert(rhs.isFiniteNonZero());
+  assert(category == fcNormal);
+  assert(rhs.category == fcNormal);
 
   compare = exponent - rhs.exponent;
 
@@ -1213,7 +1129,7 @@ APFloat::roundAwayFromZero(roundingMode rounding_mode,
                            unsigned int bit) const
 {
   /* NaNs and infinities should not have lost fractions.  */
-  assert(isFiniteNonZero() || category == fcZero);
+  assert(category == fcNormal || category == fcZero);
 
   /* Current callers never pass this so we don't handle it.  */
   assert(lost_fraction != lfExactlyZero);
@@ -1251,7 +1167,7 @@ APFloat::normalize(roundingMode rounding_mode,
   unsigned int omsb;                /* One, not zero, based MSB.  */
   int exponentChange;
 
-  if (!isFiniteNonZero())
+  if (category != fcNormal)
     return opOK;
 
   /* Before rounding normalize the exponent of fcNormal numbers.  */
@@ -1355,45 +1271,42 @@ APFloat::normalize(roundingMode rounding_mode,
 APFloat::opStatus
 APFloat::addOrSubtractSpecials(const APFloat &rhs, bool subtract)
 {
-  switch (PackCategoriesIntoKey(category, rhs.category)) {
+  switch (convolve(category, rhs.category)) {
   default:
-    llvm_unreachable(nullptr);
+    llvm_unreachable(0);
 
-  case PackCategoriesIntoKey(fcNaN, fcZero):
-  case PackCategoriesIntoKey(fcNaN, fcNormal):
-  case PackCategoriesIntoKey(fcNaN, fcInfinity):
-  case PackCategoriesIntoKey(fcNaN, fcNaN):
-  case PackCategoriesIntoKey(fcNormal, fcZero):
-  case PackCategoriesIntoKey(fcInfinity, fcNormal):
-  case PackCategoriesIntoKey(fcInfinity, fcZero):
+  case convolve(fcNaN, fcZero):
+  case convolve(fcNaN, fcNormal):
+  case convolve(fcNaN, fcInfinity):
+  case convolve(fcNaN, fcNaN):
+  case convolve(fcNormal, fcZero):
+  case convolve(fcInfinity, fcNormal):
+  case convolve(fcInfinity, fcZero):
     return opOK;
 
-  case PackCategoriesIntoKey(fcZero, fcNaN):
-  case PackCategoriesIntoKey(fcNormal, fcNaN):
-  case PackCategoriesIntoKey(fcInfinity, fcNaN):
-    // We need to be sure to flip the sign here for subtraction because we
-    // don't have a separate negate operation so -NaN becomes 0 - NaN here.
-    sign = rhs.sign ^ subtract;
+  case convolve(fcZero, fcNaN):
+  case convolve(fcNormal, fcNaN):
+  case convolve(fcInfinity, fcNaN):
     category = fcNaN;
     copySignificand(rhs);
     return opOK;
 
-  case PackCategoriesIntoKey(fcNormal, fcInfinity):
-  case PackCategoriesIntoKey(fcZero, fcInfinity):
+  case convolve(fcNormal, fcInfinity):
+  case convolve(fcZero, fcInfinity):
     category = fcInfinity;
     sign = rhs.sign ^ subtract;
     return opOK;
 
-  case PackCategoriesIntoKey(fcZero, fcNormal):
+  case convolve(fcZero, fcNormal):
     assign(rhs);
     sign = rhs.sign ^ subtract;
     return opOK;
 
-  case PackCategoriesIntoKey(fcZero, fcZero):
+  case convolve(fcZero, fcZero):
     /* Sign depends on rounding mode; handled by caller.  */
     return opOK;
 
-  case PackCategoriesIntoKey(fcInfinity, fcInfinity):
+  case convolve(fcInfinity, fcInfinity):
     /* Differently signed infinities can only be validly
        subtracted.  */
     if (((sign ^ rhs.sign)!=0) != subtract) {
@@ -1403,7 +1316,7 @@ APFloat::addOrSubtractSpecials(const APFloat &rhs, bool subtract)
 
     return opOK;
 
-  case PackCategoriesIntoKey(fcNormal, fcNormal):
+  case convolve(fcNormal, fcNormal):
     return opDivByZero;
   }
 }
@@ -1484,43 +1397,41 @@ APFloat::addOrSubtractSignificand(const APFloat &rhs, bool subtract)
 APFloat::opStatus
 APFloat::multiplySpecials(const APFloat &rhs)
 {
-  switch (PackCategoriesIntoKey(category, rhs.category)) {
+  switch (convolve(category, rhs.category)) {
   default:
-    llvm_unreachable(nullptr);
+    llvm_unreachable(0);
 
-  case PackCategoriesIntoKey(fcNaN, fcZero):
-  case PackCategoriesIntoKey(fcNaN, fcNormal):
-  case PackCategoriesIntoKey(fcNaN, fcInfinity):
-  case PackCategoriesIntoKey(fcNaN, fcNaN):
-    sign = false;
+  case convolve(fcNaN, fcZero):
+  case convolve(fcNaN, fcNormal):
+  case convolve(fcNaN, fcInfinity):
+  case convolve(fcNaN, fcNaN):
     return opOK;
 
-  case PackCategoriesIntoKey(fcZero, fcNaN):
-  case PackCategoriesIntoKey(fcNormal, fcNaN):
-  case PackCategoriesIntoKey(fcInfinity, fcNaN):
-    sign = false;
+  case convolve(fcZero, fcNaN):
+  case convolve(fcNormal, fcNaN):
+  case convolve(fcInfinity, fcNaN):
     category = fcNaN;
     copySignificand(rhs);
     return opOK;
 
-  case PackCategoriesIntoKey(fcNormal, fcInfinity):
-  case PackCategoriesIntoKey(fcInfinity, fcNormal):
-  case PackCategoriesIntoKey(fcInfinity, fcInfinity):
+  case convolve(fcNormal, fcInfinity):
+  case convolve(fcInfinity, fcNormal):
+  case convolve(fcInfinity, fcInfinity):
     category = fcInfinity;
     return opOK;
 
-  case PackCategoriesIntoKey(fcZero, fcNormal):
-  case PackCategoriesIntoKey(fcNormal, fcZero):
-  case PackCategoriesIntoKey(fcZero, fcZero):
+  case convolve(fcZero, fcNormal):
+  case convolve(fcNormal, fcZero):
+  case convolve(fcZero, fcZero):
     category = fcZero;
     return opOK;
 
-  case PackCategoriesIntoKey(fcZero, fcInfinity):
-  case PackCategoriesIntoKey(fcInfinity, fcZero):
+  case convolve(fcZero, fcInfinity):
+  case convolve(fcInfinity, fcZero):
     makeNaN();
     return opInvalidOp;
 
-  case PackCategoriesIntoKey(fcNormal, fcNormal):
+  case convolve(fcNormal, fcNormal):
     return opOK;
   }
 }
@@ -1528,40 +1439,41 @@ APFloat::multiplySpecials(const APFloat &rhs)
 APFloat::opStatus
 APFloat::divideSpecials(const APFloat &rhs)
 {
-  switch (PackCategoriesIntoKey(category, rhs.category)) {
+  switch (convolve(category, rhs.category)) {
   default:
-    llvm_unreachable(nullptr);
+    llvm_unreachable(0);
 
-  case PackCategoriesIntoKey(fcZero, fcNaN):
-  case PackCategoriesIntoKey(fcNormal, fcNaN):
-  case PackCategoriesIntoKey(fcInfinity, fcNaN):
-    category = fcNaN;
-    copySignificand(rhs);
-  case PackCategoriesIntoKey(fcNaN, fcZero):
-  case PackCategoriesIntoKey(fcNaN, fcNormal):
-  case PackCategoriesIntoKey(fcNaN, fcInfinity):
-  case PackCategoriesIntoKey(fcNaN, fcNaN):
-    sign = false;
-  case PackCategoriesIntoKey(fcInfinity, fcZero):
-  case PackCategoriesIntoKey(fcInfinity, fcNormal):
-  case PackCategoriesIntoKey(fcZero, fcInfinity):
-  case PackCategoriesIntoKey(fcZero, fcNormal):
+  case convolve(fcNaN, fcZero):
+  case convolve(fcNaN, fcNormal):
+  case convolve(fcNaN, fcInfinity):
+  case convolve(fcNaN, fcNaN):
+  case convolve(fcInfinity, fcZero):
+  case convolve(fcInfinity, fcNormal):
+  case convolve(fcZero, fcInfinity):
+  case convolve(fcZero, fcNormal):
     return opOK;
 
-  case PackCategoriesIntoKey(fcNormal, fcInfinity):
+  case convolve(fcZero, fcNaN):
+  case convolve(fcNormal, fcNaN):
+  case convolve(fcInfinity, fcNaN):
+    category = fcNaN;
+    copySignificand(rhs);
+    return opOK;
+
+  case convolve(fcNormal, fcInfinity):
     category = fcZero;
     return opOK;
 
-  case PackCategoriesIntoKey(fcNormal, fcZero):
+  case convolve(fcNormal, fcZero):
     category = fcInfinity;
     return opDivByZero;
 
-  case PackCategoriesIntoKey(fcInfinity, fcInfinity):
-  case PackCategoriesIntoKey(fcZero, fcZero):
+  case convolve(fcInfinity, fcInfinity):
+  case convolve(fcZero, fcZero):
     makeNaN();
     return opInvalidOp;
 
-  case PackCategoriesIntoKey(fcNormal, fcNormal):
+  case convolve(fcNormal, fcNormal):
     return opOK;
   }
 }
@@ -1569,36 +1481,35 @@ APFloat::divideSpecials(const APFloat &rhs)
 APFloat::opStatus
 APFloat::modSpecials(const APFloat &rhs)
 {
-  switch (PackCategoriesIntoKey(category, rhs.category)) {
+  switch (convolve(category, rhs.category)) {
   default:
-    llvm_unreachable(nullptr);
+    llvm_unreachable(0);
 
-  case PackCategoriesIntoKey(fcNaN, fcZero):
-  case PackCategoriesIntoKey(fcNaN, fcNormal):
-  case PackCategoriesIntoKey(fcNaN, fcInfinity):
-  case PackCategoriesIntoKey(fcNaN, fcNaN):
-  case PackCategoriesIntoKey(fcZero, fcInfinity):
-  case PackCategoriesIntoKey(fcZero, fcNormal):
-  case PackCategoriesIntoKey(fcNormal, fcInfinity):
+  case convolve(fcNaN, fcZero):
+  case convolve(fcNaN, fcNormal):
+  case convolve(fcNaN, fcInfinity):
+  case convolve(fcNaN, fcNaN):
+  case convolve(fcZero, fcInfinity):
+  case convolve(fcZero, fcNormal):
+  case convolve(fcNormal, fcInfinity):
     return opOK;
 
-  case PackCategoriesIntoKey(fcZero, fcNaN):
-  case PackCategoriesIntoKey(fcNormal, fcNaN):
-  case PackCategoriesIntoKey(fcInfinity, fcNaN):
-    sign = false;
+  case convolve(fcZero, fcNaN):
+  case convolve(fcNormal, fcNaN):
+  case convolve(fcInfinity, fcNaN):
     category = fcNaN;
     copySignificand(rhs);
     return opOK;
 
-  case PackCategoriesIntoKey(fcNormal, fcZero):
-  case PackCategoriesIntoKey(fcInfinity, fcZero):
-  case PackCategoriesIntoKey(fcInfinity, fcNormal):
-  case PackCategoriesIntoKey(fcInfinity, fcInfinity):
-  case PackCategoriesIntoKey(fcZero, fcZero):
+  case convolve(fcNormal, fcZero):
+  case convolve(fcInfinity, fcZero):
+  case convolve(fcInfinity, fcNormal):
+  case convolve(fcInfinity, fcInfinity):
+  case convolve(fcZero, fcZero):
     makeNaN();
     return opInvalidOp;
 
-  case PackCategoriesIntoKey(fcNormal, fcNormal):
+  case convolve(fcNormal, fcNormal):
     return opOK;
   }
 }
@@ -1679,8 +1590,8 @@ APFloat::multiply(const APFloat &rhs, roundingMode rounding_mode)
   sign ^= rhs.sign;
   fs = multiplySpecials(rhs);
 
-  if (isFiniteNonZero()) {
-    lostFraction lost_fraction = multiplySignificand(rhs, nullptr);
+  if (category == fcNormal) {
+    lostFraction lost_fraction = multiplySignificand(rhs, 0);
     fs = normalize(rounding_mode, lost_fraction);
     if (lost_fraction != lfExactlyZero)
       fs = (opStatus) (fs | opInexact);
@@ -1698,7 +1609,7 @@ APFloat::divide(const APFloat &rhs, roundingMode rounding_mode)
   sign ^= rhs.sign;
   fs = divideSpecials(rhs);
 
-  if (isFiniteNonZero()) {
+  if (category == fcNormal) {
     lostFraction lost_fraction = divideSignificand(rhs);
     fs = normalize(rounding_mode, lost_fraction);
     if (lost_fraction != lfExactlyZero)
@@ -1752,7 +1663,7 @@ APFloat::mod(const APFloat &rhs, roundingMode rounding_mode)
   opStatus fs;
   fs = modSpecials(rhs);
 
-  if (isFiniteNonZero() && rhs.isFiniteNonZero()) {
+  if (category == fcNormal && rhs.category == fcNormal) {
     APFloat V = *this;
     unsigned int origSign = sign;
 
@@ -1798,9 +1709,9 @@ APFloat::fusedMultiplyAdd(const APFloat &multiplicand,
 
   /* If and only if all arguments are normal do we need to do an
      extended-precision calculation.  */
-  if (isFiniteNonZero() &&
-      multiplicand.isFiniteNonZero() &&
-      addend.isFinite()) {
+  if (category == fcNormal &&
+      multiplicand.category == fcNormal &&
+      addend.category == fcNormal) {
     lostFraction lost_fraction;
 
     lost_fraction = multiplySignificand(multiplicand, &addend);
@@ -1837,7 +1748,7 @@ APFloat::opStatus APFloat::roundToIntegral(roundingMode rounding_mode) {
   // If the exponent is large enough, we know that this value is already
   // integral, and the arithmetic below would potentially cause it to saturate
   // to +/-Inf.  Bail out early instead.
-  if (isFiniteNonZero() && exponent+1 >= (int)semanticsPrecision(*semantics))
+  if (category == fcNormal && exponent+1 >= (int)semanticsPrecision(*semantics))
     return opOK;
 
   // The algorithm here is quite simple: we add 2^(p-1), where p is the
@@ -1881,36 +1792,36 @@ APFloat::compare(const APFloat &rhs) const
 
   assert(semantics == rhs.semantics);
 
-  switch (PackCategoriesIntoKey(category, rhs.category)) {
+  switch (convolve(category, rhs.category)) {
   default:
-    llvm_unreachable(nullptr);
+    llvm_unreachable(0);
 
-  case PackCategoriesIntoKey(fcNaN, fcZero):
-  case PackCategoriesIntoKey(fcNaN, fcNormal):
-  case PackCategoriesIntoKey(fcNaN, fcInfinity):
-  case PackCategoriesIntoKey(fcNaN, fcNaN):
-  case PackCategoriesIntoKey(fcZero, fcNaN):
-  case PackCategoriesIntoKey(fcNormal, fcNaN):
-  case PackCategoriesIntoKey(fcInfinity, fcNaN):
+  case convolve(fcNaN, fcZero):
+  case convolve(fcNaN, fcNormal):
+  case convolve(fcNaN, fcInfinity):
+  case convolve(fcNaN, fcNaN):
+  case convolve(fcZero, fcNaN):
+  case convolve(fcNormal, fcNaN):
+  case convolve(fcInfinity, fcNaN):
     return cmpUnordered;
 
-  case PackCategoriesIntoKey(fcInfinity, fcNormal):
-  case PackCategoriesIntoKey(fcInfinity, fcZero):
-  case PackCategoriesIntoKey(fcNormal, fcZero):
+  case convolve(fcInfinity, fcNormal):
+  case convolve(fcInfinity, fcZero):
+  case convolve(fcNormal, fcZero):
     if (sign)
       return cmpLessThan;
     else
       return cmpGreaterThan;
 
-  case PackCategoriesIntoKey(fcNormal, fcInfinity):
-  case PackCategoriesIntoKey(fcZero, fcInfinity):
-  case PackCategoriesIntoKey(fcZero, fcNormal):
+  case convolve(fcNormal, fcInfinity):
+  case convolve(fcZero, fcInfinity):
+  case convolve(fcZero, fcNormal):
     if (rhs.sign)
       return cmpGreaterThan;
     else
       return cmpLessThan;
 
-  case PackCategoriesIntoKey(fcInfinity, fcInfinity):
+  case convolve(fcInfinity, fcInfinity):
     if (sign == rhs.sign)
       return cmpEqual;
     else if (sign)
@@ -1918,10 +1829,10 @@ APFloat::compare(const APFloat &rhs) const
     else
       return cmpGreaterThan;
 
-  case PackCategoriesIntoKey(fcZero, fcZero):
+  case convolve(fcZero, fcZero):
     return cmpEqual;
 
-  case PackCategoriesIntoKey(fcNormal, fcNormal):
+  case convolve(fcNormal, fcNormal):
     break;
   }
 
@@ -1978,25 +1889,8 @@ APFloat::convert(const fltSemantics &toSemantics,
     X86SpecialNan = true;
   }
 
-  // If this is a truncation of a denormal number, and the target semantics
-  // has larger exponent range than the source semantics (this can happen
-  // when truncating from PowerPC double-double to double format), the
-  // right shift could lose result mantissa bits.  Adjust exponent instead
-  // of performing excessive shift.
-  if (shift < 0 && isFiniteNonZero()) {
-    int exponentChange = significandMSB() + 1 - fromSemantics.precision;
-    if (exponent + exponentChange < toSemantics.minExponent)
-      exponentChange = toSemantics.minExponent - exponent;
-    if (exponentChange < shift)
-      exponentChange = shift;
-    if (exponentChange < 0) {
-      shift -= exponentChange;
-      exponent += exponentChange;
-    }
-  }
-
   // If this is a truncation, perform the shift before we narrow the storage.
-  if (shift < 0 && (isFiniteNonZero() || category==fcNaN))
+  if (shift < 0 && (category==fcNormal || category==fcNaN))
     lostFraction = shiftRight(significandParts(), oldPartCount, -shift);
 
   // Fix the storage so it can hold to new value.
@@ -2005,14 +1899,14 @@ APFloat::convert(const fltSemantics &toSemantics,
     integerPart *newParts;
     newParts = new integerPart[newPartCount];
     APInt::tcSet(newParts, 0, newPartCount);
-    if (isFiniteNonZero() || category==fcNaN)
+    if (category==fcNormal || category==fcNaN)
       APInt::tcAssign(newParts, significandParts(), oldPartCount);
     freeSignificand();
     significand.parts = newParts;
   } else if (newPartCount == 1 && oldPartCount != 1) {
     // Switch to built-in storage for a single part.
     integerPart newPart = 0;
-    if (isFiniteNonZero() || category==fcNaN)
+    if (category==fcNormal || category==fcNaN)
       newPart = significandParts()[0];
     freeSignificand();
     significand.part = newPart;
@@ -2023,20 +1917,14 @@ APFloat::convert(const fltSemantics &toSemantics,
 
   // If this is an extension, perform the shift now that the storage is
   // available.
-  if (shift > 0 && (isFiniteNonZero() || category==fcNaN))
+  if (shift > 0 && (category==fcNormal || category==fcNaN))
     APInt::tcShiftLeft(significandParts(), newPartCount, shift);
 
-  if (isFiniteNonZero()) {
+  if (category == fcNormal) {
     fs = normalize(rounding_mode, lostFraction);
     *losesInfo = (fs != opOK);
   } else if (category == fcNaN) {
     *losesInfo = lostFraction != lfExactlyZero || X86SpecialNan;
-
-    // For x87 extended precision, we want to make a NaN, not a special NaN if
-    // the input wasn't special either.
-    if (!X86SpecialNan && semantics == &APFloat::x87DoubleExtended)
-      APInt::tcSetBit(significandParts(), semantics->precision - 1);
-
     // gcc forces the Quiet bit on, which means (float)(double)(float_sNan)
     // does not give you back the same bits.  This is dubious, and we
     // don't currently do it.  You're really supposed to get
@@ -2322,46 +2210,56 @@ APFloat::opStatus
 APFloat::convertFromHexadecimalString(StringRef s, roundingMode rounding_mode)
 {
   lostFraction lost_fraction = lfExactlyZero;
+  integerPart *significand;
+  unsigned int bitPos, partsCount;
+  StringRef::iterator dot, firstSignificantDigit;
 
-  category = fcNormal;
   zeroSignificand();
   exponent = 0;
+  category = fcNormal;
 
-  integerPart *significand = significandParts();
-  unsigned partsCount = partCount();
-  unsigned bitPos = partsCount * integerPartWidth;
-  bool computedTrailingFraction = false;
+  significand = significandParts();
+  partsCount = partCount();
+  bitPos = partsCount * integerPartWidth;
 
-  // Skip leading zeroes and any (hexa)decimal point.
+  /* Skip leading zeroes and any (hexa)decimal point.  */
   StringRef::iterator begin = s.begin();
   StringRef::iterator end = s.end();
-  StringRef::iterator dot;
   StringRef::iterator p = skipLeadingZeroesAndAnyDot(begin, end, &dot);
-  StringRef::iterator firstSignificantDigit = p;
+  firstSignificantDigit = p;
 
-  while (p != end) {
+  for (; p != end;) {
     integerPart hex_value;
 
     if (*p == '.') {
       assert(dot == end && "String contains multiple dots");
       dot = p++;
-      continue;
+      if (p == end) {
+        break;
+      }
     }
 
     hex_value = hexDigitValue(*p);
-    if (hex_value == -1U)
+    if (hex_value == -1U) {
       break;
+    }
 
     p++;
 
-    // Store the number while we have space.
-    if (bitPos) {
-      bitPos -= 4;
-      hex_value <<= bitPos % integerPartWidth;
-      significand[bitPos / integerPartWidth] |= hex_value;
-    } else if (!computedTrailingFraction) {
-      lost_fraction = trailingHexadecimalFraction(p, end, hex_value);
-      computedTrailingFraction = true;
+    if (p == end) {
+      break;
+    } else {
+      /* Store the number whilst 4-bit nibbles remain.  */
+      if (bitPos) {
+        bitPos -= 4;
+        hex_value <<= bitPos % integerPartWidth;
+        significand[bitPos / integerPartWidth] |= hex_value;
+      } else {
+        lost_fraction = trailingHexadecimalFraction(p, end, hex_value);
+        while (p != end && hexDigitValue(*p) != -1U)
+          p++;
+        break;
+      }
     }
   }
 
@@ -2424,8 +2322,8 @@ APFloat::roundSignificandWithExponent(const integerPart *decSigParts,
     excessPrecision = calcSemantics.precision - semantics->precision;
     truncatedBits = excessPrecision;
 
-    APFloat decSig = APFloat::getZero(calcSemantics, sign);
-    APFloat pow5(calcSemantics);
+    APFloat decSig(calcSemantics, fcZero, sign);
+    APFloat pow5(calcSemantics, fcZero, false);
 
     sigStatus = decSig.convertFromUnsignedParts(decSigParts, sigPartCount,
                                                 rmNearestTiesToEven);
@@ -2440,7 +2338,7 @@ APFloat::roundSignificandWithExponent(const integerPart *decSigParts,
 
     if (exp >= 0) {
       /* multiplySignificand leaves the precision-th bit set to 1.  */
-      calcLostFraction = decSig.multiplySignificand(pow5, nullptr);
+      calcLostFraction = decSig.multiplySignificand(pow5, NULL);
       powHUerr = powStatus != opOK;
     } else {
       calcLostFraction = decSig.divideSignificand(pow5);
@@ -2510,14 +2408,7 @@ APFloat::convertFromDecimalString(StringRef str, roundingMode rounding_mode)
            42039/12655 < L < 28738/8651  [ numerator <= 65536 ]
   */
 
-  // Test if we have a zero number allowing for strings with no null terminators
-  // and zero decimals with non-zero exponents.
-  // 
-  // We computed firstSigDigit by ignoring all zeros and dots. Thus if
-  // D->firstSigDigit equals str.end(), every digit must be a zero and there can
-  // be at most one dot. On the other hand, if we have a zero with a non-zero
-  // exponent, then we know that D.firstSigDigit will be non-numeric.
-  if (D.firstSigDigit == str.end() || decDigitValue(*D.firstSigDigit) >= 10U) {
+  if (decDigitValue(*D.firstSigDigit) >= 10U) {
     category = fcZero;
     fs = opOK;
 
@@ -2534,7 +2425,6 @@ APFloat::convertFromDecimalString(StringRef str, roundingMode rounding_mode)
              (D.normalizedExponent + 1) * 28738 <=
                8651 * (semantics->minExponent - (int) semantics->precision)) {
     /* Underflow to zero and round.  */
-    category = fcNormal;
     zeroSignificand();
     fs = normalize(rounding_mode, lfLessThanHalf);
 
@@ -2601,39 +2491,10 @@ APFloat::convertFromDecimalString(StringRef str, roundingMode rounding_mode)
   return fs;
 }
 
-bool
-APFloat::convertFromStringSpecials(StringRef str) {
-  if (str.equals("inf") || str.equals("INFINITY")) {
-    makeInf(false);
-    return true;
-  }
-
-  if (str.equals("-inf") || str.equals("-INFINITY")) {
-    makeInf(true);
-    return true;
-  }
-
-  if (str.equals("nan") || str.equals("NaN")) {
-    makeNaN(false, false);
-    return true;
-  }
-
-  if (str.equals("-nan") || str.equals("-NaN")) {
-    makeNaN(false, true);
-    return true;
-  }
-
-  return false;
-}
-
 APFloat::opStatus
 APFloat::convertFromString(StringRef str, roundingMode rounding_mode)
 {
   assert(!str.empty() && "Invalid string length");
-
-  // Handle special cases.
-  if (convertFromStringSpecials(str))
-    return opOK;
 
   /* Handle a leading minus sign.  */
   StringRef::iterator p = str.begin();
@@ -2831,7 +2692,7 @@ APFloat::convertNormalToHexString(char *dst, unsigned int hexDigits,
 }
 
 hash_code llvm::hash_value(const APFloat &Arg) {
-  if (!Arg.isFiniteNonZero())
+  if (Arg.category != APFloat::fcNormal)
     return hash_combine((uint8_t)Arg.category,
                         // NaN has no sign, fix it at zero.
                         Arg.isNaN() ? (uint8_t)0 : (uint8_t)Arg.sign,
@@ -2862,7 +2723,7 @@ APFloat::convertF80LongDoubleAPFloatToAPInt() const
 
   uint64_t myexponent, mysignificand;
 
-  if (isFiniteNonZero()) {
+  if (category==fcNormal) {
     myexponent = exponent+16383; //bias
     mysignificand = significandParts()[0];
     if (myexponent==1 && !(mysignificand & 0x8000000000000000ULL))
@@ -2900,11 +2761,9 @@ APFloat::convertPPCDoubleDoubleAPFloatToAPInt() const
   // normalize against the "double" minExponent first, and only *then*
   // truncate the mantissa.  The result of that second conversion
   // may be inexact, but should never underflow.
-  // Declare fltSemantics before APFloat that uses it (and
-  // saves pointer to it) to ensure correct destruction order.
+  APFloat extended(*this);
   fltSemantics extendedSemantics = *semantics;
   extendedSemantics.minExponent = IEEEdouble.minExponent;
-  APFloat extended(*this);
   fs = extended.convert(extendedSemantics, rmNearestTiesToEven, &losesInfo);
   assert(fs == opOK && !losesInfo);
   (void)fs;
@@ -2919,7 +2778,7 @@ APFloat::convertPPCDoubleDoubleAPFloatToAPInt() const
   // just set the second double to zero.  Otherwise, re-convert back to
   // the extended format and compute the difference.  This now should
   // convert exactly to double.
-  if (u.isFiniteNonZero() && losesInfo) {
+  if (u.category == fcNormal && losesInfo) {
     fs = u.convert(extendedSemantics, rmNearestTiesToEven, &losesInfo);
     assert(fs == opOK && !losesInfo);
     (void)fs;
@@ -2945,7 +2804,7 @@ APFloat::convertQuadrupleAPFloatToAPInt() const
 
   uint64_t myexponent, mysignificand, mysignificand2;
 
-  if (isFiniteNonZero()) {
+  if (category==fcNormal) {
     myexponent = exponent+16383; //bias
     mysignificand = significandParts()[0];
     mysignificand2 = significandParts()[1];
@@ -2981,7 +2840,7 @@ APFloat::convertDoubleAPFloatToAPInt() const
 
   uint64_t myexponent, mysignificand;
 
-  if (isFiniteNonZero()) {
+  if (category==fcNormal) {
     myexponent = exponent+1023; //bias
     mysignificand = *significandParts();
     if (myexponent==1 && !(mysignificand & 0x10000000000000LL))
@@ -3011,7 +2870,7 @@ APFloat::convertFloatAPFloatToAPInt() const
 
   uint32_t myexponent, mysignificand;
 
-  if (isFiniteNonZero()) {
+  if (category==fcNormal) {
     myexponent = exponent+127; //bias
     mysignificand = (uint32_t)*significandParts();
     if (myexponent == 1 && !(mysignificand & 0x800000))
@@ -3040,7 +2899,7 @@ APFloat::convertHalfAPFloatToAPInt() const
 
   uint32_t myexponent, mysignificand;
 
-  if (isFiniteNonZero()) {
+  if (category==fcNormal) {
     myexponent = exponent+15; //bias
     mysignificand = (uint32_t)*significandParts();
     if (myexponent == 1 && !(mysignificand & 0x400))
@@ -3163,8 +3022,8 @@ APFloat::initFromPPCDoubleDoubleAPInt(const APInt &api)
   (void)fs;
 
   // Unless we have a special case, add in second double.
-  if (isFiniteNonZero()) {
-    APFloat v(IEEEdouble, APInt(64, i2));
+  if (category == fcNormal) {
+    APFloat v(APInt(64, i2));
     fs = v.convert(PPCDoubleDouble, rmNearestTiesToEven, &losesInfo);
     assert(fs == opOK && !losesInfo);
     (void)fs;
@@ -3317,132 +3176,94 @@ APFloat::initFromHalfAPInt(const APInt & api)
 /// isIEEE argument distinguishes between PPC128 and IEEE128 (not meaningful
 /// when the size is anything else).
 void
-APFloat::initFromAPInt(const fltSemantics* Sem, const APInt& api)
+APFloat::initFromAPInt(const APInt& api, bool isIEEE)
 {
-  if (Sem == &IEEEhalf)
+  if (api.getBitWidth() == 16)
     return initFromHalfAPInt(api);
-  if (Sem == &IEEEsingle)
+  else if (api.getBitWidth() == 32)
     return initFromFloatAPInt(api);
-  if (Sem == &IEEEdouble)
+  else if (api.getBitWidth()==64)
     return initFromDoubleAPInt(api);
-  if (Sem == &x87DoubleExtended)
+  else if (api.getBitWidth()==80)
     return initFromF80LongDoubleAPInt(api);
-  if (Sem == &IEEEquad)
-    return initFromQuadrupleAPInt(api);
-  if (Sem == &PPCDoubleDouble)
-    return initFromPPCDoubleDoubleAPInt(api);
-
-  llvm_unreachable(nullptr);
+  else if (api.getBitWidth()==128)
+    return (isIEEE ?
+            initFromQuadrupleAPInt(api) : initFromPPCDoubleDoubleAPInt(api));
+  else
+    llvm_unreachable(0);
 }
 
 APFloat
 APFloat::getAllOnesValue(unsigned BitWidth, bool isIEEE)
 {
-  switch (BitWidth) {
-  case 16:
-    return APFloat(IEEEhalf, APInt::getAllOnesValue(BitWidth));
-  case 32:
-    return APFloat(IEEEsingle, APInt::getAllOnesValue(BitWidth));
-  case 64:
-    return APFloat(IEEEdouble, APInt::getAllOnesValue(BitWidth));
-  case 80:
-    return APFloat(x87DoubleExtended, APInt::getAllOnesValue(BitWidth));
-  case 128:
-    if (isIEEE)
-      return APFloat(IEEEquad, APInt::getAllOnesValue(BitWidth));
-    return APFloat(PPCDoubleDouble, APInt::getAllOnesValue(BitWidth));
-  default:
-    llvm_unreachable("Unknown floating bit width");
-  }
+  return APFloat(APInt::getAllOnesValue(BitWidth), isIEEE);
 }
-
-/// Make this number the largest magnitude normal number in the given
-/// semantics.
-void APFloat::makeLargest(bool Negative) {
-  // We want (in interchange format):
-  //   sign = {Negative}
-  //   exponent = 1..10
-  //   significand = 1..1
-  category = fcNormal;
-  sign = Negative;
-  exponent = semantics->maxExponent;
-
-  // Use memset to set all but the highest integerPart to all ones.
-  integerPart *significand = significandParts();
-  unsigned PartCount = partCount();
-  memset(significand, 0xFF, sizeof(integerPart)*(PartCount - 1));
-
-  // Set the high integerPart especially setting all unused top bits for
-  // internal consistency.
-  const unsigned NumUnusedHighBits =
-    PartCount*integerPartWidth - semantics->precision;
-  significand[PartCount - 1] = (NumUnusedHighBits < integerPartWidth)
-                                   ? (~integerPart(0) >> NumUnusedHighBits)
-                                   : 0;
-}
-
-/// Make this number the smallest magnitude denormal number in the given
-/// semantics.
-void APFloat::makeSmallest(bool Negative) {
-  // We want (in interchange format):
-  //   sign = {Negative}
-  //   exponent = 0..0
-  //   significand = 0..01
-  category = fcNormal;
-  sign = Negative;
-  exponent = semantics->minExponent;
-  APInt::tcSet(significandParts(), 1, partCount());
-}
-
 
 APFloat APFloat::getLargest(const fltSemantics &Sem, bool Negative) {
+  APFloat Val(Sem, fcNormal, Negative);
+
   // We want (in interchange format):
   //   sign = {Negative}
   //   exponent = 1..10
   //   significand = 1..1
-  APFloat Val(Sem, uninitialized);
-  Val.makeLargest(Negative);
+
+  Val.exponent = Sem.maxExponent; // unbiased
+
+  // 1-initialize all bits....
+  Val.zeroSignificand();
+  integerPart *significand = Val.significandParts();
+  unsigned N = partCountForBits(Sem.precision);
+  for (unsigned i = 0; i != N; ++i)
+    significand[i] = ~((integerPart) 0);
+
+  // ...and then clear the top bits for internal consistency.
+  if (Sem.precision % integerPartWidth != 0)
+    significand[N-1] &=
+      (((integerPart) 1) << (Sem.precision % integerPartWidth)) - 1;
+
   return Val;
 }
 
 APFloat APFloat::getSmallest(const fltSemantics &Sem, bool Negative) {
+  APFloat Val(Sem, fcNormal, Negative);
+
   // We want (in interchange format):
   //   sign = {Negative}
   //   exponent = 0..0
   //   significand = 0..01
-  APFloat Val(Sem, uninitialized);
-  Val.makeSmallest(Negative);
+
+  Val.exponent = Sem.minExponent; // unbiased
+  Val.zeroSignificand();
+  Val.significandParts()[0] = 1;
   return Val;
 }
 
 APFloat APFloat::getSmallestNormalized(const fltSemantics &Sem, bool Negative) {
-  APFloat Val(Sem, uninitialized);
+  APFloat Val(Sem, fcNormal, Negative);
 
   // We want (in interchange format):
   //   sign = {Negative}
   //   exponent = 0..0
   //   significand = 10..0
 
-  Val.category = fcNormal;
-  Val.zeroSignificand();
-  Val.sign = Negative;
   Val.exponent = Sem.minExponent;
+  Val.zeroSignificand();
   Val.significandParts()[partCountForBits(Sem.precision)-1] |=
     (((integerPart) 1) << ((Sem.precision - 1) % integerPartWidth));
 
   return Val;
 }
 
-APFloat::APFloat(const fltSemantics &Sem, const APInt &API) {
-  initFromAPInt(&Sem, API);
+APFloat::APFloat(const APInt& api, bool isIEEE) {
+  initFromAPInt(api, isIEEE);
 }
 
 APFloat::APFloat(float f) {
-  initFromAPInt(&IEEEsingle, APInt::floatToBits(f));
+  initFromAPInt(APInt::floatToBits(f));
 }
 
 APFloat::APFloat(double d) {
-  initFromAPInt(&IEEEdouble, APInt::doubleToBits(d));
+  initFromAPInt(APInt::doubleToBits(d));
 }
 
 namespace {
@@ -3478,8 +3299,10 @@ namespace {
 
     significand = significand.udiv(divisor);
 
-    // Truncate the significand down to its active bit count.
-    significand = significand.trunc(significand.getActiveBits());
+    // Truncate the significand down to its active bit count, but
+    // don't try to drop below 32.
+    unsigned newPrecision = std::max(32U, significand.getActiveBits());
+    significand = significand.trunc(newPrecision);
   }
 
 
@@ -3567,14 +3390,11 @@ void APFloat::toString(SmallVectorImpl<char> &Str,
   // Set FormatPrecision if zero.  We want to do this before we
   // truncate trailing zeros, as those are part of the precision.
   if (!FormatPrecision) {
-    // We use enough digits so the number can be round-tripped back to an
-    // APFloat. The formula comes from "How to Print Floating-Point Numbers
-    // Accurately" by Steele and White.
-    // FIXME: Using a formula based purely on the precision is conservative;
-    // we can print fewer digits depending on the actual value being printed.
+    // It's an interesting question whether to use the nominal
+    // precision or the active precision here for denormals.
 
-    // FormatPrecision = 2 + floor(significandBits / lg_2(10))
-    FormatPrecision = 2 + semantics->precision * 59 / 196;
+    // FormatPrecision = ceil(significandBits / lg_2(10))
+    FormatPrecision = (semantics->precision * 59 + 195) / 196;
   }
 
   // Ignore trailing binary zeros.
@@ -3619,7 +3439,7 @@ void APFloat::toString(SmallVectorImpl<char> &Str,
 
   AdjustToPrecision(significand, exp, FormatPrecision);
 
-  SmallVector<char, 256> buffer;
+  llvm::SmallVector<char, 256> buffer;
 
   // Fill the buffer.
   unsigned precision = significand.getBitWidth();
@@ -3734,7 +3554,7 @@ void APFloat::toString(SmallVectorImpl<char> &Str,
 
 bool APFloat::getExactInverse(APFloat *inv) const {
   // Special floats and denormals have no exact inverse.
-  if (!isFiniteNonZero())
+  if (category != fcNormal)
     return false;
 
   // Check that the number is a power of two by making sure that only the
@@ -3749,176 +3569,14 @@ bool APFloat::getExactInverse(APFloat *inv) const {
 
   // Avoid multiplication with a denormal, it is not safe on all platforms and
   // may be slower than a normal division.
-  if (reciprocal.isDenormal())
+  if (reciprocal.significandMSB() + 1 < reciprocal.semantics->precision)
     return false;
 
-  assert(reciprocal.isFiniteNonZero() &&
+  assert(reciprocal.category == fcNormal &&
          reciprocal.significandLSB() == reciprocal.semantics->precision - 1);
 
   if (inv)
     *inv = reciprocal;
 
   return true;
-}
-
-bool APFloat::isSignaling() const {
-  if (!isNaN())
-    return false;
-
-  // IEEE-754R 2008 6.2.1: A signaling NaN bit string should be encoded with the
-  // first bit of the trailing significand being 0.
-  return !APInt::tcExtractBit(significandParts(), semantics->precision - 2);
-}
-
-/// IEEE-754R 2008 5.3.1: nextUp/nextDown.
-///
-/// *NOTE* since nextDown(x) = -nextUp(-x), we only implement nextUp with
-/// appropriate sign switching before/after the computation.
-APFloat::opStatus APFloat::next(bool nextDown) {
-  // If we are performing nextDown, swap sign so we have -x.
-  if (nextDown)
-    changeSign();
-
-  // Compute nextUp(x)
-  opStatus result = opOK;
-
-  // Handle each float category separately.
-  switch (category) {
-  case fcInfinity:
-    // nextUp(+inf) = +inf
-    if (!isNegative())
-      break;
-    // nextUp(-inf) = -getLargest()
-    makeLargest(true);
-    break;
-  case fcNaN:
-    // IEEE-754R 2008 6.2 Par 2: nextUp(sNaN) = qNaN. Set Invalid flag.
-    // IEEE-754R 2008 6.2: nextUp(qNaN) = qNaN. Must be identity so we do not
-    //                     change the payload.
-    if (isSignaling()) {
-      result = opInvalidOp;
-      // For consistency, propagate the sign of the sNaN to the qNaN.
-      makeNaN(false, isNegative(), nullptr);
-    }
-    break;
-  case fcZero:
-    // nextUp(pm 0) = +getSmallest()
-    makeSmallest(false);
-    break;
-  case fcNormal:
-    // nextUp(-getSmallest()) = -0
-    if (isSmallest() && isNegative()) {
-      APInt::tcSet(significandParts(), 0, partCount());
-      category = fcZero;
-      exponent = 0;
-      break;
-    }
-
-    // nextUp(getLargest()) == INFINITY
-    if (isLargest() && !isNegative()) {
-      APInt::tcSet(significandParts(), 0, partCount());
-      category = fcInfinity;
-      exponent = semantics->maxExponent + 1;
-      break;
-    }
-
-    // nextUp(normal) == normal + inc.
-    if (isNegative()) {
-      // If we are negative, we need to decrement the significand.
-
-      // We only cross a binade boundary that requires adjusting the exponent
-      // if:
-      //   1. exponent != semantics->minExponent. This implies we are not in the
-      //   smallest binade or are dealing with denormals.
-      //   2. Our significand excluding the integral bit is all zeros.
-      bool WillCrossBinadeBoundary =
-        exponent != semantics->minExponent && isSignificandAllZeros();
-
-      // Decrement the significand.
-      //
-      // We always do this since:
-      //   1. If we are dealing with a non-binade decrement, by definition we
-      //   just decrement the significand.
-      //   2. If we are dealing with a normal -> normal binade decrement, since
-      //   we have an explicit integral bit the fact that all bits but the
-      //   integral bit are zero implies that subtracting one will yield a
-      //   significand with 0 integral bit and 1 in all other spots. Thus we
-      //   must just adjust the exponent and set the integral bit to 1.
-      //   3. If we are dealing with a normal -> denormal binade decrement,
-      //   since we set the integral bit to 0 when we represent denormals, we
-      //   just decrement the significand.
-      integerPart *Parts = significandParts();
-      APInt::tcDecrement(Parts, partCount());
-
-      if (WillCrossBinadeBoundary) {
-        // Our result is a normal number. Do the following:
-        // 1. Set the integral bit to 1.
-        // 2. Decrement the exponent.
-        APInt::tcSetBit(Parts, semantics->precision - 1);
-        exponent--;
-      }
-    } else {
-      // If we are positive, we need to increment the significand.
-
-      // We only cross a binade boundary that requires adjusting the exponent if
-      // the input is not a denormal and all of said input's significand bits
-      // are set. If all of said conditions are true: clear the significand, set
-      // the integral bit to 1, and increment the exponent. If we have a
-      // denormal always increment since moving denormals and the numbers in the
-      // smallest normal binade have the same exponent in our representation.
-      bool WillCrossBinadeBoundary = !isDenormal() && isSignificandAllOnes();
-
-      if (WillCrossBinadeBoundary) {
-        integerPart *Parts = significandParts();
-        APInt::tcSet(Parts, 0, partCount());
-        APInt::tcSetBit(Parts, semantics->precision - 1);
-        assert(exponent != semantics->maxExponent &&
-               "We can not increment an exponent beyond the maxExponent allowed"
-               " by the given floating point semantics.");
-        exponent++;
-      } else {
-        incrementSignificand();
-      }
-    }
-    break;
-  }
-
-  // If we are performing nextDown, swap sign so we have -nextUp(-x)
-  if (nextDown)
-    changeSign();
-
-  return result;
-}
-
-void
-APFloat::makeInf(bool Negative) {
-  category = fcInfinity;
-  sign = Negative;
-  exponent = semantics->maxExponent + 1;
-  APInt::tcSet(significandParts(), 0, partCount());
-}
-
-void
-APFloat::makeZero(bool Negative) {
-  category = fcZero;
-  sign = Negative;
-  exponent = semantics->minExponent-1;
-  APInt::tcSet(significandParts(), 0, partCount());  
-}
-
-APFloat llvm::scalbn(APFloat X, int Exp) {
-  if (X.isInfinity() || X.isZero() || X.isNaN())
-    return std::move(X);
-
-  auto MaxExp = X.getSemantics().maxExponent;
-  auto MinExp = X.getSemantics().minExponent;
-  if (Exp > (MaxExp - X.exponent))
-    // Overflow saturates to infinity.
-    return APFloat::getInf(X.getSemantics(), X.isNegative());
-  if (Exp < (MinExp - X.exponent))
-    // Underflow saturates to zero.
-    return APFloat::getZero(X.getSemantics(), X.isNegative());
-
-  X.exponent += Exp;
-  return std::move(X);
 }

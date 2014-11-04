@@ -1,4 +1,4 @@
-//===-- CmpInstAnalysis.h - Utils to help fold compare insts ----*- C++ -*-===//
+//===-- CmpInstAnalysis.h - Utils to help fold compare insts ------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -15,7 +15,7 @@
 #ifndef LLVM_TRANSFORMS_UTILS_CMPINSTANALYSIS_H
 #define LLVM_TRANSFORMS_UTILS_CMPINSTANALYSIS_H
 
-#include "llvm/IR/InstrTypes.h"
+#include "llvm/InstrTypes.h"
 
 namespace llvm {
   class ICmpInst;
@@ -63,3 +63,4 @@ namespace llvm {
 } // end namespace llvm
 
 #endif
+

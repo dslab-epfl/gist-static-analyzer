@@ -13,7 +13,3 @@ struct C {
   C &operator=(C&);
   ~C();
 };
-
-enum E {
-  b = 1
-};

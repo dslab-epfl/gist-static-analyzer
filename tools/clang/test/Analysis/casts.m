@@ -1,7 +1,9 @@
 // RUN: %clang_cc1 -analyze -analyzer-checker=core,alpha.core -analyzer-store=region -verify %s
 // expected-no-diagnostics
 
-// Test function pointer casts.
+// Test function pointer casts.  Currently we track function addresses using
+// loc::FunctionVal.  Because casts can be arbitrary, do we need to model
+// functions with regions?
 typedef void* (*MyFuncTest1)(void);
 
 MyFuncTest1 test1_aux(void);
@@ -12,7 +14,8 @@ void test1(void) {
   if (p != ((void*) 0)) x = (*p)();
 }
 
-// Test casts from void* to function pointers.
+// Test casts from void* to function pointers.  Same issue as above:
+// should we eventually model function pointers using regions?
 void* test2(void *p) {
   MyFuncTest1 fp = (MyFuncTest1) p;
   return (*fp)();
@@ -37,10 +40,4 @@ static void
 adium_media_ready_cb(RDR10087620 *InObj)
 {
   InObj.elem |= EEOne;
-}
-
-
-// PR16690
-_Bool testLocAsIntegerToBool() {
-  return (long long)&testLocAsIntegerToBool;
 }

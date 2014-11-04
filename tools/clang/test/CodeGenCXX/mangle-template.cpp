@@ -1,6 +1,4 @@
-// RUN: %clang_cc1 -verify -Wno-return-type -Wno-main -std=c++11 -emit-llvm -triple %itanium_abi_triple -o - %s | FileCheck %s
-// expected-no-diagnostics
-
+// RUN: %clang_cc1 -emit-llvm -o - %s | FileCheck %s
 namespace test1 {
 int x;
 template <int& D> class T { };
@@ -84,7 +82,7 @@ namespace test7 {
     X(U*, typename int_c<(meta<T>::value + meta<U>::value)>::type *) { }
   };
 
-  // CHECK: define weak_odr {{.*}} @_ZN5test71XIiEC1IdEEPT_PNS_5int_cIXplL_ZNS_4metaIiE5valueEEsr4metaIS3_EE5valueEE4typeE(
+  // CHECK: define weak_odr {{.*}} @_ZN5test71XIiEC1IdEEPT_PNS_5int_cIXplL_ZNS_4metaIiE5valueEEsr4metaIS3_EE5valueEE4typeE(%"struct.test7::X"* %this, double*, float*) unnamed_addr
   template X<int>::X(double*, float*);
 }
 
@@ -103,7 +101,7 @@ namespace test8 {
   template<typename T>
   void f(int_c<meta<T>::type::value>) { }
 
-  // CHECK-LABEL: define weak_odr void @_ZN5test81fIiEEvNS_5int_cIXsr4metaIT_E4typeE5valueEEE(
+  // CHECK: define weak_odr void @_ZN5test81fIiEEvNS_5int_cIXsr4metaIT_E4typeE5valueEEE
   template void f<int>(int_c<sizeof(int)>);
 }
 
@@ -147,7 +145,7 @@ namespace test10 {
   }
 }
 
-// Report from cxx-abi-dev, 2012.01.04.
+// Report from Jason Merrill on cxx-abi-dev, 2012.01.04.
 namespace test11 {
   int cmp(char a, char b);
   template <typename T, int (*cmp)(T, T)> struct A {};
@@ -158,17 +156,17 @@ namespace test11 {
 
 namespace test12 {
   // Make sure we can mangle non-type template args with internal linkage.
-  static int f() {}
+  static int f();
   const int n = 10;
   template<typename T, T v> void test() {}
   void use() {
-    // CHECK-LABEL: define internal void @_ZN6test124testIFivEXadL_ZNS_L1fEvEEEEvv(
+    // CHECK: define internal void @_ZN6test124testIFivEXadL_ZNS_L1fEvEEEEvv(
     test<int(), &f>();
-    // CHECK-LABEL: define internal void @_ZN6test124testIRFivELZNS_L1fEvEEEvv(
+    // CHECK: define internal void @_ZN6test124testIRFivELZNS_L1fEvEEEvv(
     test<int(&)(), f>();
-    // CHECK-LABEL: define internal void @_ZN6test124testIPKiXadL_ZNS_L1nEEEEEvv(
+    // CHECK: define internal void @_ZN6test124testIPKiXadL_ZNS_L1nEEEEEvv(
     test<const int*, &n>();
-    // CHECK-LABEL: define internal void @_ZN6test124testIRKiLZNS_L1nEEEEvv(
+    // CHECK: define internal void @_ZN6test124testIRKiLZNS_L1nEEEEvv(
     test<const int&, n>();
   }
 }
@@ -183,26 +181,4 @@ namespace test13 {
   template <short s> short returnShort() { return s; }
   template short returnShort<-32768>();
   // CHECK: @_ZN6test1311returnShortILsn32768EEEsv()
-}
-
-namespace test14 {
-  template <typename> inline int inl(bool b) {
-    if (b) {
-      static struct {
-        int field;
-      } a;
-      // CHECK: @_ZZN6test143inlIvEEibE1a
-
-      return a.field;
-    } else {
-      static struct {
-        int field;
-      } a;
-      // CHECK: @_ZZN6test143inlIvEEibE1a_0
-
-      return a.field;
-    }
-  }
-
-  int call(bool b) { return inl<void>(b); }
 }

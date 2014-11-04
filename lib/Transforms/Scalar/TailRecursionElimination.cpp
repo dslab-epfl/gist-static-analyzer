@@ -50,34 +50,28 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "tailcallelim"
 #include "llvm/Transforms/Scalar.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/ADT/Statistic.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Transforms/Utils/Local.h"
+#include "llvm/Constants.h"
+#include "llvm/DerivedTypes.h"
+#include "llvm/Function.h"
+#include "llvm/Instructions.h"
+#include "llvm/IntrinsicInst.h"
+#include "llvm/Module.h"
+#include "llvm/Pass.h"
 #include "llvm/Analysis/CaptureTracking.h"
-#include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/InlineCost.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/Loads.h"
-#include "llvm/Analysis/TargetTransformInfo.h"
-#include "llvm/IR/CFG.h"
-#include "llvm/IR/CallSite.h"
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/DiagnosticInfo.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/IntrinsicInst.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IR/ValueHandle.h"
-#include "llvm/Pass.h"
+#include "llvm/Support/CallSite.h"
+#include "llvm/Support/CFG.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Transforms/Utils/BasicBlockUtils.h"
-#include "llvm/Transforms/Utils/Local.h"
+#include "llvm/ADT/Statistic.h"
+#include "llvm/ADT/STLExtras.h"
 using namespace llvm;
-
-#define DEBUG_TYPE "tailcallelim"
 
 STATISTIC(NumEliminated, "Number of tail calls removed");
 STATISTIC(NumRetDuped,   "Number of return duplicated");
@@ -85,36 +79,29 @@ STATISTIC(NumAccumAdded, "Number of accumulators introduced");
 
 namespace {
   struct TailCallElim : public FunctionPass {
-    const TargetTransformInfo *TTI;
-
     static char ID; // Pass identification, replacement for typeid
     TailCallElim() : FunctionPass(ID) {
       initializeTailCallElimPass(*PassRegistry::getPassRegistry());
     }
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override;
-
-    bool runOnFunction(Function &F) override;
+    virtual bool runOnFunction(Function &F);
 
   private:
-    bool runTRE(Function &F);
-    bool markTails(Function &F, bool &AllCallsAreTailCalls);
-
     CallInst *FindTRECandidate(Instruction *I,
                                bool CannotTailCallElimCallsMarkedTail);
     bool EliminateRecursiveTailCall(CallInst *CI, ReturnInst *Ret,
                                     BasicBlock *&OldEntry,
                                     bool &TailCallsAreMarkedTail,
-                                    SmallVectorImpl<PHINode *> &ArgumentPHIs,
+                                    SmallVector<PHINode*, 8> &ArgumentPHIs,
                                     bool CannotTailCallElimCallsMarkedTail);
     bool FoldReturnAndProcessPred(BasicBlock *BB,
                                   ReturnInst *Ret, BasicBlock *&OldEntry,
                                   bool &TailCallsAreMarkedTail,
-                                  SmallVectorImpl<PHINode *> &ArgumentPHIs,
+                                  SmallVector<PHINode*, 8> &ArgumentPHIs,
                                   bool CannotTailCallElimCallsMarkedTail);
     bool ProcessReturningBlock(ReturnInst *RI, BasicBlock *&OldEntry,
                                bool &TailCallsAreMarkedTail,
-                               SmallVectorImpl<PHINode *> &ArgumentPHIs,
+                               SmallVector<PHINode*, 8> &ArgumentPHIs,
                                bool CannotTailCallElimCallsMarkedTail);
     bool CanMoveAboveCall(Instruction *I, CallInst *CI);
     Value *CanTransformAccumulatorRecursion(Instruction *I, CallInst *CI);
@@ -122,292 +109,86 @@ namespace {
 }
 
 char TailCallElim::ID = 0;
-INITIALIZE_PASS_BEGIN(TailCallElim, "tailcallelim",
-                      "Tail Call Elimination", false, false)
-INITIALIZE_AG_DEPENDENCY(TargetTransformInfo)
-INITIALIZE_PASS_END(TailCallElim, "tailcallelim",
-                    "Tail Call Elimination", false, false)
+INITIALIZE_PASS(TailCallElim, "tailcallelim",
+                "Tail Call Elimination", false, false)
 
 // Public interface to the TailCallElimination pass
 FunctionPass *llvm::createTailCallEliminationPass() {
   return new TailCallElim();
 }
 
-void TailCallElim::getAnalysisUsage(AnalysisUsage &AU) const {
-  AU.addRequired<TargetTransformInfo>();
-}
-
-/// \brief Scan the specified function for alloca instructions.
-/// If it contains any dynamic allocas, returns false.
-static bool CanTRE(Function &F) {
-  // Because of PR962, we don't TRE dynamic allocas.
-  for (auto &BB : F) {
-    for (auto &I : BB) {
-      if (AllocaInst *AI = dyn_cast<AllocaInst>(&I)) {
-        if (!AI->isStaticAlloca())
-          return false;
-      }
-    }
-  }
-
+/// AllocaMightEscapeToCalls - Return true if this alloca may be accessed by
+/// callees of this function.  We only do very simple analysis right now, this
+/// could be expanded in the future to use mod/ref information for particular
+/// call sites if desired.
+static bool AllocaMightEscapeToCalls(AllocaInst *AI) {
+  // FIXME: do simple 'address taken' analysis.
   return true;
 }
 
+/// CheckForEscapingAllocas - Scan the specified basic block for alloca
+/// instructions.  If it contains any that might be accessed by calls, return
+/// true.
+static bool CheckForEscapingAllocas(BasicBlock *BB,
+                                    bool &CannotTCETailMarkedCall) {
+  bool RetVal = false;
+  for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; ++I)
+    if (AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
+      RetVal |= AllocaMightEscapeToCalls(AI);
+
+      // If this alloca is in the body of the function, or if it is a variable
+      // sized allocation, we cannot tail call eliminate calls marked 'tail'
+      // with this mechanism.
+      if (BB != &BB->getParent()->getEntryBlock() ||
+          !isa<ConstantInt>(AI->getArraySize()))
+        CannotTCETailMarkedCall = true;
+    }
+  return RetVal;
+}
+
 bool TailCallElim::runOnFunction(Function &F) {
-  if (skipOptnoneFunction(F))
-    return false;
-
-  bool AllCallsAreTailCalls = false;
-  bool Modified = markTails(F, AllCallsAreTailCalls);
-  if (AllCallsAreTailCalls)
-    Modified |= runTRE(F);
-  return Modified;
-}
-
-namespace {
-struct AllocaDerivedValueTracker {
-  // Start at a root value and walk its use-def chain to mark calls that use the
-  // value or a derived value in AllocaUsers, and places where it may escape in
-  // EscapePoints.
-  void walk(Value *Root) {
-    SmallVector<Use *, 32> Worklist;
-    SmallPtrSet<Use *, 32> Visited;
-
-    auto AddUsesToWorklist = [&](Value *V) {
-      for (auto &U : V->uses()) {
-        if (!Visited.insert(&U))
-          continue;
-        Worklist.push_back(&U);
-      }
-    };
-
-    AddUsesToWorklist(Root);
-
-    while (!Worklist.empty()) {
-      Use *U = Worklist.pop_back_val();
-      Instruction *I = cast<Instruction>(U->getUser());
-
-      switch (I->getOpcode()) {
-      case Instruction::Call:
-      case Instruction::Invoke: {
-        CallSite CS(I);
-        bool IsNocapture = !CS.isCallee(U) &&
-                           CS.doesNotCapture(CS.getArgumentNo(U));
-        callUsesLocalStack(CS, IsNocapture);
-        if (IsNocapture) {
-          // If the alloca-derived argument is passed in as nocapture, then it
-          // can't propagate to the call's return. That would be capturing.
-          continue;
-        }
-        break;
-      }
-      case Instruction::Load: {
-        // The result of a load is not alloca-derived (unless an alloca has
-        // otherwise escaped, but this is a local analysis).
-        continue;
-      }
-      case Instruction::Store: {
-        if (U->getOperandNo() == 0)
-          EscapePoints.insert(I);
-        continue;  // Stores have no users to analyze.
-      }
-      case Instruction::BitCast:
-      case Instruction::GetElementPtr:
-      case Instruction::PHI:
-      case Instruction::Select:
-      case Instruction::AddrSpaceCast:
-        break;
-      default:
-        EscapePoints.insert(I);
-        break;
-      }
-
-      AddUsesToWorklist(I);
-    }
-  }
-
-  void callUsesLocalStack(CallSite CS, bool IsNocapture) {
-    // Add it to the list of alloca users.
-    AllocaUsers.insert(CS.getInstruction());
-
-    // If it's nocapture then it can't capture this alloca.
-    if (IsNocapture)
-      return;
-
-    // If it can write to memory, it can leak the alloca value.
-    if (!CS.onlyReadsMemory())
-      EscapePoints.insert(CS.getInstruction());
-  }
-
-  SmallPtrSet<Instruction *, 32> AllocaUsers;
-  SmallPtrSet<Instruction *, 32> EscapePoints;
-};
-}
-
-bool TailCallElim::markTails(Function &F, bool &AllCallsAreTailCalls) {
-  if (F.callsFunctionThatReturnsTwice())
-    return false;
-  AllCallsAreTailCalls = true;
-
-  // The local stack holds all alloca instructions and all byval arguments.
-  AllocaDerivedValueTracker Tracker;
-  for (Argument &Arg : F.args()) {
-    if (Arg.hasByValAttr())
-      Tracker.walk(&Arg);
-  }
-  for (auto &BB : F) {
-    for (auto &I : BB)
-      if (AllocaInst *AI = dyn_cast<AllocaInst>(&I))
-        Tracker.walk(AI);
-  }
-
-  bool Modified = false;
-
-  // Track whether a block is reachable after an alloca has escaped. Blocks that
-  // contain the escaping instruction will be marked as being visited without an
-  // escaped alloca, since that is how the block began.
-  enum VisitType {
-    UNVISITED,
-    UNESCAPED,
-    ESCAPED
-  };
-  DenseMap<BasicBlock *, VisitType> Visited;
-
-  // We propagate the fact that an alloca has escaped from block to successor.
-  // Visit the blocks that are propagating the escapedness first. To do this, we
-  // maintain two worklists.
-  SmallVector<BasicBlock *, 32> WorklistUnescaped, WorklistEscaped;
-
-  // We may enter a block and visit it thinking that no alloca has escaped yet,
-  // then see an escape point and go back around a loop edge and come back to
-  // the same block twice. Because of this, we defer setting tail on calls when
-  // we first encounter them in a block. Every entry in this list does not
-  // statically use an alloca via use-def chain analysis, but may find an alloca
-  // through other means if the block turns out to be reachable after an escape
-  // point.
-  SmallVector<CallInst *, 32> DeferredTails;
-
-  BasicBlock *BB = &F.getEntryBlock();
-  VisitType Escaped = UNESCAPED;
-  do {
-    for (auto &I : *BB) {
-      if (Tracker.EscapePoints.count(&I))
-        Escaped = ESCAPED;
-
-      CallInst *CI = dyn_cast<CallInst>(&I);
-      if (!CI || CI->isTailCall())
-        continue;
-
-      if (CI->doesNotAccessMemory()) {
-        // A call to a readnone function whose arguments are all things computed
-        // outside this function can be marked tail. Even if you stored the
-        // alloca address into a global, a readnone function can't load the
-        // global anyhow.
-        //
-        // Note that this runs whether we know an alloca has escaped or not. If
-        // it has, then we can't trust Tracker.AllocaUsers to be accurate.
-        bool SafeToTail = true;
-        for (auto &Arg : CI->arg_operands()) {
-          if (isa<Constant>(Arg.getUser()))
-            continue;
-          if (Argument *A = dyn_cast<Argument>(Arg.getUser()))
-            if (!A->hasByValAttr())
-              continue;
-          SafeToTail = false;
-          break;
-        }
-        if (SafeToTail) {
-          emitOptimizationRemark(
-              F.getContext(), "tailcallelim", F, CI->getDebugLoc(),
-              "marked this readnone call a tail call candidate");
-          CI->setTailCall();
-          Modified = true;
-          continue;
-        }
-      }
-
-      if (Escaped == UNESCAPED && !Tracker.AllocaUsers.count(CI)) {
-        DeferredTails.push_back(CI);
-      } else {
-        AllCallsAreTailCalls = false;
-      }
-    }
-
-    for (auto *SuccBB : make_range(succ_begin(BB), succ_end(BB))) {
-      auto &State = Visited[SuccBB];
-      if (State < Escaped) {
-        State = Escaped;
-        if (State == ESCAPED)
-          WorklistEscaped.push_back(SuccBB);
-        else
-          WorklistUnescaped.push_back(SuccBB);
-      }
-    }
-
-    if (!WorklistEscaped.empty()) {
-      BB = WorklistEscaped.pop_back_val();
-      Escaped = ESCAPED;
-    } else {
-      BB = nullptr;
-      while (!WorklistUnescaped.empty()) {
-        auto *NextBB = WorklistUnescaped.pop_back_val();
-        if (Visited[NextBB] == UNESCAPED) {
-          BB = NextBB;
-          Escaped = UNESCAPED;
-          break;
-        }
-      }
-    }
-  } while (BB);
-
-  for (CallInst *CI : DeferredTails) {
-    if (Visited[CI->getParent()] != ESCAPED) {
-      // If the escape point was part way through the block, calls after the
-      // escape point wouldn't have been put into DeferredTails.
-      emitOptimizationRemark(F.getContext(), "tailcallelim", F,
-                             CI->getDebugLoc(),
-                             "marked this call a tail call candidate");
-      CI->setTailCall();
-      Modified = true;
-    } else {
-      AllCallsAreTailCalls = false;
-    }
-  }
-
-  return Modified;
-}
-
-bool TailCallElim::runTRE(Function &F) {
   // If this function is a varargs function, we won't be able to PHI the args
   // right, so don't even try to convert it...
   if (F.getFunctionType()->isVarArg()) return false;
 
-  TTI = &getAnalysis<TargetTransformInfo>();
-  BasicBlock *OldEntry = nullptr;
+  BasicBlock *OldEntry = 0;
   bool TailCallsAreMarkedTail = false;
   SmallVector<PHINode*, 8> ArgumentPHIs;
   bool MadeChange = false;
+  bool FunctionContainsEscapingAllocas = false;
 
-  // CanTRETailMarkedCall - If false, we cannot perform TRE on tail calls
+  // CannotTCETailMarkedCall - If true, we cannot perform TCE on tail calls
   // marked with the 'tail' attribute, because doing so would cause the stack
-  // size to increase (real TRE would deallocate variable sized allocas, TRE
+  // size to increase (real TCE would deallocate variable sized allocas, TCE
   // doesn't).
-  bool CanTRETailMarkedCall = CanTRE(F);
+  bool CannotTCETailMarkedCall = false;
 
-  // Change any tail recursive calls to loops.
-  //
-  // FIXME: The code generator produces really bad code when an 'escaping
-  // alloca' is changed from being a static alloca to being a dynamic alloca.
-  // Until this is resolved, disable this transformation if that would ever
-  // happen.  This bug is PR962.
+  // Loop over the function, looking for any returning blocks, and keeping track
+  // of whether this function has any non-trivially used allocas.
+  for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB) {
+    if (FunctionContainsEscapingAllocas && CannotTCETailMarkedCall)
+      break;
+
+    FunctionContainsEscapingAllocas |=
+      CheckForEscapingAllocas(BB, CannotTCETailMarkedCall);
+  }
+
+  /// FIXME: The code generator produces really bad code when an 'escaping
+  /// alloca' is changed from being a static alloca to being a dynamic alloca.
+  /// Until this is resolved, disable this transformation if that would ever
+  /// happen.  This bug is PR962.
+  if (FunctionContainsEscapingAllocas)
+    return false;
+
+  // Second pass, change any tail calls to loops.
   for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB) {
     if (ReturnInst *Ret = dyn_cast<ReturnInst>(BB->getTerminator())) {
       bool Change = ProcessReturningBlock(Ret, OldEntry, TailCallsAreMarkedTail,
-                                          ArgumentPHIs, !CanTRETailMarkedCall);
+                                          ArgumentPHIs,CannotTCETailMarkedCall);
       if (!Change && BB->getFirstNonPHIOrDbg() == Ret)
         Change = FoldReturnAndProcessPred(BB, Ret, OldEntry,
                                           TailCallsAreMarkedTail, ArgumentPHIs,
-                                          !CanTRETailMarkedCall);
+                                          CannotTCETailMarkedCall);
       MadeChange |= Change;
     }
   }
@@ -417,15 +198,28 @@ bool TailCallElim::runTRE(Function &F) {
   // with themselves.  Check to see if we did and clean up our mess if so.  This
   // occurs when a function passes an argument straight through to its tail
   // call.
-  for (unsigned i = 0, e = ArgumentPHIs.size(); i != e; ++i) {
-    PHINode *PN = ArgumentPHIs[i];
+  if (!ArgumentPHIs.empty()) {
+    for (unsigned i = 0, e = ArgumentPHIs.size(); i != e; ++i) {
+      PHINode *PN = ArgumentPHIs[i];
 
-    // If the PHI Node is a dynamic constant, replace it with the value it is.
-    if (Value *PNV = SimplifyInstruction(PN)) {
-      PN->replaceAllUsesWith(PNV);
-      PN->eraseFromParent();
+      // If the PHI Node is a dynamic constant, replace it with the value it is.
+      if (Value *PNV = SimplifyInstruction(PN)) {
+        PN->replaceAllUsesWith(PNV);
+        PN->eraseFromParent();
+      }
     }
   }
+
+  // Finally, if this function contains no non-escaping allocas, or calls
+  // setjmp, mark all calls in the function as eligible for tail calls
+  //(there is no stack memory for them to access).
+  if (!FunctionContainsEscapingAllocas && !F.callsFunctionThatReturnsTwice())
+    for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB)
+      for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; ++I)
+        if (CallInst *CI = dyn_cast<CallInst>(I)) {
+          CI->setTailCall();
+          MadeChange = true;
+        }
 
   return MadeChange;
 }
@@ -510,11 +304,11 @@ static bool isDynamicConstant(Value *V, CallInst *CI, ReturnInst *RI) {
 //
 static Value *getCommonReturnValue(ReturnInst *IgnoreRI, CallInst *CI) {
   Function *F = CI->getParent()->getParent();
-  Value *ReturnedValue = nullptr;
+  Value *ReturnedValue = 0;
 
   for (Function::iterator BBI = F->begin(), E = F->end(); BBI != E; ++BBI) {
     ReturnInst *RI = dyn_cast<ReturnInst>(BBI->getTerminator());
-    if (RI == nullptr || RI == IgnoreRI) continue;
+    if (RI == 0 || RI == IgnoreRI) continue;
 
     // We can only perform this transformation if the value returned is
     // evaluatable at the start of the initial invocation of the function,
@@ -522,10 +316,10 @@ static Value *getCommonReturnValue(ReturnInst *IgnoreRI, CallInst *CI) {
     //
     Value *RetOp = RI->getOperand(0);
     if (!isDynamicConstant(RetOp, CI, RI))
-      return nullptr;
+      return 0;
 
     if (ReturnedValue && RetOp != ReturnedValue)
-      return nullptr;     // Cannot transform if differing values are returned.
+      return 0;     // Cannot transform if differing values are returned.
     ReturnedValue = RetOp;
   }
   return ReturnedValue;
@@ -537,23 +331,23 @@ static Value *getCommonReturnValue(ReturnInst *IgnoreRI, CallInst *CI) {
 ///
 Value *TailCallElim::CanTransformAccumulatorRecursion(Instruction *I,
                                                       CallInst *CI) {
-  if (!I->isAssociative() || !I->isCommutative()) return nullptr;
+  if (!I->isAssociative() || !I->isCommutative()) return 0;
   assert(I->getNumOperands() == 2 &&
          "Associative/commutative operations should have 2 args!");
 
   // Exactly one operand should be the result of the call instruction.
   if ((I->getOperand(0) == CI && I->getOperand(1) == CI) ||
       (I->getOperand(0) != CI && I->getOperand(1) != CI))
-    return nullptr;
+    return 0;
 
   // The only user of this instruction we allow is a single return instruction.
-  if (!I->hasOneUse() || !isa<ReturnInst>(I->user_back()))
-    return nullptr;
+  if (!I->hasOneUse() || !isa<ReturnInst>(I->use_back()))
+    return 0;
 
   // Ok, now we have to check all of the other return instructions in this
   // function.  If they return non-constants or differing values, then we cannot
   // transform the function safely.
-  return getCommonReturnValue(cast<ReturnInst>(I->user_back()), CI);
+  return getCommonReturnValue(cast<ReturnInst>(I->use_back()), CI);
 }
 
 static Instruction *FirstNonDbg(BasicBlock::iterator I) {
@@ -569,11 +363,11 @@ TailCallElim::FindTRECandidate(Instruction *TI,
   Function *F = BB->getParent();
 
   if (&BB->front() == TI) // Make sure there is something before the terminator.
-    return nullptr;
+    return 0;
 
   // Scan backwards from the return, checking to see if there is a tail call in
   // this block.  If so, set CI to it.
-  CallInst *CI = nullptr;
+  CallInst *CI = 0;
   BasicBlock::iterator BBI = TI;
   while (true) {
     CI = dyn_cast<CallInst>(BBI);
@@ -581,14 +375,14 @@ TailCallElim::FindTRECandidate(Instruction *TI,
       break;
 
     if (BBI == BB->begin())
-      return nullptr;          // Didn't find a potential tail call.
+      return 0;          // Didn't find a potential tail call.
     --BBI;
   }
 
   // If this call is marked as a tail call, and if there are dynamic allocas in
   // the function, we cannot perform this optimization.
   if (CI->isTailCall() && CannotTailCallElimCallsMarkedTail)
-    return nullptr;
+    return 0;
 
   // As a special case, detect code like this:
   //   double fabs(double f) { return __builtin_fabs(f); } // a 'fabs' call
@@ -596,9 +390,8 @@ TailCallElim::FindTRECandidate(Instruction *TI,
   // lower the call to fabs into inline code.
   if (BB == &F->getEntryBlock() &&
       FirstNonDbg(BB->front()) == CI &&
-      FirstNonDbg(std::next(BB->begin())) == TI &&
-      CI->getCalledFunction() &&
-      !TTI->isLoweredToCall(CI->getCalledFunction())) {
+      FirstNonDbg(llvm::next(BB->begin())) == TI &&
+      callIsSmall(CI)) {
     // A single-block function with just a call and a return. Check that
     // the arguments match.
     CallSite::arg_iterator I = CallSite(CI).arg_begin(),
@@ -608,7 +401,7 @@ TailCallElim::FindTRECandidate(Instruction *TI,
     for (; I != E && FI != FE; ++I, ++FI)
       if (*I != &*FI) break;
     if (I == E && FI == FE)
-      return nullptr;
+      return 0;
   }
 
   return CI;
@@ -617,7 +410,7 @@ TailCallElim::FindTRECandidate(Instruction *TI,
 bool TailCallElim::EliminateRecursiveTailCall(CallInst *CI, ReturnInst *Ret,
                                        BasicBlock *&OldEntry,
                                        bool &TailCallsAreMarkedTail,
-                                       SmallVectorImpl<PHINode *> &ArgumentPHIs,
+                                       SmallVector<PHINode*, 8> &ArgumentPHIs,
                                        bool CannotTailCallElimCallsMarkedTail) {
   // If we are introducing accumulator recursion to eliminate operations after
   // the call instruction that are both associative and commutative, the initial
@@ -629,8 +422,8 @@ bool TailCallElim::EliminateRecursiveTailCall(CallInst *CI, ReturnInst *Ret,
   // which is different to the constant returned by other return instructions
   // (which is recorded in AccumulatorRecursionEliminationInitVal).  This is a
   // special case of accumulator recursion, the operation being "return C".
-  Value *AccumulatorRecursionEliminationInitVal = nullptr;
-  Instruction *AccumulatorRecursionInstr = nullptr;
+  Value *AccumulatorRecursionEliminationInitVal = 0;
+  Instruction *AccumulatorRecursionInstr = 0;
 
   // Ok, we found a potential tail call.  We can currently only transform the
   // tail call if all of the instructions between the call and the return are
@@ -660,8 +453,8 @@ bool TailCallElim::EliminateRecursiveTailCall(CallInst *CI, ReturnInst *Ret,
   // accumulator recursion variable eliminated.
   if (Ret->getNumOperands() == 1 && Ret->getReturnValue() != CI &&
       !isa<UndefValue>(Ret->getReturnValue()) &&
-      AccumulatorRecursionEliminationInitVal == nullptr &&
-      !getCommonReturnValue(nullptr, CI)) {
+      AccumulatorRecursionEliminationInitVal == 0 &&
+      !getCommonReturnValue(0, CI)) {
     // One case remains that we are able to handle: the current return
     // instruction returns a constant, and all other return instructions
     // return a different constant.
@@ -677,12 +470,9 @@ bool TailCallElim::EliminateRecursiveTailCall(CallInst *CI, ReturnInst *Ret,
   BasicBlock *BB = Ret->getParent();
   Function *F = BB->getParent();
 
-  emitOptimizationRemark(F->getContext(), "tailcallelim", *F, CI->getDebugLoc(),
-                         "transforming tail recursion to loop");
-
   // OK! We can transform this tail call.  If this is the first one found,
   // create the new entry block, allowing us to branch back to the old entry.
-  if (!OldEntry) {
+  if (OldEntry == 0) {
     OldEntry = &F->getEntryBlock();
     BasicBlock *NewEntry = BasicBlock::Create(F->getContext(), "", F, OldEntry);
     NewEntry->takeName(OldEntry);
@@ -796,7 +586,7 @@ bool TailCallElim::EliminateRecursiveTailCall(CallInst *CI, ReturnInst *Ret,
 bool TailCallElim::FoldReturnAndProcessPred(BasicBlock *BB,
                                        ReturnInst *Ret, BasicBlock *&OldEntry,
                                        bool &TailCallsAreMarkedTail,
-                                       SmallVectorImpl<PHINode *> &ArgumentPHIs,
+                                       SmallVector<PHINode*, 8> &ArgumentPHIs,
                                        bool CannotTailCallElimCallsMarkedTail) {
   bool Change = false;
 
@@ -830,11 +620,10 @@ bool TailCallElim::FoldReturnAndProcessPred(BasicBlock *BB,
   return Change;
 }
 
-bool
-TailCallElim::ProcessReturningBlock(ReturnInst *Ret, BasicBlock *&OldEntry,
-                                    bool &TailCallsAreMarkedTail,
-                                    SmallVectorImpl<PHINode *> &ArgumentPHIs,
-                                    bool CannotTailCallElimCallsMarkedTail) {
+bool TailCallElim::ProcessReturningBlock(ReturnInst *Ret, BasicBlock *&OldEntry,
+                                         bool &TailCallsAreMarkedTail,
+                                         SmallVector<PHINode*, 8> &ArgumentPHIs,
+                                       bool CannotTailCallElimCallsMarkedTail) {
   CallInst *CI = FindTRECandidate(Ret, CannotTailCallElimCallsMarkedTail);
   if (!CI)
     return false;

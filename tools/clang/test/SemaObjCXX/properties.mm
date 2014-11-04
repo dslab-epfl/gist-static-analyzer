@@ -28,7 +28,7 @@ struct X {
 - (int) z;
 @end
 void test2(Test2 *a) {
-  auto y = a.y; // expected-error {{no getter method for read from property}}
+  auto y = a.y; // expected-error {{expected getter method not found on object of type 'Test2 *'}}
   auto z = a.z;
 }
 
@@ -129,77 +129,3 @@ extern void* VoidType;
 extern decltype(TestNonTrivialObj.p1 = NonTrivial1())* VoidType;
 extern decltype(TestNonTrivialObj.p2 = NonTrivial2())* VoidType;
 
-// rdar://13332183
-namespace test9 {
-  struct CString {
-    const char *_data;
-    char operator[](int i) const { return _data[i]; }
-  };
-}
-@interface Test9
-@property test9::CString name;
-@end
-namespace test9 {
-  char test(Test9 *t) {
-    return t.name[0];
-  }
-}
-
-namespace test10 {
-  struct A { operator const char*(); };
-  struct B { operator const char*(); };
-}
-@interface Test10
-@property test10::A a;
-@property test10::B b;
-@property int index;
-@end
-namespace test10 {
-  void test(Test10 *t) {
-    (void) t.a[6];
-    (void) 6[t.b];
-    (void) "help"[t.index];
-    (void) t.index["help"];
-    (void) t.a[t.index];
-    (void) t.index[t.b];
-  }
-}
-
-// <rdar://problem/14354144>
-@interface PropertyOfItself
-@property (readonly, nonatomic) PropertyOfItself x; // expected-error {{interface type cannot be statically allocated}}
-@end
-@implementation PropertyOfItself
-@synthesize x;
-@end
-
-// rdar://14654207
-struct CGSize {
-  double width;
-  double height;
-};
-typedef struct CGSize CGSize;
-
-struct CGRect {
-  CGSize origin;
-  CGSize size;
-};
-typedef struct CGRect CGRect;
-
-typedef CGRect NSRect;
-void HappySetFrame(NSRect frame) {}
-
-__attribute__((objc_root_class))
-@interface NSObject 
-@property CGRect frame;
-@end
-
-@implementation NSObject
-- (void) nothing
-{
-	HappySetFrame({{0,0}, {13,14}});
-	[self setFrame: {{0,0}, {13,14}}];
-        self.frame = {{0,0}, {13,14}};
-        self.frame = (CGRect){{3,5}, {13,14}};
-}
-@end

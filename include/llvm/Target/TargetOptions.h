@@ -15,7 +15,6 @@
 #ifndef LLVM_TARGET_TARGETOPTIONS_H
 #define LLVM_TARGET_TARGETOPTIONS_H
 
-#include "llvm/MC/MCTargetOptions.h"
 #include <string>
 
 namespace llvm {
@@ -25,7 +24,7 @@ namespace llvm {
   // Possible float ABI settings. Used with FloatABIType in TargetOptions.h.
   namespace FloatABI {
     enum ABIType {
-      Default, // Target-specific (either soft or hard depending on triple,etc).
+      Default, // Target-specific (either soft or hard depending on triple, etc).
       Soft, // Soft float.
       Hard  // Hard float.
     };
@@ -39,41 +38,21 @@ namespace llvm {
     };
   }
 
-  namespace JumpTable {
-    enum JumpTableType {
-      Single,          // Use a single table for all indirect jumptable calls.
-      Arity,           // Use one table per number of function parameters.
-      Simplified,      // Use one table per function type, with types projected
-                       // into 4 types: pointer to non-function, struct,
-                       // primitive, and function pointer.
-      Full             // Use one table per unique function type
-    };
-  }
-
-  namespace ThreadModel {
-    enum Model {
-      POSIX,  // POSIX Threads
-      Single  // Single Threaded Environment
-    };
-  }
-
   class TargetOptions {
   public:
     TargetOptions()
         : PrintMachineCode(false), NoFramePointerElim(false),
-          LessPreciseFPMADOption(false), UnsafeFPMath(false),
-          NoInfsFPMath(false), NoNaNsFPMath(false),
-          HonorSignDependentRoundingFPMathOption(false), UseSoftFloat(false),
-          NoZerosInBSS(false), JITEmitDebugInfo(false),
-          JITEmitDebugInfoToDisk(false), GuaranteedTailCallOpt(false),
-          DisableTailCalls(false), StackAlignmentOverride(0),
-          EnableFastISel(false), PositionIndependentExecutable(false),
-          UseInitArray(false), DisableIntegratedAS(false),
-          CompressDebugSections(false), FunctionSections(false),
-          DataSections(false), TrapUnreachable(false), TrapFuncName(""),
-          FloatABIType(FloatABI::Default),
-          AllowFPOpFusion(FPOpFusion::Standard), JTType(JumpTable::Single),
-          ThreadModel(ThreadModel::POSIX) {}
+          NoFramePointerElimNonLeaf(false), LessPreciseFPMADOption(false),
+          UnsafeFPMath(false), NoInfsFPMath(false),
+          NoNaNsFPMath(false), HonorSignDependentRoundingFPMathOption(false),
+          UseSoftFloat(false), NoZerosInBSS(false), JITExceptionHandling(false),
+          JITEmitDebugInfo(false), JITEmitDebugInfoToDisk(false),
+          GuaranteedTailCallOpt(false), DisableTailCalls(false),
+          StackAlignmentOverride(0), RealignStack(true), EnableFastISel(false),
+          PositionIndependentExecutable(false), EnableSegmentedStacks(false),
+          UseInitArray(false), TrapFuncName(""), FloatABIType(FloatABI::Default),
+          AllowFPOpFusion(FPOpFusion::Standard)
+    {}
 
     /// PrintMachineCode - This flag is enabled when the -print-machineinstrs
     /// option is specified on the command line, and should enable debugging
@@ -84,6 +63,12 @@ namespace llvm {
     /// specified on the command line.  If the target supports the frame pointer
     /// elimination optimization, this option should disable it.
     unsigned NoFramePointerElim : 1;
+
+    /// NoFramePointerElimNonLeaf - This flag is enabled when the
+    /// -disable-non-leaf-fp-elim is specified on the command line. If the
+    /// target supports the frame pointer elimination optimization, this option
+    /// should disable it for non-leaf functions.
+    unsigned NoFramePointerElimNonLeaf : 1;
 
     /// DisableFramePointerElim - This returns true if frame pointer elimination
     /// optimization should be disabled for the given machine function.
@@ -138,6 +123,10 @@ namespace llvm {
     /// crt*.o compiling).
     unsigned NoZerosInBSS : 1;
 
+    /// JITExceptionHandling - This flag indicates that the JIT should emit
+    /// exception handling information.
+    unsigned JITExceptionHandling : 1;
+
     /// JITEmitDebugInfo - This flag indicates that the JIT should try to emit
     /// debug information and notify a debugger about it.
     unsigned JITEmitDebugInfo : 1;
@@ -162,6 +151,14 @@ namespace llvm {
     /// StackAlignmentOverride - Override default stack alignment for target.
     unsigned StackAlignmentOverride;
 
+    /// RealignStack - This flag indicates whether the stack should be
+    /// automatically realigned, if needed.
+    unsigned RealignStack : 1;
+
+    /// SSPBufferSize - The minimum size of buffers that will receive stack
+    /// smashing protection when -fstack-protection is used.
+    unsigned SSPBufferSize;
+
     /// EnableFastISel - This flag enables fast-path instruction selection
     /// which trades away generated code quality in favor of reducing
     /// compile time.
@@ -173,24 +170,11 @@ namespace llvm {
     /// if the relocation model is anything other than PIC.
     unsigned PositionIndependentExecutable : 1;
 
+    unsigned EnableSegmentedStacks : 1;
+
     /// UseInitArray - Use .init_array instead of .ctors for static
     /// constructors.
     unsigned UseInitArray : 1;
-
-    /// Disable the integrated assembler.
-    unsigned DisableIntegratedAS : 1;
-
-    /// Compress DWARF debug sections.
-    unsigned CompressDebugSections : 1;
-
-    /// Emit functions into separate sections.
-    unsigned FunctionSections : 1;
-
-    /// Emit data into separate sections.
-    unsigned DataSections : 1;
-
-    /// Emit target-specific trap instruction for 'unreachable' IR instructions.
-    unsigned TrapUnreachable : 1;
 
     /// getTrapFunctionName - If this returns a non-empty string, this means
     /// isel should lower Intrinsic::trap to a call to the specified function
@@ -218,58 +202,13 @@ namespace llvm {
     /// Strict mode - allow fusion only if/when it can be proven that the excess
     /// precision won't effect the result.
     ///
-    /// Note: This option only controls formation of fused ops by the
-    /// optimizers.  Fused operations that are explicitly specified (e.g. FMA
-    /// via the llvm.fma.* intrinsic) will always be honored, regardless of
-    /// the value of this option.
+    /// Note: This option only controls formation of fused ops by the optimizers.
+    /// Fused operations that are explicitly specified (e.g. FMA via the
+    /// llvm.fma.* intrinsic) will always be honored, regardless of the value of
+    /// this option.
     FPOpFusion::FPOpFusionMode AllowFPOpFusion;
 
-    /// JTType - This flag specifies the type of jump-instruction table to
-    /// create for functions that have the jumptable attribute.
-    JumpTable::JumpTableType JTType;
-
-    /// ThreadModel - This flag specifies the type of threading model to assume
-    /// for things like atomics
-    ThreadModel::Model ThreadModel;
-
-    /// Machine level options.
-    MCTargetOptions MCOptions;
   };
-
-// Comparison operators:
-
-
-inline bool operator==(const TargetOptions &LHS,
-                       const TargetOptions &RHS) {
-#define ARE_EQUAL(X) LHS.X == RHS.X
-  return
-    ARE_EQUAL(UnsafeFPMath) &&
-    ARE_EQUAL(NoInfsFPMath) &&
-    ARE_EQUAL(NoNaNsFPMath) &&
-    ARE_EQUAL(HonorSignDependentRoundingFPMathOption) &&
-    ARE_EQUAL(UseSoftFloat) &&
-    ARE_EQUAL(NoZerosInBSS) &&
-    ARE_EQUAL(JITEmitDebugInfo) &&
-    ARE_EQUAL(JITEmitDebugInfoToDisk) &&
-    ARE_EQUAL(GuaranteedTailCallOpt) &&
-    ARE_EQUAL(DisableTailCalls) &&
-    ARE_EQUAL(StackAlignmentOverride) &&
-    ARE_EQUAL(EnableFastISel) &&
-    ARE_EQUAL(PositionIndependentExecutable) &&
-    ARE_EQUAL(UseInitArray) &&
-    ARE_EQUAL(TrapUnreachable) &&
-    ARE_EQUAL(TrapFuncName) &&
-    ARE_EQUAL(FloatABIType) &&
-    ARE_EQUAL(AllowFPOpFusion) &&
-    ARE_EQUAL(MCOptions);
-#undef ARE_EQUAL
-}
-
-inline bool operator!=(const TargetOptions &LHS,
-                       const TargetOptions &RHS) {
-  return !(LHS == RHS);
-}
-
 } // End llvm namespace
 
 #endif

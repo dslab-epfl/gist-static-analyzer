@@ -12,12 +12,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_AST_STMTGRAPHTRAITS_H
-#define LLVM_CLANG_AST_STMTGRAPHTRAITS_H
+#ifndef LLVM_CLANG_AST_STMT_GRAPHTRAITS_H
+#define LLVM_CLANG_AST_STMT_GRAPHTRAITS_H
 
 #include "clang/AST/Stmt.h"
-#include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/GraphTraits.h"
+#include "llvm/ADT/DepthFirstIterator.h"
 
 namespace llvm {
 

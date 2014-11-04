@@ -14,19 +14,18 @@
 #ifndef LLVM_CLANG_LEX_PREPROCESSINGRECORD_H
 #define LLVM_CLANG_LEX_PREPROCESSINGRECORD_H
 
-#include "clang/Basic/IdentifierTable.h"
-#include "clang/Basic/SourceLocation.h"
 #include "clang/Lex/PPCallbacks.h"
+#include "clang/Basic/SourceLocation.h"
+#include "clang/Basic/IdentifierTable.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Optional.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Compiler.h"
 #include <vector>
 
 namespace clang {
   class IdentifierInfo;
-  class MacroInfo;
   class PreprocessingRecord;
 }
 
@@ -278,9 +277,9 @@ namespace clang {
 
     /// \brief Optionally returns true or false if the preallocated preprocessed
     /// entity with index \p Index came from file \p FID.
-    virtual Optional<bool> isPreprocessedEntityInFileID(unsigned Index,
-                                                        FileID FID) {
-      return None;
+    virtual llvm::Optional<bool> isPreprocessedEntityInFileID(unsigned Index,
+                                                              FileID FID) {
+      return llvm::Optional<bool>();
     }
   };
   
@@ -304,8 +303,43 @@ namespace clang {
     /// and are referenced by the iterator using negative indices.
     std::vector<PreprocessedEntity *> LoadedPreprocessedEntities;
 
-    /// \brief The set of ranges that were skipped by the preprocessor,
-    std::vector<SourceRange> SkippedRanges;
+    bool RecordCondDirectives;
+    unsigned CondDirectiveNextIdx;
+    SmallVector<unsigned, 6> CondDirectiveStack; 
+
+    class CondDirectiveLoc {
+      SourceLocation Loc;
+      unsigned Idx;
+
+    public:
+      CondDirectiveLoc(SourceLocation Loc, unsigned Idx) : Loc(Loc), Idx(Idx) {}
+
+      SourceLocation getLoc() const { return Loc; }
+      unsigned getIdx() const { return Idx; }
+
+      class Comp {
+        SourceManager &SM;
+      public:
+        explicit Comp(SourceManager &SM) : SM(SM) {}
+        bool operator()(const CondDirectiveLoc &LHS,
+                        const CondDirectiveLoc &RHS) {
+          return SM.isBeforeInTranslationUnit(LHS.getLoc(), RHS.getLoc());
+        }
+        bool operator()(const CondDirectiveLoc &LHS, SourceLocation RHS) {
+          return SM.isBeforeInTranslationUnit(LHS.getLoc(), RHS);
+        }
+        bool operator()(SourceLocation LHS, const CondDirectiveLoc &RHS) {
+          return SM.isBeforeInTranslationUnit(LHS, RHS.getLoc());
+        }
+      };
+    };
+
+    typedef std::vector<CondDirectiveLoc> CondDirectiveLocsTy; 
+    /// \brief The locations of conditional directives in source order.
+    CondDirectiveLocsTy CondDirectiveLocs;
+
+    void addCondDirectiveLoc(CondDirectiveLoc DirLoc);
+    unsigned findCondDirectiveIdx(SourceLocation Loc) const;
 
     /// \brief Global (loaded or local) ID for a preprocessed entity.
     /// Negative values are used to indicate preprocessed entities
@@ -329,7 +363,7 @@ namespace clang {
     }
 
     /// \brief Mapping from MacroInfo structures to their definitions.
-    llvm::DenseMap<const MacroInfo *, MacroDefinition *> MacroDefinitions;
+    llvm::DenseMap<const MacroInfo *, PPEntityID> MacroDefinitions;
 
     /// \brief External source of preprocessed entities.
     ExternalPreprocessingRecordSource *ExternalSource;
@@ -360,11 +394,11 @@ namespace clang {
     unsigned allocateLoadedEntities(unsigned NumEntities);
 
     /// \brief Register a new macro definition.
-    void RegisterMacroDefinition(MacroInfo *Macro, MacroDefinition *Def);
+    void RegisterMacroDefinition(MacroInfo *Macro, PPEntityID PPID);
     
   public:
     /// \brief Construct a new preprocessing record.
-    explicit PreprocessingRecord(SourceManager &SM);
+    PreprocessingRecord(SourceManager &SM, bool RecordConditionalDirectives);
     
     /// \brief Allocate memory in the preprocessing record.
     void *Allocate(unsigned Size, unsigned Align = 8) {
@@ -403,7 +437,7 @@ namespace clang {
       typedef std::random_access_iterator_tag iterator_category;
       typedef int                 difference_type;
       
-      iterator() : Self(nullptr), Position(0) { }
+      iterator() : Self(0), Position(0) { }
       
       iterator(PreprocessingRecord *Self, int Position)
         : Self(Self), Position(Position) { }
@@ -548,6 +582,24 @@ namespace clang {
     /// \brief Add a new preprocessed entity to this record.
     PPEntityID addPreprocessedEntity(PreprocessedEntity *Entity);
 
+    /// \brief Returns true if this PreprocessingRecord is keeping track of
+    /// conditional directives locations.
+    bool isRecordingConditionalDirectives() const {
+      return RecordCondDirectives;
+    }
+
+    /// \brief Returns true if the given range intersects with a conditional
+    /// directive. if a \#if/\#endif block is fully contained within the range,
+    /// this function will return false.
+    bool rangeIntersectsConditionalDirective(SourceRange Range) const;
+
+    /// \brief Returns true if the given locations are in different regions,
+    /// separated by conditional directive blocks.
+    bool areInDifferentConditionalDirectiveRegion(SourceLocation LHS,
+                                                  SourceLocation RHS) const {
+      return findCondDirectiveIdx(LHS) != findCondDirectiveIdx(RHS);
+    }
+
     /// \brief Set the external source for preprocessed entities.
     void SetExternalSource(ExternalPreprocessingRecordSource &Source);
 
@@ -559,35 +611,28 @@ namespace clang {
     /// \brief Retrieve the macro definition that corresponds to the given
     /// \c MacroInfo.
     MacroDefinition *findMacroDefinition(const MacroInfo *MI);
-
-    /// \brief Retrieve all ranges that got skipped while preprocessing.
-    const std::vector<SourceRange> &getSkippedRanges() const {
-      return SkippedRanges;
-    }
         
   private:
-    void MacroExpands(const Token &Id, const MacroDirective *MD,
-                      SourceRange Range, const MacroArgs *Args) override;
-    void MacroDefined(const Token &Id, const MacroDirective *MD) override;
-    void MacroUndefined(const Token &Id, const MacroDirective *MD) override;
-    void InclusionDirective(SourceLocation HashLoc, const Token &IncludeTok,
-                            StringRef FileName, bool IsAngled,
-                            CharSourceRange FilenameRange,
-                            const FileEntry *File, StringRef SearchPath,
-                            StringRef RelativePath,
-                            const Module *Imported) override;
-    void Ifdef(SourceLocation Loc, const Token &MacroNameTok,
-               const MacroDirective *MD) override;
-    void Ifndef(SourceLocation Loc, const Token &MacroNameTok,
-                const MacroDirective *MD) override;
-    /// \brief Hook called whenever the 'defined' operator is seen.
-    void Defined(const Token &MacroNameTok, const MacroDirective *MD,
-                 SourceRange Range) override;
-
-    void SourceRangeSkipped(SourceRange Range) override;
-
-    void addMacroExpansion(const Token &Id, const MacroInfo *MI,
-                           SourceRange Range);
+    virtual void MacroExpands(const Token &Id, const MacroInfo* MI,
+                              SourceRange Range);
+    virtual void MacroDefined(const Token &Id, const MacroInfo *MI);
+    virtual void MacroUndefined(const Token &Id, const MacroInfo *MI);
+    virtual void InclusionDirective(SourceLocation HashLoc,
+                                    const Token &IncludeTok,
+                                    StringRef FileName,
+                                    bool IsAngled,
+                                    CharSourceRange FilenameRange,
+                                    const FileEntry *File,
+                                    StringRef SearchPath,
+                                    StringRef RelativePath,
+                                    const Module *Imported);
+    virtual void If(SourceLocation Loc, SourceRange ConditionRange);
+    virtual void Elif(SourceLocation Loc, SourceRange ConditionRange,
+                      SourceLocation IfLoc);
+    virtual void Ifdef(SourceLocation Loc, const Token &MacroNameTok);
+    virtual void Ifndef(SourceLocation Loc, const Token &MacroNameTok);
+    virtual void Else(SourceLocation Loc, SourceLocation IfLoc);
+    virtual void Endif(SourceLocation Loc, SourceLocation IfLoc);
 
     /// \brief Cached result of the last \see getPreprocessedEntitiesInRange
     /// query.

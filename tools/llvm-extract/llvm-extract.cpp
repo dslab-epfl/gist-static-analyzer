@@ -12,25 +12,23 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/ADT/SetVector.h"
-#include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/Bitcode/BitcodeWriterPass.h"
-#include "llvm/IR/DataLayout.h"
-#include "llvm/IR/IRPrintingPasses.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IRReader/IRReader.h"
+#include "llvm/LLVMContext.h"
+#include "llvm/Module.h"
 #include "llvm/PassManager.h"
+#include "llvm/Assembly/PrintModulePass.h"
+#include "llvm/Bitcode/ReaderWriter.h"
+#include "llvm/Transforms/IPO.h"
+#include "llvm/DataLayout.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/IRReader.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/PrettyStackTrace.h"
-#include "llvm/Support/Regex.h"
-#include "llvm/Support/Signals.h"
-#include "llvm/Support/SourceMgr.h"
-#include "llvm/Support/SystemUtils.h"
 #include "llvm/Support/ToolOutputFile.h"
-#include "llvm/Transforms/IPO.h"
+#include "llvm/Support/SystemUtils.h"
+#include "llvm/Support/Signals.h"
+#include "llvm/Support/Regex.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SetVector.h"
 #include <memory>
 using namespace llvm;
 
@@ -54,7 +52,7 @@ static cl::list<std::string>
 ExtractFuncs("func", cl::desc("Specify function to extract"),
              cl::ZeroOrMore, cl::value_desc("function"));
 
-// ExtractRegExpFuncs - The functions, matched via regular expression, to
+// ExtractRegExpFuncs - The functions, matched via regular expression, to 
 // extract from the module.
 static cl::list<std::string>
 ExtractRegExpFuncs("rfunc", cl::desc("Specify function(s) to extract using a "
@@ -101,9 +99,10 @@ int main(int argc, char **argv) {
 
   // Use lazy loading, since we only care about selected global values.
   SMDiagnostic Err;
-  std::unique_ptr<Module> M = getLazyIRFileModule(InputFilename, Err, Context);
+  std::auto_ptr<Module> M;
+  M.reset(getLazyIRFileModule(InputFilename, Err, Context));
 
-  if (!M.get()) {
+  if (M.get() == 0) {
     Err.print(argv[0], errs());
     return 1;
   }
@@ -165,9 +164,10 @@ int main(int argc, char **argv) {
         "invalid regex: " << Error;
     }
     bool match = false;
-    for (auto &GV : M->globals()) {
-      if (RegEx.match(GV.getName())) {
-        GVs.insert(&GV);
+    for (Module::global_iterator GV = M->global_begin(),
+           E = M->global_end(); GV != E; GV++) {
+      if (RegEx.match(GV->getName())) {
+        GVs.insert(&*GV);
         match = true;
       }
     }
@@ -227,19 +227,22 @@ int main(int argc, char **argv) {
   else {
     // Deleting. Materialize every GV that's *not* in GVs.
     SmallPtrSet<GlobalValue *, 8> GVSet(GVs.begin(), GVs.end());
-    for (auto &G : M->globals()) {
-      if (!GVSet.count(&G) && G.isMaterializable()) {
+    for (Module::global_iterator I = M->global_begin(), E = M->global_end();
+         I != E; ++I) {
+      GlobalVariable *G = I;
+      if (!GVSet.count(G) && G->isMaterializable()) {
         std::string ErrInfo;
-        if (G.Materialize(&ErrInfo)) {
+        if (G->Materialize(&ErrInfo)) {
           errs() << argv[0] << ": error reading input: " << ErrInfo << "\n";
           return 1;
         }
       }
     }
-    for (auto &F : *M) {
-      if (!GVSet.count(&F) && F.isMaterializable()) {
+    for (Module::iterator I = M->begin(), E = M->end(); I != E; ++I) {
+      Function *F = I;
+      if (!GVSet.count(F) && F->isMaterializable()) {
         std::string ErrInfo;
-        if (F.Materialize(&ErrInfo)) {
+        if (F->Materialize(&ErrInfo)) {
           errs() << argv[0] << ": error reading input: " << ErrInfo << "\n";
           return 1;
         }
@@ -250,7 +253,7 @@ int main(int argc, char **argv) {
   // In addition to deleting all other functions, we also want to spiff it
   // up a little bit.  Do this now.
   PassManager Passes;
-  Passes.add(new DataLayoutPass()); // Use correct DataLayout
+  Passes.add(new DataLayout(M.get())); // Use correct DataLayout
 
   std::vector<GlobalValue*> Gvs(GVs.begin(), GVs.end());
 
@@ -260,15 +263,16 @@ int main(int argc, char **argv) {
   Passes.add(createStripDeadDebugInfoPass());    // Remove dead debug info
   Passes.add(createStripDeadPrototypesPass());   // Remove dead func decls
 
-  std::error_code EC;
-  tool_output_file Out(OutputFilename, EC, sys::fs::F_None);
-  if (EC) {
-    errs() << EC.message() << '\n';
+  std::string ErrorInfo;
+  tool_output_file Out(OutputFilename.c_str(), ErrorInfo,
+                       raw_fd_ostream::F_Binary);
+  if (!ErrorInfo.empty()) {
+    errs() << ErrorInfo << '\n';
     return 1;
   }
 
   if (OutputAssembly)
-    Passes.add(createPrintModulePass(Out.os()));
+    Passes.add(createPrintModulePass(&Out.os()));
   else if (Force || !CheckBitcodeOutputToConsole(Out.os(), true))
     Passes.add(createBitcodeWriterPass(Out.os()));
 

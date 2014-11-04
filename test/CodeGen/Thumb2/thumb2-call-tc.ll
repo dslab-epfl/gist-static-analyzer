@@ -7,20 +7,20 @@
 declare void @g(i32, i32, i32, i32)
 
 define void @f() {
-; DARWIN-LABEL: f:
+; DARWIN: f:
 ; DARWIN: blx _g
 
-; LINUX-LABEL: f:
+; LINUX: f:
 ; LINUX: bl g
         tail call void @g( i32 1, i32 2, i32 3, i32 4 )
         ret void
 }
 
 define void @h() {
-; DARWIN-LABEL: h:
+; DARWIN: h:
 ; DARWIN: bx r0 @ TAILCALL
 
-; LINUX-LABEL: h:
+; LINUX: h:
 ; LINUX: bx r0 @ TAILCALL
         %tmp = load i32 ()** @t         ; <i32 ()*> [#uses=1]
         %tmp.upgrd.2 = tail call i32 %tmp( )            ; <i32> [#uses=0]
@@ -28,10 +28,10 @@ define void @h() {
 }
 
 define void @j() {
-; DARWIN-LABEL: j:
+; DARWIN: j:
 ; DARWIN: b.w _f  @ TAILCALL
 
-; LINUX-LABEL: j:
+; LINUX: j:
 ; LINUX: b.w f  @ TAILCALL
         tail call void @f()
         ret void

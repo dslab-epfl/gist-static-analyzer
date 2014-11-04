@@ -38,8 +38,8 @@ const char *const CommonOptionsParser::HelpMessage =
     "\tFor example, it can be a CMake build directory in which a file named\n"
     "\tcompile_commands.json exists (use -DCMAKE_EXPORT_COMPILE_COMMANDS=ON\n"
     "\tCMake option to get this output). When no build path is specified,\n"
-    "\ta search for compile_commands.json will be attempted through all\n"
-    "\tparent paths of the first input file . See:\n"
+    "\tclang-check will attempt to locate it automatically using all parent\n"
+    "\tpaths of the first input file. See:\n"
     "\thttp://clang.llvm.org/docs/HowToSetupToolingForLLVM.html for an\n"
     "\texample of setting up Clang Tooling on a source tree.\n"
     "\n"
@@ -53,40 +53,25 @@ const char *const CommonOptionsParser::HelpMessage =
     "\tsuffix of a path in the compile command database.\n"
     "\n";
 
-CommonOptionsParser::CommonOptionsParser(int &argc, const char **argv,
-                                         cl::OptionCategory &Category,
-                                         const char *Overview) {
-  static cl::opt<bool> Help("h", cl::desc("Alias for -help"), cl::Hidden);
-
-  static cl::opt<std::string> BuildPath("p", cl::desc("Build path"),
-                                        cl::Optional, cl::cat(Category));
+CommonOptionsParser::CommonOptionsParser(int &argc, const char **argv) {
+  static cl::opt<std::string> BuildPath(
+      "p", cl::desc("Build path"), cl::Optional);
 
   static cl::list<std::string> SourcePaths(
-      cl::Positional, cl::desc("<source0> [... <sourceN>]"), cl::OneOrMore,
-      cl::cat(Category));
-
-  // Hide unrelated options.
-  StringMap<cl::Option*> Options;
-  cl::getRegisteredOptions(Options);
-  for (StringMap<cl::Option *>::iterator I = Options.begin(), E = Options.end();
-       I != E; ++I) {
-    if (I->second->Category != &Category && I->first() != "help" &&
-        I->first() != "version")
-      I->second->setHiddenFlag(cl::ReallyHidden);
-  }
+      cl::Positional, cl::desc("<source0> [... <sourceN>]"), cl::OneOrMore);
 
   Compilations.reset(FixedCompilationDatabase::loadFromCommandLine(argc,
                                                                    argv));
-  cl::ParseCommandLineOptions(argc, argv, Overview);
+  cl::ParseCommandLineOptions(argc, argv);
   SourcePathList = SourcePaths;
   if (!Compilations) {
     std::string ErrorMessage;
     if (!BuildPath.empty()) {
-      Compilations =
-          CompilationDatabase::autoDetectFromDirectory(BuildPath, ErrorMessage);
+      Compilations.reset(CompilationDatabase::autoDetectFromDirectory(
+                              BuildPath, ErrorMessage));
     } else {
-      Compilations = CompilationDatabase::autoDetectFromSource(SourcePaths[0],
-                                                               ErrorMessage);
+      Compilations.reset(CompilationDatabase::autoDetectFromSource(
+                              SourcePaths[0], ErrorMessage));
     }
     if (!Compilations)
       llvm::report_fatal_error(ErrorMessage);

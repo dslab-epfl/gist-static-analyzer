@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -emit-llvm %s -o - -triple=i386-pc-win32 | FileCheck %s
+// RUN: %clang_cc1 -emit-llvm %s -o - -cxx-abi microsoft -triple=i386-pc-win32 | FileCheck %s
 
 void a1() {}
 // CHECK: "\01?a1@@YAXXZ"
@@ -154,21 +154,6 @@ const volatile struct S* f5() { return 0; }
 
 struct S& f6() { return *(struct S*)0; }
 // CHECK: "\01?f6@@YAAAUS@@XZ"
-
-struct S* const f7() { return 0; }
-// CHECK: "\01?f7@@YAQAUS@@XZ"
-
-int S::* f8() { return 0; }
-// CHECK: "\01?f8@@YAPQS@@HXZ"
-
-int S::* const f9() { return 0; }
-// CHECK: "\01?f9@@YAQQS@@HXZ"
-
-int S::* __restrict f10() { return 0; }
-// CHECK: "\01?f10@@YAPIQS@@HXZ"
-
-int S::* const __restrict f11() { return 0; }
-// CHECK: "\01?f11@@YAQIQS@@HXZ"
 
 typedef int (*function_pointer)(int);
 

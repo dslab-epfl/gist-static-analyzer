@@ -11,4 +11,4 @@ class nsVorbisState : public nsOggCodecState {
 nsVorbisState::~nsVorbisState() {
 }
 
-// CHECK-LABEL: define linkonce_odr i32 @_ZN15nsOggCodecState9StartTimeEv
+// CHECK: define linkonce_odr i32 @_ZN15nsOggCodecState9StartTimeEv

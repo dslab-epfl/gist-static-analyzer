@@ -28,7 +28,7 @@ void test3(struct X a) {
 // <rdar://problem/10530444>
 void test4() {
   // CHECK: @test4
-  // CHECK: call void @llvm.memcpy.p0i8.p0i8.i64(i8* {{.*}}, i8* bitcast (%struct.X* getelementptr inbounds (%struct.Y* @g, i32 0, i32 1) to i8*), i64 24, i32 1, i1 false)
+  // FIXME: call void @llvm.memcpy.p0i8.p0i8.i64(i8* {{.*}}, i8* bitcast (%struct.X* getelementptr inbounds (%struct.Y* @g, i32 0, i32 1) to i8*), i64 24, i32 1, i1 false)
   f(g.y);
 }
 
@@ -60,6 +60,6 @@ struct YBitfield gbitfield;
 
 unsigned test7() {
   // CHECK: @test7
-  // CHECK: load i32* getelementptr inbounds (%struct.YBitfield* @gbitfield, i32 0, i32 1, i32 0), align 4
+  // CHECK: load i32* bitcast (%struct.XBitfield* getelementptr inbounds (%struct.YBitfield* @gbitfield, i32 0, i32 1) to i32*), align 1
   return gbitfield.y.b2;
 }

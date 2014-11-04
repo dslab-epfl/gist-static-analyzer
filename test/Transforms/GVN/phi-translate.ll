@@ -2,7 +2,7 @@
 
 target datalayout = "e-p:64:64:64"
 
-; CHECK-LABEL: @foo(
+; CHECK: @foo
 ; CHECK: entry.end_crit_edge:
 ; CHECK:   %n.pre = load i32* %q.phi.trans.insert
 ; CHECK: then:

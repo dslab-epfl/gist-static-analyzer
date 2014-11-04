@@ -20,9 +20,9 @@
 
 #include "ClangSACheckers.h"
 #include "clang/AST/EvaluatedExprVisitor.h"
-#include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
-#include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
+#include "clang/StaticAnalyzer/Core/Checker.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "llvm/ADT/SmallVector.h"
 
 using namespace clang;
@@ -44,18 +44,18 @@ public:
                         BugReporter &BR) const;
 
   void CheckMallocArgument(
-    SmallVectorImpl<MallocOverflowCheck> &PossibleMallocOverflows,
+    llvm::SmallVectorImpl<MallocOverflowCheck> &PossibleMallocOverflows,
     const Expr *TheArgument, ASTContext &Context) const;
 
   void OutputPossibleOverflows(
-    SmallVectorImpl<MallocOverflowCheck> &PossibleMallocOverflows,
+    llvm::SmallVectorImpl<MallocOverflowCheck> &PossibleMallocOverflows,
     const Decl *D, BugReporter &BR, AnalysisManager &mgr) const;
 
 };
 } // end anonymous namespace
 
 void MallocOverflowSecurityChecker::CheckMallocArgument(
-  SmallVectorImpl<MallocOverflowCheck> &PossibleMallocOverflows,
+  llvm::SmallVectorImpl<MallocOverflowCheck> &PossibleMallocOverflows,
   const Expr *TheArgument,
   ASTContext &Context) const {
 
@@ -65,7 +65,7 @@ void MallocOverflowSecurityChecker::CheckMallocArgument(
    conditional expression, an operation that could reduce the range
    of the result, or anything too complicated :-).  */
   const Expr * e = TheArgument;
-  const BinaryOperator * mulop = nullptr;
+  const BinaryOperator * mulop = NULL;
 
   for (;;) {
     e = e->IgnoreParenImpCasts();
@@ -73,7 +73,7 @@ void MallocOverflowSecurityChecker::CheckMallocArgument(
       const BinaryOperator * binop = dyn_cast<BinaryOperator>(e);
       BinaryOperatorKind opc = binop->getOpcode();
       // TODO: ignore multiplications by 1, reject if multiplied by 0.
-      if (mulop == nullptr && opc == BO_Mul)
+      if (mulop == NULL && opc == BO_Mul)
         mulop = binop;
       if (opc != BO_Mul && opc != BO_Add && opc != BO_Sub && opc != BO_Shl)
         return;
@@ -94,7 +94,7 @@ void MallocOverflowSecurityChecker::CheckMallocArgument(
       return;
   }
 
-  if (mulop == nullptr)
+  if (mulop == NULL)
     return;
 
   //  We've found the right structure of malloc argument, now save
@@ -111,7 +111,7 @@ namespace {
 class CheckOverflowOps :
   public EvaluatedExprVisitor<CheckOverflowOps> {
 public:
-  typedef SmallVectorImpl<MallocOverflowCheck> theVecType;
+  typedef llvm::SmallVectorImpl<MallocOverflowCheck> theVecType;
 
 private:
     theVecType &toScanFor;
@@ -197,7 +197,7 @@ private:
 // detect the most blatent cases of overflow and educate the
 // programmer.
 void MallocOverflowSecurityChecker::OutputPossibleOverflows(
-  SmallVectorImpl<MallocOverflowCheck> &PossibleMallocOverflows,
+  llvm::SmallVectorImpl<MallocOverflowCheck> &PossibleMallocOverflows,
   const Decl *D, BugReporter &BR, AnalysisManager &mgr) const {
   // By far the most common case: nothing to check.
   if (PossibleMallocOverflows.empty())
@@ -213,12 +213,11 @@ void MallocOverflowSecurityChecker::OutputPossibleOverflows(
        e = PossibleMallocOverflows.end();
        i != e;
        ++i) {
-    BR.EmitBasicReport(
-        D, this, "malloc() size overflow", categories::UnixAPI,
-        "the computation of the size of the memory allocation may overflow",
-        PathDiagnosticLocation::createOperatorLoc(i->mulop,
-                                                  BR.getSourceManager()),
-        i->mulop->getSourceRange());
+    SourceRange R = i->mulop->getSourceRange();
+    BR.EmitBasicReport(D, "malloc() size overflow", categories::UnixAPI,
+      "the computation of the size of the memory allocation may overflow",
+      PathDiagnosticLocation::createOperatorLoc(i->mulop,
+                                                BR.getSourceManager()), &R, 1);
   }
 }
 
@@ -231,13 +230,13 @@ void MallocOverflowSecurityChecker::checkASTCodeBody(const Decl *D,
     return;
 
   // A list of variables referenced in possibly overflowing malloc operands.
-  SmallVector<MallocOverflowCheck, 2> PossibleMallocOverflows;
+  llvm::SmallVector<MallocOverflowCheck, 2> PossibleMallocOverflows;
 
   for (CFG::iterator it = cfg->begin(), ei = cfg->end(); it != ei; ++it) {
     CFGBlock *block = *it;
     for (CFGBlock::iterator bi = block->begin(), be = block->end();
          bi != be; ++bi) {
-      if (Optional<CFGStmt> CS = bi->getAs<CFGStmt>()) {
+      if (const CFGStmt *CS = bi->getAs<CFGStmt>()) {
         if (const CallExpr *TheCall = dyn_cast<CallExpr>(CS->getStmt())) {
           // Get the callee.
           const FunctionDecl *FD = TheCall->getDirectCallee();
@@ -263,7 +262,6 @@ void MallocOverflowSecurityChecker::checkASTCodeBody(const Decl *D,
   OutputPossibleOverflows(PossibleMallocOverflows, D, BR, mgr);
 }
 
-void
-ento::registerMallocOverflowSecurityChecker(CheckerManager &mgr) {
+void ento::registerMallocOverflowSecurityChecker(CheckerManager &mgr) {
   mgr.registerChecker<MallocOverflowSecurityChecker>();
 }

@@ -14,33 +14,37 @@
 #ifndef LLVM_OBJECT_ERROR_H
 #define LLVM_OBJECT_ERROR_H
 
-#include <system_error>
+#include "llvm/Support/system_error.h"
 
 namespace llvm {
 namespace object {
 
-const std::error_category &object_category();
+const error_category &object_category();
 
-enum class object_error {
+struct object_error {
+enum _ {
   success = 0,
-  arch_not_found,
   invalid_file_type,
   parse_failed,
-  unexpected_eof,
-  bitcode_section_not_found,
+  unexpected_eof
+};
+  _ v_;
+
+  object_error(_ v) : v_(v) {}
+  explicit object_error(int v) : v_(_(v)) {}
+  operator int() const {return v_;}
 };
 
-inline std::error_code make_error_code(object_error e) {
-  return std::error_code(static_cast<int>(e), object_category());
+inline error_code make_error_code(object_error e) {
+  return error_code(static_cast<int>(e), object_category());
 }
 
 } // end namespace object.
 
-} // end namespace llvm.
+template <> struct is_error_code_enum<object::object_error> : true_type { };
 
-namespace std {
-template <>
-struct is_error_code_enum<llvm::object::object_error> : std::true_type {};
-}
+template <> struct is_error_code_enum<object::object_error::_> : true_type { };
+
+} // end namespace llvm.
 
 #endif

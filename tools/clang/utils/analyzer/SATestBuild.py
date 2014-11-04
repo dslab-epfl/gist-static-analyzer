@@ -142,7 +142,7 @@ if not Clang:
     sys.exit(-1)
 
 # Number of jobs.
-Jobs = int(math.ceil(detectCPUs() * 0.75))
+Jobs = math.ceil(detectCPUs() * 0.75)
 
 # Project map stores info about all the "registered" projects.
 ProjectMapFile = "projectMap.csv"
@@ -168,9 +168,8 @@ SBOutputDirName = "ScanBuildResults"
 SBOutputDirReferencePrefix = "Ref"
 
 # The list of checkers used during analyzes.
-# Currently, consists of all the non-experimental checkers, plus a few alpha
-# checkers we don't want to regress on.
-Checkers="alpha.unix.SimpleStream,alpha.security.taint,alpha.cplusplus.NewDeleteLeaks,core,cplusplus,deadcode,security,unix,osx"
+# Currently, consists of all the non experimental checkers.
+Checkers="alpha.unix.SimpleStream,alpha.security.taint,core,deadcode,security,unix,osx"
 
 Verbose = 1
 
@@ -207,21 +206,15 @@ def runScanBuild(Dir, SBOutputDir, PBuildLogFile):
     SBOptions = "--use-analyzer " + Clang + " "
     SBOptions += "-plist-html -o " + SBOutputDir + " "
     SBOptions += "-enable-checker " + Checkers + " "  
-    SBOptions += "--keep-empty "
-    # Always use ccc-analyze to ensure that we can locate the failures 
-    # directory.
-    SBOptions += "--override-compiler "
     try:
         SBCommandFile = open(BuildScriptPath, "r")
         SBPrefix = "scan-build " + SBOptions + " "
         for Command in SBCommandFile:
-            Command = Command.strip()
             # If using 'make', auto imply a -jX argument
             # to speed up analysis.  xcodebuild will
             # automatically use the maximum number of cores.
-            if (Command.startswith("make ") or Command == "make") and \
-                "-j" not in Command:
-                Command += " -j%d" % Jobs
+            if Command.startswith("make "):
+                Command += "-j" + Jobs
             SBCommand = SBPrefix + Command
             if Verbose == 1:        
                 print "  Executing: %s" % (SBCommand,)
@@ -363,7 +356,7 @@ def checkBuild(SBOutputDir):
     if TotalFailed == 0:
         CleanUpEmptyPlists(SBOutputDir)
         Plists = glob.glob(SBOutputDir + "/*/*.plist")
-        print "Number of bug reports (non-empty plist files) produced: %d" %\
+        print "Number of bug reports (non empty plist files) produced: %d" %\
            len(Plists)
         return;
     
@@ -414,10 +407,8 @@ def runCmpResults(Dir):
     RefList = glob.glob(RefDir + "/*") 
     NewList = glob.glob(NewDir + "/*")
     
-    # Log folders are also located in the results dir, so ignore them.
-    RefLogDir = os.path.join(RefDir, LogFolderName)
-    if RefLogDir in RefList:
-        RefList.remove(RefLogDir)
+    # Log folders are also located in the results dir, so ignore them. 
+    RefList.remove(os.path.join(RefDir, LogFolderName))
     NewList.remove(os.path.join(NewDir, LogFolderName))
     
     if len(RefList) == 0 or len(NewList) == 0:

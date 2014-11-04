@@ -11,11 +11,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/ADT/SmallString.h"
 #include "gtest/gtest.h"
+#include "llvm/ADT/SmallString.h"
+#include <stdarg.h>
 #include <climits>
 #include <cstring>
-#include <stdarg.h>
 
 using namespace llvm;
 

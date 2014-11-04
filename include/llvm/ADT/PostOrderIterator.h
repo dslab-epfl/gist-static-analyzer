@@ -111,7 +111,7 @@ class po_iterator : public std::iterator<std::forward_iterator_tag,
   }
 
   inline po_iterator(NodeType *BB) {
-    this->insertEdge((NodeType*)nullptr, BB);
+    this->insertEdge((NodeType*)0, BB);
     VisitStack.push_back(std::make_pair(BB, GT::child_begin(BB)));
     traverseChild();
   }
@@ -119,7 +119,7 @@ class po_iterator : public std::iterator<std::forward_iterator_tag,
 
   inline po_iterator(NodeType *BB, SetType &S) :
     po_iterator_storage<SetType, ExtStorage>(S) {
-    if (this->insertEdge((NodeType*)nullptr, BB)) {
+    if (this->insertEdge((NodeType*)0, BB)) {
       VisitStack.push_back(std::make_pair(BB, GT::child_begin(BB)));
       traverseChild();
     }
@@ -260,7 +260,7 @@ class ReversePostOrderTraversal {
   typedef typename GT::NodeType NodeType;
   std::vector<NodeType*> Blocks;       // Block list in normal PO order
   inline void Initialize(NodeType *BB) {
-    std::copy(po_begin(BB), po_end(BB), std::back_inserter(Blocks));
+    copy(po_begin(BB), po_end(BB), back_inserter(Blocks));
   }
 public:
   typedef typename std::vector<NodeType*>::reverse_iterator rpo_iterator;

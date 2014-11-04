@@ -11,15 +11,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_REWRITE_CORE_REWRITEROPE_H
-#define LLVM_CLANG_REWRITE_CORE_REWRITEROPE_H
+#ifndef LLVM_CLANG_REWRITEROPE_H
+#define LLVM_CLANG_REWRITEROPE_H
 
-#include "llvm/ADT/IntrusiveRefCntPtr.h"
-#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Compiler.h"
+
+#include <cstring>
 #include <cassert>
 #include <cstddef>
-#include <cstring>
 #include <iterator>
 
 namespace clang {
@@ -35,10 +34,11 @@ namespace clang {
     unsigned RefCount;
     char Data[1];  //  Variable sized.
 
-    void Retain() { ++RefCount; }
+    void addRef() {
+      ++RefCount;
+    }
 
-    void Release() {
-      assert(RefCount > 0 && "Reference count is already zero.");
+    void dropRef() {
       if (--RefCount == 0)
         delete [] (char*)this;
     }
@@ -57,15 +57,39 @@ namespace clang {
   /// that both refer to the same underlying RopeRefCountString (just with
   /// different offsets) which is a nice constant time operation.
   struct RopePiece {
-    llvm::IntrusiveRefCntPtr<RopeRefCountString> StrData;
+    RopeRefCountString *StrData;
     unsigned StartOffs;
     unsigned EndOffs;
 
-    RopePiece() : StrData(nullptr), StartOffs(0), EndOffs(0) {}
+    RopePiece() : StrData(0), StartOffs(0), EndOffs(0) {}
 
-    RopePiece(llvm::IntrusiveRefCntPtr<RopeRefCountString> Str, unsigned Start,
-              unsigned End)
-        : StrData(std::move(Str)), StartOffs(Start), EndOffs(End) {}
+    RopePiece(RopeRefCountString *Str, unsigned Start, unsigned End)
+      : StrData(Str), StartOffs(Start), EndOffs(End) {
+      if (StrData)
+        StrData->addRef();
+    }
+    RopePiece(const RopePiece &RP)
+      : StrData(RP.StrData), StartOffs(RP.StartOffs), EndOffs(RP.EndOffs) {
+      if (StrData)
+        StrData->addRef();
+    }
+
+    ~RopePiece() {
+      if (StrData)
+        StrData->dropRef();
+    }
+
+    void operator=(const RopePiece &RHS) {
+      if (StrData != RHS.StrData) {
+        if (StrData)
+          StrData->dropRef();
+        StrData = RHS.StrData;
+        if (StrData)
+          StrData->addRef();
+      }
+      StartOffs = RHS.StartOffs;
+      EndOffs = RHS.EndOffs;
+    }
 
     const char &operator[](unsigned Offset) const {
       return StrData->Data[Offset+StartOffs];
@@ -98,8 +122,7 @@ namespace clang {
     // begin iterator.
     RopePieceBTreeIterator(const void /*RopePieceBTreeNode*/ *N);
     // end iterator
-    RopePieceBTreeIterator()
-      : CurNode(nullptr), CurPiece(nullptr), CurChar(0) {}
+    RopePieceBTreeIterator() : CurNode(0), CurPiece(0), CurChar(0) {}
 
     char operator*() const {
       return (*CurPiece)[CurChar];
@@ -122,11 +145,7 @@ namespace clang {
     inline RopePieceBTreeIterator operator++(int) { // Postincrement
       RopePieceBTreeIterator tmp = *this; ++*this; return tmp;
     }
-
-    llvm::StringRef piece() const {
-      return llvm::StringRef(&(*CurPiece)[0], CurPiece->size());
-    }
-
+  private:
     void MoveToNextPiece();
   };
 
@@ -167,14 +186,20 @@ class RewriteRope {
 
   /// We allocate space for string data out of a buffer of size AllocChunkSize.
   /// This keeps track of how much space is left.
-  llvm::IntrusiveRefCntPtr<RopeRefCountString> AllocBuffer;
+  RopeRefCountString *AllocBuffer;
   unsigned AllocOffs;
   enum { AllocChunkSize = 4080 };
 
 public:
-  RewriteRope() :  AllocBuffer(nullptr), AllocOffs(AllocChunkSize) {}
+  RewriteRope() :  AllocBuffer(0), AllocOffs(AllocChunkSize) {}
   RewriteRope(const RewriteRope &RHS)
-    : Chunks(RHS.Chunks), AllocBuffer(nullptr), AllocOffs(AllocChunkSize) {
+    : Chunks(RHS.Chunks), AllocBuffer(0), AllocOffs(AllocChunkSize) {
+  }
+
+  ~RewriteRope() {
+    // If we had an allocation buffer, drop our reference to it.
+    if (AllocBuffer)
+      AllocBuffer->dropRef();
   }
 
   typedef RopePieceBTree::iterator iterator;

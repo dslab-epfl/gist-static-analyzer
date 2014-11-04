@@ -11,25 +11,28 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_HEXAGON_HEXAGONSELECTIONDAGINFO_H
-#define LLVM_LIB_TARGET_HEXAGON_HEXAGONSELECTIONDAGINFO_H
+#ifndef HexagonSELECTIONDAGINFO_H
+#define HexagonSELECTIONDAGINFO_H
 
 #include "llvm/Target/TargetSelectionDAGInfo.h"
 
 namespace llvm {
 
+class HexagonTargetMachine;
+
 class HexagonSelectionDAGInfo : public TargetSelectionDAGInfo {
 public:
-  explicit HexagonSelectionDAGInfo(const DataLayout &DL);
+  explicit HexagonSelectionDAGInfo(const HexagonTargetMachine &TM);
   ~HexagonSelectionDAGInfo();
 
-  SDValue EmitTargetCodeForMemcpy(SelectionDAG &DAG, SDLoc dl,
+  virtual
+  SDValue EmitTargetCodeForMemcpy(SelectionDAG &DAG, DebugLoc dl,
                                   SDValue Chain,
                                   SDValue Dst, SDValue Src,
                                   SDValue Size, unsigned Align,
                                   bool isVolatile, bool AlwaysInline,
                                   MachinePointerInfo DstPtrInfo,
-                                  MachinePointerInfo SrcPtrInfo) const override;
+                                  MachinePointerInfo SrcPtrInfo) const;
 };
 
 }

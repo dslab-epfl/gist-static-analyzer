@@ -53,7 +53,7 @@ typedef signed char BOOL;
 
 id NSUserName();
 
-// CHECK: define i32 @main() [[NUW:#[0-9]+]]
+// CHECK: define i32 @main() nounwind 
 int main() {
   // CHECK: call{{.*}}@objc_msgSend{{.*}}i8 signext 97
   NSNumber *aNumber = @'a';
@@ -93,5 +93,3 @@ extern void bar(foo a);
 void baz(void) {
   bar(^(void) { return YES; });
 }
-
-// CHECK: attributes [[NUW]] = { nounwind{{.*}} }

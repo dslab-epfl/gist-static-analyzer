@@ -5,22 +5,24 @@
 // CHECK: @correct_linkage = weak global
 
 
-// CHECK-DAG: @both = alias void ()* @__both
-// CHECK-DAG: @both2 = alias void ()* @__both2
-// CHECK-DAG: @weakvar_alias = weak alias i32* @__weakvar_alias
-// CHECK-DAG: @foo = weak alias void ()* @__foo
-// CHECK-DAG: @foo2 = weak alias void ()* @__foo2
-// CHECK-DAG: @stutter = weak alias void ()* @__stutter
-// CHECK-DAG: @stutter2 = weak alias void ()* @__stutter2
-// CHECK-DAG: @declfirst = weak alias void ()* @__declfirst
-// CHECK-DAG: @declfirstattr = weak alias void ()* @__declfirstattr
-// CHECK-DAG: @mix2 = weak alias void ()* @__mix2
-// CHECK-DAG: @a1 = weak alias void ()* @__a1
-// CHECK-DAG: @xxx = weak alias void ()* @__xxx
+// CHECK: @both = alias void ()* @__both
+// CHECK: @both2 = alias void ()* @__both2
+// CHECK: @both3 = alias weak void ()* @__both3
+// CHECK: @a3 = alias weak void ()* @__a3
+// CHECK: @weakvar_alias = alias weak i32* @__weakvar_alias
+// CHECK: @foo = alias weak void ()* @__foo
+// CHECK: @foo2 = alias weak void ()* @__foo2
+// CHECK: @stutter = alias weak void ()* @__stutter
+// CHECK: @stutter2 = alias weak void ()* @__stutter2
+// CHECK: @declfirst = alias weak void ()* @__declfirst
+// CHECK: @declfirstattr = alias weak void ()* @__declfirstattr
+// CHECK: @mix2 = alias weak void ()* @__mix2
+// CHECK: @a1 = alias weak void ()* @__a1
+// CHECK: @xxx = alias weak void ()* @__xxx
 
 
 
-// CHECK-LABEL: define weak void @weakdef()
+// CHECK: define weak void @weakdef()
 
 
 #pragma weak weakvar
@@ -40,12 +42,12 @@ int __weakvar_alias;
 
 #pragma weak foo = __foo
 void __foo(void) {}
-// CHECK-LABEL: define void @__foo()
+// CHECK: define void @__foo()
 
 
 void __foo2(void) {}
 #pragma weak foo2 = __foo2
-// CHECK-LABEL: define void @__foo2()
+// CHECK: define void @__foo2()
 
 
 ///// test errors
@@ -67,12 +69,12 @@ typedef int __td2;
 #pragma weak stutter = __stutter
 #pragma weak stutter = __stutter
 void __stutter(void) {}
-// CHECK-LABEL: define void @__stutter()
+// CHECK: define void @__stutter()
 
 void __stutter2(void) {}
 #pragma weak stutter2 = __stutter2
 #pragma weak stutter2 = __stutter2
-// CHECK-LABEL: define void @__stutter2()
+// CHECK: define void @__stutter2()
 
 
 // test decl/pragma weak order
@@ -80,12 +82,12 @@ void __stutter2(void) {}
 void __declfirst(void);
 #pragma weak declfirst = __declfirst
 void __declfirst(void) {}
-// CHECK-LABEL: define void @__declfirst()
+// CHECK: define void @__declfirst()
 
 void __declfirstattr(void) __attribute((noinline));
 #pragma weak declfirstattr = __declfirstattr
 void __declfirstattr(void) {}
-// CHECK-LABEL: define void @__declfirstattr()
+// CHECK: define void @__declfirstattr()
 
 //// test that other attributes are preserved
 
@@ -94,7 +96,7 @@ void __declfirstattr(void) {}
 void mix(void);
 #pragma weak mix
 __attribute((weak)) void mix(void) { }
-// CHECK-LABEL: define weak void @mix()
+// CHECK: define weak void @mix()
 
 // ensure following __attributes are preserved and that only a single
 // alias is generated
@@ -102,7 +104,7 @@ __attribute((weak)) void mix(void) { }
 void __mix2(void) __attribute((noinline));
 void __mix2(void) __attribute((noinline));
 void __mix2(void) {}
-// CHECK-LABEL: define void @__mix2()
+// CHECK: define void @__mix2()
 
 ////////////// test #pragma weak/__attribute combinations
 
@@ -111,7 +113,7 @@ void __mix2(void) {}
 void both(void) __attribute((alias("__both")));
 #pragma weak both = __both
 void __both(void) {}
-// CHECK-LABEL: define void @__both()
+// CHECK: define void @__both()
 
 // if the TARGET is previously declared then whichever aliasing method
 // comes first applies and subsequent aliases are discarded.
@@ -121,18 +123,32 @@ void __both2(void);
 void both2(void) __attribute((alias("__both2"))); // first, wins
 #pragma weak both2 = __both2
 void __both2(void) {}
-// CHECK-LABEL: define void @__both2()
+// CHECK: define void @__both2()
+
+void __both3(void);
+#pragma weak both3 = __both3 // first, wins
+void both3(void) __attribute((alias("__both3")));
+void __both3(void) {}
+// CHECK: define void @__both3()
 
 ///////////// ensure that #pragma weak does not alter existing __attributes()
 
 void __a1(void) __attribute((noinline));
 #pragma weak a1 = __a1
 void __a1(void) {}
-// CHECK: define void @__a1() [[NI:#[0-9]+]]
+// CHECK: define void @__a1() {{.*}} noinline
+
+// attributes introduced BEFORE a combination of #pragma weak and alias()
+// hold...
+void __a3(void) __attribute((noinline));
+#pragma weak a3 = __a3
+void a3(void) __attribute((alias("__a3")));
+void __a3(void) {}
+// CHECK: define void @__a3() {{.*}} noinline
 
 #pragma weak xxx = __xxx
-__attribute((pure,noinline,const)) void __xxx(void) { }
-// CHECK: void @__xxx() [[RN:#[0-9]+]]
+__attribute((pure,noinline,const,fastcall)) void __xxx(void) { }
+// CHECK: void @__xxx() {{.*}} noinline
 
 ///////////// PR10878: Make sure we can call a weak alias
 void SHA512Pad(void *context) {}
@@ -149,28 +165,6 @@ void PR14046f() {
 }
 // CHECK: declare extern_weak i32 @PR14046e()
 
-// Parse #pragma weak after a label or case statement
-extern int PR16705a(void);
-extern int PR16705b(void);
-extern int PR16705c(void);
-void PR16705f(int a) {
-  switch(a) {
-  case 1:
-#pragma weak PR16705a
-    PR16705a();
-  default:
-#pragma weak PR16705b
-    PR16705b();
-  }
-label:
-  #pragma weak PR16705c
-  PR16705c();
-}
-
-// CHECK: declare extern_weak i32 @PR16705a()
-// CHECK: declare extern_weak i32 @PR16705b()
-// CHECK: declare extern_weak i32 @PR16705c()
-
 
 ///////////// TODO: stuff that still doesn't work
 
@@ -182,9 +176,6 @@ void yyy(void){}
 void zzz(void){}
 #pragma weak yyy
 // NOTE: weak doesn't apply, not before or in same TopLevelDec(!)
-// CHECK-LABEL: define void @yyy()
+// CHECK: define void @yyy()
 
 int correct_linkage;
-
-// CHECK: attributes [[NI]] = { noinline nounwind{{.*}} }
-// CHECK: attributes [[RN]] = { noinline nounwind readnone{{.*}} }

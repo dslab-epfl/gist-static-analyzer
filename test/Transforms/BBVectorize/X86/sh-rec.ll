@@ -46,7 +46,7 @@ if.end10:                                         ; preds = %entry
 
 return:                                           ; preds = %entry
   ret void
-; CHECK-LABEL: @ptoa(
+; CHECK: @ptoa
 }
 
 declare noalias i8* @malloc() nounwind

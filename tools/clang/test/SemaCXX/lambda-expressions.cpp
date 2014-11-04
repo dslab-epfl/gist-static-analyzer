@@ -1,5 +1,4 @@
-// RUN: %clang_cc1 -std=c++11 -Wno-unused-value -fsyntax-only -verify -fblocks %s
-// RUN: %clang_cc1 -std=c++1y -Wno-unused-value -fsyntax-only -verify -fblocks %s
+// RUN: %clang_cc1 -std=c++0x -Wno-unused-value -fsyntax-only -verify -fblocks %s
 
 namespace std { class type_info; };
 
@@ -110,30 +109,27 @@ namespace PR12031 {
   }
 }
 
-namespace Array {
+namespace NullPtr {
   int &f(int *p);
   char &f(...);
   void g() {
-    int n = -1;
+    int n = 0;
     [=] {
-      int arr[n]; // VLA
+      char &k = f(n); // not a null pointer constant
     } ();
 
-    const int m = -1;
-    [] {
-      int arr[m]; // expected-error{{negative size}}
-    } ();
-
-    [&] {
-      int arr[m]; // expected-error{{negative size}}
-    } ();
-
+    const int m = 0;
     [=] {
-      int arr[m]; // expected-error{{negative size}}
+      int &k = f(m); // expected-warning{{expression which evaluates to zero treated as a null pointer constant of type 'int *'}}
+    } ();
+
+    [=] () -> bool {
+      int &k = f(m); // expected-warning{{expression which evaluates to zero treated as a null pointer constant of type 'int *'}}
+      return &m == 0;
     } ();
 
     [m] {
-      int arr[m]; // expected-error{{negative size}}
+      int &k = f(m); // expected-warning{{expression which evaluates to zero treated as a null pointer constant of type 'int *'}}
     } ();
   }
 }
@@ -239,177 +235,4 @@ namespace PR13860 {
 
 namespace PR13854 {
   auto l = [](void){};
-}
-
-namespace PR14518 {
-  auto f = [](void) { return __func__; }; // no-warning
-}
-
-namespace PR16708 {
-  auto L = []() {
-    auto ret = 0;
-    return ret;
-    return 0;
-  };
-}
-
-namespace TypeDeduction {
-  struct S {};
-  void f() {
-    const S s {};
-    S &&t = [&] { return s; } ();
-#if __cplusplus <= 201103L
-    // expected-error@-2 {{drops qualifiers}}
-#else
-    S &&u = [&] () -> auto { return s; } ();
-#endif
-  }
-}
-
-
-namespace lambdas_in_NSDMIs {
-  template<class T>
-  struct L {
-      T t{};
-      T t2 = ([](int a) { return [](int b) { return b; };})(t)(t);    
-  };
-  L<int> l; 
-  
-  namespace non_template {
-    struct L {
-      int t = 0;
-      int t2 = ([](int a) { return [](int b) { return b; };})(t)(t);    
-    };
-    L l; 
-  }
-}
-
-// PR18477: don't try to capture 'this' from an NSDMI encountered while parsing
-// a lambda.
-namespace NSDMIs_in_lambdas {
-  template<typename T> struct S { int a = 0; int b = a; };
-  void f() { []() { S<int> s; }; }
-
-  auto x = []{ struct S { int n, m = n; }; };
-  auto y = [&]{ struct S { int n, m = n; }; }; // expected-error {{non-local lambda expression cannot have a capture-default}}
-  void g() { auto z = [&]{ struct S { int n, m = n; }; }; }
-}
-
-namespace CaptureIncomplete {
-  struct Incomplete; // expected-note 2{{forward decl}}
-  void g(const Incomplete &a);
-  void f(Incomplete &a) {
-    (void) [a] {}; // expected-error {{incomplete}}
-    (void) [&a] {};
-
-    (void) [=] { g(a); }; // expected-error {{incomplete}}
-    (void) [&] { f(a); };
-  }
-}
-
-namespace CaptureAbstract {
-  struct S {
-    virtual void f() = 0; // expected-note {{unimplemented}}
-    int n = 0;
-  };
-  struct T : S {
-    constexpr T() {}
-    void f();
-  };
-  void f() {
-    constexpr T t = T();
-    S &s = const_cast<T&>(t);
-    // FIXME: Once we properly compute odr-use per DR712, this should be
-    // accepted (and should not capture 's').
-    [=] { return s.n; }; // expected-error {{abstract}}
-  }
-}
-
-namespace PR18128 {
-  auto l = [=]{}; // expected-error {{non-local lambda expression cannot have a capture-default}}
-
-  struct S {
-    int n;
-    int (*f())[true ? 1 : ([=]{ return n; }(), 0)];
-    // expected-error@-1 {{non-local lambda expression cannot have a capture-default}}
-    // expected-error@-2 {{invalid use of non-static data member 'n'}}
-    // expected-error@-3 {{a lambda expression may not appear inside of a constant expression}}
-    int g(int k = ([=]{ return n; }(), 0));
-    // expected-error@-1 {{non-local lambda expression cannot have a capture-default}}
-    // expected-error@-2 {{invalid use of non-static data member 'n'}}
-
-    int a = [=]{ return n; }(); // ok
-    int b = [=]{ return [=]{ return n; }(); }(); // ok
-    int c = []{ int k = 0; return [=]{ return k; }(); }(); // ok
-    int d = []{ return [=]{ return n; }(); }(); // expected-error {{'this' cannot be implicitly captured in this context}}
-  };
-}
-
-namespace PR18473 {
-  template<typename T> void f() {
-    T t(0);
-    (void) [=]{ int n = t; }; // expected-error {{deleted}}
-  }
-
-  template void f<int>();
-  struct NoCopy {
-    NoCopy(int);
-    NoCopy(const NoCopy &) = delete; // expected-note {{deleted}}
-    operator int() const;
-  };
-  template void f<NoCopy>(); // expected-note {{instantiation}}
-}
-
-void PR19249() {
-  auto x = [&x]{}; // expected-error {{cannot appear in its own init}}
-}
-
-namespace PR20731 {
-template <class L, int X = sizeof(L)>
-void Job(L l);
-
-template <typename... Args>
-void Logger(Args &&... args) {
-  auto len = Invalid_Function((args)...);
-  // expected-error@-1 {{use of undeclared identifier 'Invalid_Function'}}
-  Job([len]() {});
-}
-
-void GetMethod() {
-  Logger();
-  // expected-note@-1 {{in instantiation of function template specialization 'PR20731::Logger<>' requested here}}
-}
-
-template <typename T>
-struct A {
-  T t;
-  // expected-error@-1 {{field has incomplete type 'void'}}
-};
-
-template <typename F>
-void g(F f) {
-  auto a = A<decltype(f())>{};
-  // expected-note@-1 {{in instantiation of template class 'PR20731::A<void>' requested here}}
-  auto xf = [a, f]() {};
-  int x = sizeof(xf);
-};
-void f() {
-  g([] {});
-  // expected-note-re@-1 {{in instantiation of function template specialization 'PR20731::g<(lambda at {{.*}}>' requested here}}
-}
-
-template <class _Rp> struct function {
-  template <class _Fp>
-  function(_Fp) {
-    static_assert(sizeof(_Fp) > 0, "Type must be complete.");
-  }
-};
-
-template <typename T> void p(T t) {
-  auto l = some_undefined_function(t);
-  // expected-error@-1 {{use of undeclared identifier 'some_undefined_function'}}
-  function<void()>(([l]() {}));
-}
-void q() { p(0); }
-// expected-note@-1 {{in instantiation of function template specialization 'PR20731::p<int>' requested here}}
 }

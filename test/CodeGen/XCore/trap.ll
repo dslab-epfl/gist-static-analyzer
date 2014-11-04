@@ -1,7 +1,7 @@
 ; RUN: llc < %s -march=xcore | FileCheck %s
 define i32 @test() noreturn nounwind  {
 entry:
-; CHECK-LABEL: test:
+; CHECK: test:
 ; CHECK: ldc
 ; CHECK: ecallf
 	tail call void @llvm.trap( )

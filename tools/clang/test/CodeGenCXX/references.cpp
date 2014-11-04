@@ -1,6 +1,6 @@
-// RUN: not %clang_cc1 -triple x86_64-apple-darwin -verify -emit-llvm -o - %s | FileCheck %s
+// RUN: %clang_cc1 -triple x86_64-apple-darwin -verify -emit-llvm -o - %s | FileCheck %s
 void t1() {
-  // CHECK-LABEL: define void @_Z2t1v
+  // CHECK: define void @_Z2t1v
   // CHECK: [[REFLOAD:%.*]] = load i32** @a, align 8
   // CHECK: load i32* [[REFLOAD]], align 4
   extern int& a;
@@ -8,7 +8,7 @@ void t1() {
 }
 
 void t2(int& a) {
-  // CHECK-LABEL: define void @_Z2t2Ri
+  // CHECK: define void @_Z2t2Ri
   // CHECK: [[REFLOAD2:%.*]] = load i32** {{.*}}, align 8
   // CHECK: load i32* [[REFLOAD2]], align 4
   int b = a;
@@ -189,7 +189,7 @@ namespace N2 {
 
   P getP();
 
-  // CHECK-LABEL: define void @_ZN2N21fEi
+  // CHECK: define void @_ZN2N21fEi
   // CHECK: call void @_ZN2N24getPEv
   // CHECK: getelementptr inbounds
   // CHECK: store i32 17
@@ -218,7 +218,7 @@ namespace N2 {
 
   Z getZ();
 
-  // CHECK-LABEL: define void @_ZN2N21gEi
+  // CHECK: define void @_ZN2N21gEi
   // CHECK: call void @_ZN2N24getZEv
   // CHECK: {{getelementptr inbounds.*i32 0, i32 0}}
   // CHECK: {{getelementptr inbounds.*i32 0, i32 0}}
@@ -240,8 +240,8 @@ struct A {
   ~A();
 };
 
-// CHECK-LABEL: define internal void @__cxx_global_var_init
-// CHECK: call void @_ZN2N31AC1Ei(%"struct.N3::A"* @_ZGRN2N35sA123E_, i32 123)
+// CHECK: define internal void @__cxx_global_var_init
+// CHECK: call void @_ZN2N31AC1Ei(%"struct.N3::A"* @_ZGRN2N35sA123E, i32 123)
 // CHECK: call i32 @__cxa_atexit
 // CHECK: ret void
 const A &sA123 = A(123);
@@ -255,8 +255,8 @@ struct A {
 };
 
 void f() {
-  // CHECK-LABEL: define void @_ZN2N41fEv
-  // CHECK: call void @_ZN2N41AC1Ev(%"struct.N4::A"* @_ZGRZN2N41fEvE2ar_)
+  // CHECK: define void @_ZN2N41fEv
+  // CHECK: call void @_ZN2N41AC1Ev(%"struct.N4::A"* @_ZGRZN2N41fEvE2ar)
   // CHECK: call i32 @__cxa_atexit
   // CHECK: ret void
   static const A& ar = A();
@@ -279,15 +279,16 @@ void h() {
 // PR9565
 namespace PR9565 {
   struct a { int a : 10, b : 10; };
-  // CHECK-LABEL: define void @_ZN6PR95651fEv()
+  // CHECK: define void @_ZN6PR95651fEv()
   void f() {
     // CHECK: call void @llvm.memcpy
     a x = { 0, 0 };
-    // CHECK: [[WITH_SEVENTEEN:%[.a-zA-Z0-9]+]] = or i32 [[WITHOUT_SEVENTEEN:%[.a-zA-Z0-9]+]], 17
-    // CHECK: store i32 [[WITH_SEVENTEEN]], i32* [[XA:%[.a-zA-Z0-9]+]]
+    // CHECK: [[WITH_SEVENTEEN:%[a-zA-Z0-9]+]] = or i32 [[WITHOUT_SEVENTEEN:%[a-zA-Z0-9]+]], 17
+    // CHECK: store i32 [[WITH_SEVENTEEN]], i32* [[XA:%[a-zA-Z0-9]+]]
     x.a = 17;
     // CHECK-NEXT: bitcast
-    // CHECK-NEXT: load
+    // CHECK-NEXT: load 
+    // CHECK-NEXT: and
     // CHECK-NEXT: shl
     // CHECK-NEXT: ashr
     // CHECK-NEXT: store i32
@@ -296,7 +297,7 @@ namespace PR9565 {
     // CHECK-NEXT: bitcast
     // CHECK-NEXT: load
     // CHECK-NEXT: and
-    // CHECK-NEXT: or i32 {{.*}}, 19456
+    // CHECK-NEXT: or
     // CHECK-NEXT: store i32
     x.b = 19;
     // CHECK-NEXT: ret void
@@ -306,7 +307,7 @@ namespace PR9565 {
 namespace N6 {
   extern struct x {char& x;}y;
   int a() { return y.x; }
-  // CHECK-LABEL: define i32 @_ZN2N61aEv
+  // CHECK: define i32 @_ZN2N61aEv
   // CHECK: [[REFLOAD3:%.*]] = load i8** getelementptr inbounds (%"struct.N6::x"* @_ZN2N61yE, i32 0, i32 0), align 8
   // CHECK: load i8* [[REFLOAD3]], align 1
 }

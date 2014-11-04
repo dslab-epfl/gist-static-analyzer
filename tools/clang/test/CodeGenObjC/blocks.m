@@ -7,7 +7,7 @@ struct S {
 
 
 @interface T
-  - (int)foo: (T* (^)(T*)) x;
+  - (int)foo: (T (^)(T*)) x;
 @end
 
 void foo(T *P) {
@@ -43,7 +43,7 @@ void foo(T *P) {
 @interface Test2 -(void) destroy; @end
 void test2(Test2 *x) {
   extern void test2_helper(void (^)(void));
-  // CHECK-LABEL:    define void @test2(
+  // CHECK:    define void @test2(
   // CHECK:      [[X:%.*]] = alloca [[TEST2:%.*]]*,
   // CHECK-NEXT: [[WEAKX:%.*]] = alloca [[WEAK_T:%.*]],
   // CHECK-NEXT: [[BLOCK:%.*]] = alloca [[BLOCK_T:<{.*}>]],
@@ -57,15 +57,15 @@ void test2(Test2 *x) {
   // CHECK-NEXT: [[T1:%.*]] = getelementptr inbounds [[WEAK_T]]* [[WEAKX]], i32 0, i32 1
   // CHECK-NEXT: store [[WEAK_T]]* [[WEAKX]], [[WEAK_T]]** [[T1]]
 
-  // Flags.  This is just BLOCK_HAS_COPY_DISPOSE BLOCK_BYREF_LAYOUT_UNRETAINED
+  // Flags.  This is just BLOCK_HAS_COPY_DISPOSE.
   // CHECK-NEXT: [[T2:%.*]] = getelementptr inbounds [[WEAK_T]]* [[WEAKX]], i32 0, i32 2
-  // CHECK-NEXT: store i32 1375731712, i32* [[T2]]
+  // CHECK-NEXT: store i32 33554432, i32* [[T2]]
 
   // Size.
   // CHECK-NEXT: [[T3:%.*]] = getelementptr inbounds [[WEAK_T]]* [[WEAKX]], i32 0, i32 3
   // CHECK-NEXT: store i32 28, i32* [[T3]]
 
-  // Copy and dispose helpers.
+  // Copy and dipose helpers.
   // CHECK-NEXT: [[T4:%.*]] = getelementptr inbounds [[WEAK_T]]* [[WEAKX]], i32 0, i32 4
   // CHECK-NEXT: store i8* bitcast (void (i8*, i8*)* @__Block_byref_object_copy_{{.*}} to i8*), i8** [[T4]]
   // CHECK-NEXT: [[T5:%.*]] = getelementptr inbounds [[WEAK_T]]* [[WEAKX]], i32 0, i32 5
@@ -91,45 +91,12 @@ void test2(Test2 *x) {
 // rdar://problem/9124263
 // In the test above, check that the use in the invocation function
 // doesn't require a read barrier.
-// CHECK-LABEL:    define internal void @__test2_block_invoke
+// CHECK:    define internal void @__test2_block_invoke
 // CHECK:      [[BLOCK:%.*]] = bitcast i8* {{%.*}} to [[BLOCK_T]]*
-// CHECK-NOT:  bitcast
-// CHECK:      [[T0:%.*]] = getelementptr inbounds [[BLOCK_T]]* [[BLOCK]], i32 0, i32 5
+// CHECK-NEXT: [[T0:%.*]] = getelementptr inbounds [[BLOCK_T]]* [[BLOCK]], i32 0, i32 5
 // CHECK-NEXT: [[T1:%.*]] = load i8** [[T0]]
 // CHECK-NEXT: [[T2:%.*]] = bitcast i8* [[T1]] to [[WEAK_T]]{{.*}}*
 // CHECK-NEXT: [[T3:%.*]] = getelementptr inbounds [[WEAK_T]]{{.*}}* [[T2]], i32 0, i32 1
 // CHECK-NEXT: [[T4:%.*]] = load [[WEAK_T]]{{.*}}** [[T3]]
 // CHECK-NEXT: [[WEAKX:%.*]] = getelementptr inbounds [[WEAK_T]]{{.*}}* [[T4]], i32 0, i32 6
 // CHECK-NEXT: [[T0:%.*]] = load [[TEST2]]** [[WEAKX]], align 4
-
-// rdar://problem/12722954
-// Make sure that ... is appropriately positioned in a block call.
-void test3(void (^block)(int, ...)) {
-  block(0, 1, 2, 3);
-}
-// CHECK-LABEL:    define void @test3(
-// CHECK:      [[BLOCK:%.*]] = alloca void (i32, ...)*, align 4
-// CHECK-NEXT: store void (i32, ...)*
-// CHECK-NEXT: [[T0:%.*]] = load void (i32, ...)** [[BLOCK]], align 4
-// CHECK-NEXT: [[T1:%.*]] = bitcast void (i32, ...)* [[T0]] to [[BLOCK_T:%.*]]*
-// CHECK-NEXT: [[T2:%.*]] = getelementptr inbounds [[BLOCK_T]]* [[T1]], i32 0, i32 3
-// CHECK-NEXT: [[T3:%.*]] = bitcast [[BLOCK_T]]* [[T1]] to i8*
-// CHECK-NEXT: [[T4:%.*]] = load i8** [[T2]]
-// CHECK-NEXT: [[T5:%.*]] = bitcast i8* [[T4]] to void (i8*, i32, ...)*
-// CHECK-NEXT: call void (i8*, i32, ...)* [[T5]](i8* [[T3]], i32 0, i32 1, i32 2, i32 3)
-// CHECK-NEXT: ret void
-
-void test4(void (^block)()) {
-  block(0, 1, 2, 3);
-}
-// CHECK-LABEL:    define void @test4(
-// CHECK:      [[BLOCK:%.*]] = alloca void (...)*, align 4
-// CHECK-NEXT: store void (...)*
-// CHECK-NEXT: [[T0:%.*]] = load void (...)** [[BLOCK]], align 4
-// CHECK-NEXT: [[T1:%.*]] = bitcast void (...)* [[T0]] to [[BLOCK_T:%.*]]*
-// CHECK-NEXT: [[T2:%.*]] = getelementptr inbounds [[BLOCK_T]]* [[T1]], i32 0, i32 3
-// CHECK-NEXT: [[T3:%.*]] = bitcast [[BLOCK_T]]* [[T1]] to i8*
-// CHECK-NEXT: [[T4:%.*]] = load i8** [[T2]]
-// CHECK-NEXT: [[T5:%.*]] = bitcast i8* [[T4]] to void (i8*, i32, i32, i32, i32)*
-// CHECK-NEXT: call void [[T5]](i8* [[T3]], i32 0, i32 1, i32 2, i32 3)
-// CHECK-NEXT: ret void

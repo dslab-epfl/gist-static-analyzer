@@ -13,17 +13,13 @@
 
 #include "HexagonMCTargetDesc.h"
 #include "HexagonMCAsmInfo.h"
-#include "InstPrinter/HexagonInstPrinter.h"
+#include "llvm/MC/MachineLocation.h"
 #include "llvm/MC/MCCodeGenInfo.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
-#include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
-#include "llvm/MC/MachineLocation.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/TargetRegistry.h"
-
-using namespace llvm;
 
 #define GET_INSTRINFO_MC_DESC
 #include "HexagonGenInstrInfo.inc"
@@ -33,6 +29,8 @@ using namespace llvm;
 
 #define GET_REGINFO_MC_DESC
 #include "HexagonGenRegisterInfo.inc"
+
+using namespace llvm;
 
 static MCInstrInfo *createHexagonMCInstrInfo() {
   MCInstrInfo *X = new MCInstrInfo();
@@ -46,28 +44,28 @@ static MCRegisterInfo *createHexagonMCRegisterInfo(StringRef TT) {
   return X;
 }
 
-static MCSubtargetInfo *
-createHexagonMCSubtargetInfo(StringRef TT, StringRef CPU, StringRef FS) {
+static MCSubtargetInfo *createHexagonMCSubtargetInfo(StringRef TT,
+                                                     StringRef CPU,
+                                                     StringRef FS) {
   MCSubtargetInfo *X = new MCSubtargetInfo();
   InitHexagonMCSubtargetInfo(X, TT, CPU, FS);
   return X;
 }
 
-static MCAsmInfo *createHexagonMCAsmInfo(const MCRegisterInfo &MRI,
-                                         StringRef TT) {
-  MCAsmInfo *MAI = new HexagonMCAsmInfo(TT);
+static MCAsmInfo *createHexagonMCAsmInfo(const Target &T, StringRef TT) {
+  MCAsmInfo *MAI = new HexagonMCAsmInfo(T, TT);
 
   // VirtualFP = (R30 + #0).
-  MCCFIInstruction Inst =
-      MCCFIInstruction::createDefCfa(nullptr, Hexagon::R30, 0);
-  MAI->addInitialFrameState(Inst);
+  MachineLocation Dst(MachineLocation::VirtualFP);
+  MachineLocation Src(Hexagon::R30, 0);
+  MAI->addInitialFrameState(0, Dst, Src);
 
   return MAI;
 }
 
 static MCCodeGenInfo *createHexagonMCCodeGenInfo(StringRef TT, Reloc::Model RM,
-                                                 CodeModel::Model CM,
-                                                 CodeGenOpt::Level OL) {
+                                             CodeModel::Model CM,
+                                             CodeGenOpt::Level OL) {
   MCCodeGenInfo *X = new MCCodeGenInfo();
   // For the time being, use static relocations, since there's really no
   // support for PIC yet.
@@ -85,8 +83,7 @@ extern "C" void LLVMInitializeHexagonTargetMC() {
                                         createHexagonMCCodeGenInfo);
 
   // Register the MC instruction info.
-  TargetRegistry::RegisterMCInstrInfo(TheHexagonTarget,
-                                      createHexagonMCInstrInfo);
+  TargetRegistry::RegisterMCInstrInfo(TheHexagonTarget, createHexagonMCInstrInfo);
 
   // Register the MC register info.
   TargetRegistry::RegisterMCRegInfo(TheHexagonTarget,
@@ -95,8 +92,4 @@ extern "C" void LLVMInitializeHexagonTargetMC() {
   // Register the MC subtarget info.
   TargetRegistry::RegisterMCSubtargetInfo(TheHexagonTarget,
                                           createHexagonMCSubtargetInfo);
-
-  // Register the MC Code Emitter
-  TargetRegistry::RegisterMCCodeEmitter(TheHexagonTarget,
-                                        createHexagonMCCodeEmitter);
 }

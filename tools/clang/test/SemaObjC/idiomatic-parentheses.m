@@ -9,7 +9,6 @@
 }
 - (id) init;
 - (id) initWithInt: (int) i;
-- (id) myInit __attribute__((objc_method_family(init)));
 - (void) iterate: (id) coll;
 - (id) nextObject;
 @property unsigned uid;
@@ -31,12 +30,6 @@
                         // expected-note {{place parentheses around the assignment to silence this warning}} \
                         // expected-note {{use '==' to turn this assignment into an equality comparison}}
         // ...
-  }
-  return self;
-}
-
-- (id) myInit {
-  if (self = [self myInit]) {
   }
   return self;
 }

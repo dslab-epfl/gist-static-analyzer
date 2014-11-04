@@ -15,15 +15,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Transforms/Utils/BypassSlowDivision.h"
+#define DEBUG_TYPE "bypass-slow-division"
+#include "llvm/Instructions.h"
+#include "llvm/Function.h"
+#include "llvm/IRBuilder.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/Instructions.h"
+#include "llvm/Transforms/Utils/BypassSlowDivision.h"
 
 using namespace llvm;
-
-#define DEBUG_TYPE "bypass-slow-division"
 
 namespace {
   struct DivOpInfo {
@@ -54,11 +53,11 @@ namespace llvm {
     }
 
     static DivOpInfo getEmptyKey() {
-      return DivOpInfo(false, nullptr, nullptr);
+      return DivOpInfo(false, 0, 0);
     }
 
     static DivOpInfo getTombstoneKey() {
-      return DivOpInfo(true, nullptr, nullptr);
+      return DivOpInfo(true, 0, 0);
     }
 
     static unsigned getHashValue(const DivOpInfo &Val) {
@@ -164,7 +163,7 @@ static bool insertFastDiv(Function &F,
   Value *AndV = MainBuilder.CreateAnd(OrV, BitMask);
 
   // Compare operand values and branch
-  Value *ZeroV = ConstantInt::getSigned(Dividend->getType(), 0);
+  Value *ZeroV = MainBuilder.getInt32(0);
   Value *CmpV = MainBuilder.CreateICmpEQ(AndV, ZeroV);
   MainBuilder.CreateCondBr(CmpV, FastBB, SlowBB);
 
@@ -245,7 +244,7 @@ bool llvm::bypassSlowDivision(Function &F,
 
     // Get bitwidth of div/rem instruction
     IntegerType *T = cast<IntegerType>(J->getType());
-    unsigned int bitwidth = T->getBitWidth();
+    int bitwidth = T->getBitWidth();
 
     // Continue if bitwidth is not bypassed
     DenseMap<unsigned int, unsigned int>::const_iterator BI = BypassWidths.find(bitwidth);

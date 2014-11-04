@@ -13,11 +13,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "ClangSACheckers.h"
-#include "clang/AST/DeclCXX.h"
-#include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 
 using namespace clang;
 using namespace ento;
@@ -25,7 +24,7 @@ using namespace ento;
 namespace {
 class UndefinedArraySubscriptChecker
   : public Checker< check::PreStmt<ArraySubscriptExpr> > {
-  mutable std::unique_ptr<BugType> BT;
+  mutable OwningPtr<BugType> BT;
 
 public:
   void checkPreStmt(const ArraySubscriptExpr *A, CheckerContext &C) const;
@@ -35,28 +34,18 @@ public:
 void 
 UndefinedArraySubscriptChecker::checkPreStmt(const ArraySubscriptExpr *A,
                                              CheckerContext &C) const {
-  const Expr *Index = A->getIdx();
-  if (!C.getSVal(Index).isUndef())
-    return;
+  if (C.getState()->getSVal(A->getIdx(), C.getLocationContext()).isUndef()) {
+    if (ExplodedNode *N = C.generateSink()) {
+      if (!BT)
+        BT.reset(new BuiltinBug("Array subscript is undefined"));
 
-  // Sema generates anonymous array variables for copying array struct fields.
-  // Don't warn if we're in an implicitly-generated constructor.
-  const Decl *D = C.getLocationContext()->getDecl();
-  if (const CXXConstructorDecl *Ctor = dyn_cast<CXXConstructorDecl>(D))
-    if (Ctor->isDefaulted())
-      return;
-
-  ExplodedNode *N = C.generateSink();
-  if (!N)
-    return;
-  if (!BT)
-    BT.reset(new BuiltinBug(this, "Array subscript is undefined"));
-
-  // Generate a report for this bug.
-  BugReport *R = new BugReport(*BT, BT->getName(), N);
-  R->addRange(A->getIdx()->getSourceRange());
-  bugreporter::trackNullOrUndefValue(N, A->getIdx(), *R);
-  C.emitReport(R);
+      // Generate a report for this bug.
+      BugReport *R = new BugReport(*BT, BT->getName(), N);
+      R->addRange(A->getIdx()->getSourceRange());
+      bugreporter::trackNullOrUndefValue(N, A->getIdx(), *R);
+      C.emitReport(R);
+    }
+  }
 }
 
 void ento::registerUndefinedArraySubscriptChecker(CheckerManager &mgr) {

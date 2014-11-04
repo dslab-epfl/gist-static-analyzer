@@ -1,5 +1,5 @@
 ; RUN: llc < %s -mtriple=i686-linux -mcpu=corei7 | FileCheck %s
-; RUN: opt -instsimplify -disable-output < %s
+; RUN: opt -instsimplify %s -disable-output
 
 ;CHECK: SHUFF0
 define <8 x i32*> @SHUFF0(<4 x i32*> %ptrv) nounwind {

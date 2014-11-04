@@ -896,11 +896,11 @@
 // CHECK: 	cvtps2pi	%xmm5, %mm3
         	cvtps2pi	%xmm5,%mm3
 
-// CHECK: 	cvtsi2ssl	%ecx, %xmm5
-        	cvtsi2ssl	%ecx,%xmm5
+// CHECK: 	cvtsi2ss	%ecx, %xmm5
+        	cvtsi2ss	%ecx,%xmm5
 
-// CHECK: 	cvtsi2ssl	3735928559(%ebx,%ecx,8), %xmm5
-        	cvtsi2ssl	0xdeadbeef(%ebx,%ecx,8),%xmm5
+// CHECK: 	cvtsi2ss	3735928559(%ebx,%ecx,8), %xmm5
+        	cvtsi2ss	0xdeadbeef(%ebx,%ecx,8),%xmm5
 
 // CHECK: 	cvttps2pi	3735928559(%ebx,%ecx,8), %mm3
         	cvttps2pi	0xdeadbeef(%ebx,%ecx,8),%mm3
@@ -1157,11 +1157,11 @@
 // CHECK: 	cvtpi2pd	%mm3, %xmm5
         	cvtpi2pd	%mm3,%xmm5
 
-// CHECK: 	cvtsi2sdl	%ecx, %xmm5
-        	cvtsi2sdl	%ecx,%xmm5
+// CHECK: 	cvtsi2sd	%ecx, %xmm5
+        	cvtsi2sd	%ecx,%xmm5
 
-// CHECK: 	cvtsi2sdl	3735928559(%ebx,%ecx,8), %xmm5
-        	cvtsi2sdl	0xdeadbeef(%ebx,%ecx,8),%xmm5
+// CHECK: 	cvtsi2sd	3735928559(%ebx,%ecx,8), %xmm5
+        	cvtsi2sd	0xdeadbeef(%ebx,%ecx,8),%xmm5
 
 // CHECK: 	divpd	%xmm5, %xmm5
         	divpd	%xmm5,%xmm5
@@ -3948,10 +3948,6 @@
 // CHECK:  encoding: [0xd9,0xca]
         	fxch	%st(2)
 
-// CHECK: fcom	%st(1)
-// CHECK:  encoding: [0xd8,0xd1]
-        	fcom
-
 // CHECK: fcom	%st(2)
 // CHECK:  encoding: [0xd8,0xd2]
         	fcom	%st(2)
@@ -3971,10 +3967,6 @@
 // CHECK: ficoml	305419896
 // CHECK:  encoding: [0xda,0x15,0x78,0x56,0x34,0x12]
         	ficoml	0x12345678
-
-// CHECK: fcomp	%st(1)
-// CHECK:  encoding: [0xd8,0xd9]
-        	fcomp
 
 // CHECK: fcomp	%st(2)
 // CHECK:  encoding: [0xd8,0xda]
@@ -7152,29 +7144,29 @@
 // CHECK:  encoding: [0x0f,0x2d,0xdd]
         	cvtps2pi	%xmm5,%mm3
 
-// CHECK: cvtsi2ssl	%ecx, %xmm5
+// CHECK: cvtsi2ss	%ecx, %xmm5
 // CHECK:  encoding: [0xf3,0x0f,0x2a,0xe9]
-        	cvtsi2ssl	%ecx,%xmm5
+        	cvtsi2ss	%ecx,%xmm5
 
-// CHECK: cvtsi2ssl	3735928559(%ebx,%ecx,8), %xmm5
+// CHECK: cvtsi2ss	3735928559(%ebx,%ecx,8), %xmm5
 // CHECK:  encoding: [0xf3,0x0f,0x2a,0xac,0xcb,0xef,0xbe,0xad,0xde]
-        	cvtsi2ssl	0xdeadbeef(%ebx,%ecx,8),%xmm5
+        	cvtsi2ss	0xdeadbeef(%ebx,%ecx,8),%xmm5
 
-// CHECK: cvtsi2ssl	69, %xmm5
+// CHECK: cvtsi2ss	69, %xmm5
 // CHECK:  encoding: [0xf3,0x0f,0x2a,0x2d,0x45,0x00,0x00,0x00]
-        	cvtsi2ssl	0x45,%xmm5
+        	cvtsi2ss	0x45,%xmm5
 
-// CHECK: cvtsi2ssl	32493, %xmm5
+// CHECK: cvtsi2ss	32493, %xmm5
 // CHECK:  encoding: [0xf3,0x0f,0x2a,0x2d,0xed,0x7e,0x00,0x00]
-        	cvtsi2ssl	0x7eed,%xmm5
+        	cvtsi2ss	0x7eed,%xmm5
 
-// CHECK: cvtsi2ssl	3133065982, %xmm5
+// CHECK: cvtsi2ss	3133065982, %xmm5
 // CHECK:  encoding: [0xf3,0x0f,0x2a,0x2d,0xfe,0xca,0xbe,0xba]
-        	cvtsi2ssl	0xbabecafe,%xmm5
+        	cvtsi2ss	0xbabecafe,%xmm5
 
-// CHECK: cvtsi2ssl	305419896, %xmm5
+// CHECK: cvtsi2ss	305419896, %xmm5
 // CHECK:  encoding: [0xf3,0x0f,0x2a,0x2d,0x78,0x56,0x34,0x12]
-        	cvtsi2ssl	0x12345678,%xmm5
+        	cvtsi2ss	0x12345678,%xmm5
 
 // CHECK: cvttps2pi	3735928559(%ebx,%ecx,8), %mm3
 // CHECK:  encoding: [0x0f,0x2c,0x9c,0xcb,0xef,0xbe,0xad,0xde]
@@ -8660,29 +8652,29 @@
 // CHECK:  encoding: [0x66,0x0f,0x2a,0xeb]
         	cvtpi2pd	%mm3,%xmm5
 
-// CHECK: cvtsi2sdl	%ecx, %xmm5
+// CHECK: cvtsi2sd	%ecx, %xmm5
 // CHECK:  encoding: [0xf2,0x0f,0x2a,0xe9]
-        	cvtsi2sdl	%ecx,%xmm5
+        	cvtsi2sd	%ecx,%xmm5
 
-// CHECK: cvtsi2sdl	3735928559(%ebx,%ecx,8), %xmm5
+// CHECK: cvtsi2sd	3735928559(%ebx,%ecx,8), %xmm5
 // CHECK:  encoding: [0xf2,0x0f,0x2a,0xac,0xcb,0xef,0xbe,0xad,0xde]
-        	cvtsi2sdl	0xdeadbeef(%ebx,%ecx,8),%xmm5
+        	cvtsi2sd	0xdeadbeef(%ebx,%ecx,8),%xmm5
 
-// CHECK: cvtsi2sdl	69, %xmm5
+// CHECK: cvtsi2sd	69, %xmm5
 // CHECK:  encoding: [0xf2,0x0f,0x2a,0x2d,0x45,0x00,0x00,0x00]
-        	cvtsi2sdl	0x45,%xmm5
+        	cvtsi2sd	0x45,%xmm5
 
-// CHECK: cvtsi2sdl	32493, %xmm5
+// CHECK: cvtsi2sd	32493, %xmm5
 // CHECK:  encoding: [0xf2,0x0f,0x2a,0x2d,0xed,0x7e,0x00,0x00]
-        	cvtsi2sdl	0x7eed,%xmm5
+        	cvtsi2sd	0x7eed,%xmm5
 
-// CHECK: cvtsi2sdl	3133065982, %xmm5
+// CHECK: cvtsi2sd	3133065982, %xmm5
 // CHECK:  encoding: [0xf2,0x0f,0x2a,0x2d,0xfe,0xca,0xbe,0xba]
-        	cvtsi2sdl	0xbabecafe,%xmm5
+        	cvtsi2sd	0xbabecafe,%xmm5
 
-// CHECK: cvtsi2sdl	305419896, %xmm5
+// CHECK: cvtsi2sd	305419896, %xmm5
 // CHECK:  encoding: [0xf2,0x0f,0x2a,0x2d,0x78,0x56,0x34,0x12]
-        	cvtsi2sdl	0x12345678,%xmm5
+        	cvtsi2sd	0x12345678,%xmm5
 
 // CHECK: divpd	3735928559(%ebx,%ecx,8), %xmm5
 // CHECK:  encoding: [0x66,0x0f,0x5e,0xac,0xcb,0xef,0xbe,0xad,0xde]
@@ -16208,23 +16200,23 @@
 // CHECK: 	cvtps2pi	%xmm5, %mm3
         	cvtps2pi	%xmm5,%mm3
 
-// CHECK: 	cvtsi2ssl	%ecx, %xmm5
-        	cvtsi2ssl	%ecx,%xmm5
+// CHECK: 	cvtsi2ss	%ecx, %xmm5
+        	cvtsi2ss	%ecx,%xmm5
 
-// CHECK: 	cvtsi2ssl	3735928559(%ebx,%ecx,8), %xmm5
-        	cvtsi2ssl	0xdeadbeef(%ebx,%ecx,8),%xmm5
+// CHECK: 	cvtsi2ss	3735928559(%ebx,%ecx,8), %xmm5
+        	cvtsi2ss	0xdeadbeef(%ebx,%ecx,8),%xmm5
 
-// CHECK: 	cvtsi2ssl	69, %xmm5
-        	cvtsi2ssl	0x45,%xmm5
+// CHECK: 	cvtsi2ss	69, %xmm5
+        	cvtsi2ss	0x45,%xmm5
 
-// CHECK: 	cvtsi2ssl	32493, %xmm5
-        	cvtsi2ssl	0x7eed,%xmm5
+// CHECK: 	cvtsi2ss	32493, %xmm5
+        	cvtsi2ss	0x7eed,%xmm5
 
-// CHECK: 	cvtsi2ssl	3133065982, %xmm5
-        	cvtsi2ssl	0xbabecafe,%xmm5
+// CHECK: 	cvtsi2ss	3133065982, %xmm5
+        	cvtsi2ss	0xbabecafe,%xmm5
 
-// CHECK: 	cvtsi2ssl	305419896, %xmm5
-        	cvtsi2ssl	0x12345678,%xmm5
+// CHECK: 	cvtsi2ss	305419896, %xmm5
+        	cvtsi2ss	0x12345678,%xmm5
 
 // CHECK: 	cvttps2pi	3735928559(%ebx,%ecx,8), %mm3
         	cvttps2pi	0xdeadbeef(%ebx,%ecx,8),%mm3
@@ -17342,23 +17334,23 @@
 // CHECK: 	cvtpi2pd	%mm3, %xmm5
         	cvtpi2pd	%mm3,%xmm5
 
-// CHECK: 	cvtsi2sdl	%ecx, %xmm5
-        	cvtsi2sdl	%ecx,%xmm5
+// CHECK: 	cvtsi2sd	%ecx, %xmm5
+        	cvtsi2sd	%ecx,%xmm5
 
-// CHECK: 	cvtsi2sdl	3735928559(%ebx,%ecx,8), %xmm5
-        	cvtsi2sdl	0xdeadbeef(%ebx,%ecx,8),%xmm5
+// CHECK: 	cvtsi2sd	3735928559(%ebx,%ecx,8), %xmm5
+        	cvtsi2sd	0xdeadbeef(%ebx,%ecx,8),%xmm5
 
-// CHECK: 	cvtsi2sdl	69, %xmm5
-        	cvtsi2sdl	0x45,%xmm5
+// CHECK: 	cvtsi2sd	69, %xmm5
+        	cvtsi2sd	0x45,%xmm5
 
-// CHECK: 	cvtsi2sdl	32493, %xmm5
-        	cvtsi2sdl	0x7eed,%xmm5
+// CHECK: 	cvtsi2sd	32493, %xmm5
+        	cvtsi2sd	0x7eed,%xmm5
 
-// CHECK: 	cvtsi2sdl	3133065982, %xmm5
-        	cvtsi2sdl	0xbabecafe,%xmm5
+// CHECK: 	cvtsi2sd	3133065982, %xmm5
+        	cvtsi2sd	0xbabecafe,%xmm5
 
-// CHECK: 	cvtsi2sdl	305419896, %xmm5
-        	cvtsi2sdl	0x12345678,%xmm5
+// CHECK: 	cvtsi2sd	305419896, %xmm5
+        	cvtsi2sd	0x12345678,%xmm5
 
 // CHECK: 	divpd	3735928559(%ebx,%ecx,8), %xmm5
         	divpd	0xdeadbeef(%ebx,%ecx,8),%xmm5
@@ -19618,36 +19610,22 @@
 // CHECK:   blendvps	%xmm2, %xmm1    # encoding: [0x66,0x0f,0x38,0x14,0xca]
             blendvps %xmm2, %xmm1
 
-// These instructions can take an unsigned 8-bit mask as well as a signed 8-bit
-// immediate. Check both forms here.
+// rdar://9795008
+// These instructions take a mask not an 8-bit sign extended value.
 // CHECK: blendps $129, %xmm2, %xmm1
           blendps $0x81, %xmm2, %xmm1
-// CHECK: blendps $-64, %xmm2, %xmm1
-          blendps $-64, %xmm2, %xmm1
 // CHECK: blendpd $129, %xmm2, %xmm1
           blendpd $0x81, %xmm2, %xmm1
-// CHECK: blendpd $-64, %xmm2, %xmm1
-          blendpd $-64, %xmm2, %xmm1
 // CHECK: pblendw $129, %xmm2, %xmm1
           pblendw $0x81, %xmm2, %xmm1
-// CHECK: pblendw $-64, %xmm2, %xmm1
-          pblendw $-64, %xmm2, %xmm1
 // CHECK: mpsadbw $129, %xmm2, %xmm1
           mpsadbw $0x81, %xmm2, %xmm1
-// CHECK: mpsadbw $-64, %xmm2, %xmm1
-          mpsadbw $-64, %xmm2, %xmm1
 // CHECK: dpps $129, %xmm2, %xmm1
           dpps $0x81, %xmm2, %xmm1
-// CHECK: dpps $-64, %xmm2, %xmm1
-          dpps $-64, %xmm2, %xmm1
 // CHECK: dppd $129, %xmm2, %xmm1
           dppd $0x81, %xmm2, %xmm1
-// CHECK: dppd $-64, %xmm2, %xmm1
-          dppd $-64, %xmm2, %xmm1
 // CHECK: insertps $129, %xmm2, %xmm1
           insertps $0x81, %xmm2, %xmm1
-// CHECK: insertps $-64, %xmm2, %xmm1
-          insertps $-64, %xmm2, %xmm1
 
 // PR13253 handle implicit optional third argument that must always be xmm0
 // CHECK: pblendvb %xmm2, %xmm1
@@ -19674,37 +19652,3 @@ blendvps %xmm0, %xmm2, %xmm1
 blendvps (%eax), %xmm1
 // CHECK: blendvps (%eax), %xmm1
 blendvps %xmm0, (%eax), %xmm1
-
-
-// CHECK: btl $4, (%eax)
-// CHECK: btw $4, (%eax)
-// CHECK: btl $4, (%eax)
-// CHECK: btq $4, (%eax)
-// CHECK: btsl $4, (%eax)
-// CHECK: btsw $4, (%eax)
-// CHECK: btsl $4, (%eax)
-// CHECK: btsq $4, (%eax)
-// CHECK: btrl $4, (%eax)
-// CHECK: btrw $4, (%eax)
-// CHECK: btrl $4, (%eax)
-// CHECK: btrq $4, (%eax)
-// CHECK: btcl $4, (%eax)
-// CHECK: btcw $4, (%eax)
-// CHECK: btcl $4, (%eax)
-// CHECK: btcq $4, (%eax)
-bt $4, (%eax)
-btw $4, (%eax)
-btl $4, (%eax)
-btq $4, (%eax)
-bts $4, (%eax)
-btsw $4, (%eax)
-btsl $4, (%eax)
-btsq $4, (%eax)
-btr $4, (%eax)
-btrw $4, (%eax)
-btrl $4, (%eax)
-btrq $4, (%eax)
-btc $4, (%eax)
-btcw $4, (%eax)
-btcl $4, (%eax)
-btcq $4, (%eax)

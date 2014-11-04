@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -analyzer-checker=core -verify %s -Wno-incomplete-implementation
+// RUN: %clang_cc1 -analyzer-checker=core -verify %s
 typedef signed char BOOL;
 typedef int NSInteger;
 typedef unsigned int NSUInteger;
@@ -67,12 +67,12 @@ extern NSMutableArray *XCFindPossibleKeyModules(PBXModule *module, BOOL useExpos
 @interface XCExtendedTabView : NSTabView <XCDockViewHeader> {
 }
 @end     @class PBXProjectDocument, PBXFileReference, PBXModule, XCWindowTool;
-@interface XCPerspectiveModule : PBXProjectModule <PBXSelectionTarget> {
+@interface XCPerspectiveModule : PBXProjectModule <PBXSelectionTarget> { // expected-note {{required for direct or indirect protocol 'PBXSelectionTarget'}}
   XCExtendedTabView *_perspectivesTabView;
 }
-- (PBXModule *) moduleForTab:(NSTabViewItem *)item;
+- (PBXModule *) moduleForTab:(NSTabViewItem *)item; // expected-note {{method definition for 'moduleForTab:' not found}}
 @end  
-@implementation XCPerspectiveModule // expected-warning {{method 'performAction:withSelection:' in protocol 'PBXSelectionTarget' not implemented}}}
+@implementation XCPerspectiveModule // expected-warning {{incomplete implementation}} expected-warning {{method 'performAction:withSelection:' in protocol not implemented}}}
 + (void) openForProjectDocument:(PBXProjectDocument *)projectDocument {
 }
 - (PBXModule *) type:(Class)type inPerspective:(id)perspectiveIdentifer  matchingFunction:(BOOL (void *, void *))comparator usingData:(void *)data {

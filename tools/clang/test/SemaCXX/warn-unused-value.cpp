@@ -32,7 +32,7 @@ void b(Foo f1, Foo f2) {
 }
 
 namespace test2 {
-  extern "C++" {
+  extern "C" {
     namespace std {
       template<typename T> struct basic_string {
         struct X {};
@@ -49,23 +49,3 @@ namespace test2 {
   }
 }
 
-namespace test3 {
-struct Used {
-  Used();
-  Used(int);
-  Used(int, int);
-};
-struct __attribute__((warn_unused)) Unused {
-  Unused();
-  Unused(int);
-  Unused(int, int);
-};
-void f() {
-  Used();
-  Used(1);
-  Used(1, 1);
-  Unused();     // expected-warning {{expression result unused}}
-  Unused(1);    // expected-warning {{expression result unused}}
-  Unused(1, 1); // expected-warning {{expression result unused}}
-}
-}

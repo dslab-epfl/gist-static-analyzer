@@ -8,15 +8,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/MachineInstrBundle.h"
-#include "llvm/ADT/SmallSet.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/Passes.h"
+#include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetRegisterInfo.h"
-#include "llvm/Target/TargetSubtargetInfo.h"
+#include "llvm/ADT/SmallSet.h"
+#include "llvm/ADT/SmallVector.h"
 using namespace llvm;
 
 namespace {
@@ -27,7 +26,7 @@ namespace {
       initializeUnpackMachineBundlesPass(*PassRegistry::getPassRegistry());
     }
 
-    bool runOnMachineFunction(MachineFunction &MF) override;
+    virtual bool runOnMachineFunction(MachineFunction &MF);
   };
 } // end anonymous namespace
 
@@ -48,8 +47,8 @@ bool UnpackMachineBundles::runOnMachineFunction(MachineFunction &MF) {
       // Remove BUNDLE instruction and the InsideBundle flags from bundled
       // instructions.
       if (MI->isBundle()) {
-        while (++MII != MIE && MII->isBundledWithPred()) {
-          MII->unbundleFromPred();
+        while (++MII != MIE && MII->isInsideBundle()) {
+          MII->setIsInsideBundle(false);
           for (unsigned i = 0, e = MII->getNumOperands(); i != e; ++i) {
             MachineOperand &MO = MII->getOperand(i);
             if (MO.isReg() && MO.isInternalRead())
@@ -78,7 +77,7 @@ namespace {
       initializeFinalizeMachineBundlesPass(*PassRegistry::getPassRegistry());
     }
 
-    bool runOnMachineFunction(MachineFunction &MF) override;
+    virtual bool runOnMachineFunction(MachineFunction &MF);
   };
 } // end anonymous namespace
 
@@ -102,15 +101,13 @@ void llvm::finalizeBundle(MachineBasicBlock &MBB,
                           MachineBasicBlock::instr_iterator FirstMI,
                           MachineBasicBlock::instr_iterator LastMI) {
   assert(FirstMI != LastMI && "Empty bundle?");
-  MIBundleBuilder Bundle(MBB, FirstMI, LastMI);
 
-  MachineFunction &MF = *MBB.getParent();
-  const TargetInstrInfo *TII = MF.getSubtarget().getInstrInfo();
-  const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
+  const TargetMachine &TM = MBB.getParent()->getTarget();
+  const TargetInstrInfo *TII = TM.getInstrInfo();
+  const TargetRegisterInfo *TRI = TM.getRegisterInfo();
 
-  MachineInstrBuilder MIB =
-      BuildMI(MF, FirstMI->getDebugLoc(), TII->get(TargetOpcode::BUNDLE));
-  Bundle.prepend(MIB);
+  MachineInstrBuilder MIB = BuildMI(MBB, FirstMI, FirstMI->getDebugLoc(),
+                                    TII->get(TargetOpcode::BUNDLE));
 
   SmallVector<unsigned, 32> LocalDefs;
   SmallSet<unsigned, 32> LocalDefSet;
@@ -180,6 +177,7 @@ void llvm::finalizeBundle(MachineBasicBlock &MBB,
       }
     }
 
+    FirstMI->setIsInsideBundle();
     Defs.clear();
   }
 
@@ -212,7 +210,7 @@ MachineBasicBlock::instr_iterator
 llvm::finalizeBundle(MachineBasicBlock &MBB,
                      MachineBasicBlock::instr_iterator FirstMI) {
   MachineBasicBlock::instr_iterator E = MBB.instr_end();
-  MachineBasicBlock::instr_iterator LastMI = std::next(FirstMI);
+  MachineBasicBlock::instr_iterator LastMI = llvm::next(FirstMI);
   while (LastMI != E && LastMI->isInsideBundle())
     ++LastMI;
   finalizeBundle(MBB, FirstMI, LastMI);
@@ -225,18 +223,19 @@ bool llvm::finalizeBundles(MachineFunction &MF) {
   bool Changed = false;
   for (MachineFunction::iterator I = MF.begin(), E = MF.end(); I != E; ++I) {
     MachineBasicBlock &MBB = *I;
+
     MachineBasicBlock::instr_iterator MII = MBB.instr_begin();
-    MachineBasicBlock::instr_iterator MIE = MBB.instr_end();
-    if (MII == MIE)
-      continue;
     assert(!MII->isInsideBundle() &&
            "First instr cannot be inside bundle before finalization!");
 
+    MachineBasicBlock::instr_iterator MIE = MBB.instr_end();
+    if (MII == MIE)
+      continue;
     for (++MII; MII != MIE; ) {
       if (!MII->isInsideBundle())
         ++MII;
       else {
-        MII = finalizeBundle(MBB, std::prev(MII));
+        MII = finalizeBundle(MBB, llvm::prior(MII));
         Changed = true;
       }
     }
@@ -282,7 +281,7 @@ MachineOperandIteratorBase::PhysRegInfo
 MachineOperandIteratorBase::analyzePhysReg(unsigned Reg,
                                            const TargetRegisterInfo *TRI) {
   bool AllDefsDead = true;
-  PhysRegInfo PRI = {false, false, false, false, false, false};
+  PhysRegInfo PRI = {false, false, false, false, false, false, false};
 
   assert(TargetRegisterInfo::isPhysicalRegister(Reg) &&
          "analyzePhysReg not given a physical register!");
@@ -306,9 +305,7 @@ MachineOperandIteratorBase::analyzePhysReg(unsigned Reg,
       // Reg or a super-reg is read, and perhaps killed also.
       PRI.Reads = true;
       PRI.Kills = MO.isKill();
-    }
-
-    if (IsRegOrOverlapping && MO.readsReg()) {
+    } if (IsRegOrOverlapping && MO.readsReg()) {
       PRI.ReadsOverlap = true;// Reg or an overlapping register is read.
     }
 

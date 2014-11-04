@@ -6,8 +6,8 @@
 define <4 x i32> @shl4(<4 x i32> %A) nounwind {
 entry:
 ; CHECK:      shl4
-; CHECK:      pslld
 ; CHECK:      padd
+; CHECK:      pslld
 ; CHECK:      ret
   %B = shl <4 x i32> %A,  < i32 2, i32 2, i32 2, i32 2>
   %C = shl <4 x i32> %A,  < i32 1, i32 1, i32 1, i32 1>
@@ -67,8 +67,8 @@ entry:
 define <8 x i16> @shl8(<8 x i16> %A) nounwind {
 entry:
 ; CHECK:      shl8
-; CHECK:      psllw
 ; CHECK:      padd
+; CHECK:      psllw
 ; CHECK:      ret
   %B = shl <8 x i16> %A,  < i16 2, i16 2, i16 2, i16 2, i16 2, i16 2, i16 2, i16 2>
   %C = shl <8 x i16> %A,  < i16 1, i16 1, i16 1, i16 1, i16 1, i16 1, i16 1, i16 1>
@@ -100,7 +100,7 @@ entry:
   ret <8 x i16> %K
 }
 
-; non-splat test
+; non splat test
 
 
 define <8 x i16> @sll8_nosplat(<8 x i16> %A) nounwind {
@@ -156,7 +156,7 @@ entry:
 define <16 x i8> @shl9(<16 x i8> %A) nounwind {
   %B = shl <16 x i8> %A, <i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3>
   ret <16 x i8> %B
-; CHECK-LABEL: shl9:
+; CHECK: shl9:
 ; CHECK: psllw $3
 ; CHECK: pand
 ; CHECK: ret
@@ -165,7 +165,7 @@ define <16 x i8> @shl9(<16 x i8> %A) nounwind {
 define <16 x i8> @shr9(<16 x i8> %A) nounwind {
   %B = lshr <16 x i8> %A, <i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3>
   ret <16 x i8> %B
-; CHECK-LABEL: shr9:
+; CHECK: shr9:
 ; CHECK: psrlw $3
 ; CHECK: pand
 ; CHECK: ret
@@ -174,7 +174,7 @@ define <16 x i8> @shr9(<16 x i8> %A) nounwind {
 define <16 x i8> @sra_v16i8_7(<16 x i8> %A) nounwind {
   %B = ashr <16 x i8> %A, <i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7, i8 7>
   ret <16 x i8> %B
-; CHECK-LABEL: sra_v16i8_7:
+; CHECK: sra_v16i8_7:
 ; CHECK: pxor
 ; CHECK: pcmpgtb
 ; CHECK: ret
@@ -183,7 +183,7 @@ define <16 x i8> @sra_v16i8_7(<16 x i8> %A) nounwind {
 define <16 x i8> @sra_v16i8(<16 x i8> %A) nounwind {
   %B = ashr <16 x i8> %A, <i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3, i8 3>
   ret <16 x i8> %B
-; CHECK-LABEL: sra_v16i8:
+; CHECK: sra_v16i8:
 ; CHECK: psrlw $3
 ; CHECK: pand
 ; CHECK: pxor

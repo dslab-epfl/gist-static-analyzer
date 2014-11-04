@@ -1,6 +1,6 @@
 ; RUN: opt < %s -instcombine -S | FileCheck %s
 
-; CHECK-LABEL: @t1(
+; CHECK: @t1
 define zeroext i8 @t1(float %x, float %y) nounwind {
        %a = fcmp ueq float %x, %y             ; <i1> [#uses=1]
        %b = fcmp uno float %x, %y               ; <i1> [#uses=1]
@@ -11,7 +11,7 @@ define zeroext i8 @t1(float %x, float %y) nounwind {
        ret i8 %retval
 }
 
-; CHECK-LABEL: @t2(
+; CHECK: @t2
 define zeroext i8 @t2(float %x, float %y) nounwind {
        %a = fcmp olt float %x, %y             ; <i1> [#uses=1]
        %b = fcmp oeq float %x, %y               ; <i1> [#uses=1]
@@ -23,7 +23,7 @@ define zeroext i8 @t2(float %x, float %y) nounwind {
        ret i8 %retval
 }
 
-; CHECK-LABEL: @t3(
+; CHECK: @t3
 define zeroext i8 @t3(float %x, float %y) nounwind {
        %a = fcmp ult float %x, %y             ; <i1> [#uses=1]
        %b = fcmp uge float %x, %y               ; <i1> [#uses=1]
@@ -33,7 +33,7 @@ define zeroext i8 @t3(float %x, float %y) nounwind {
        ret i8 %retval
 }
 
-; CHECK-LABEL: @t4(
+; CHECK: @t4
 define zeroext i8 @t4(float %x, float %y) nounwind {
        %a = fcmp ult float %x, %y             ; <i1> [#uses=1]
        %b = fcmp ugt float %x, %y               ; <i1> [#uses=1]
@@ -45,7 +45,7 @@ define zeroext i8 @t4(float %x, float %y) nounwind {
        ret i8 %retval
 }
 
-; CHECK-LABEL: @t5(
+; CHECK: @t5
 define zeroext i8 @t5(float %x, float %y) nounwind {
        %a = fcmp olt float %x, %y             ; <i1> [#uses=1]
        %b = fcmp oge float %x, %y               ; <i1> [#uses=1]

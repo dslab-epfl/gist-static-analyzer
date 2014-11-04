@@ -33,12 +33,10 @@
 #ifndef LLVM_CODEGEN_GCMETADATA_H
 #define LLVM_CODEGEN_GCMETADATA_H
 
+#include "llvm/Pass.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/IR/DebugLoc.h"
-#include "llvm/Pass.h"
-
-#include <memory>
+#include "llvm/Support/DebugLoc.h"
 
 namespace llvm {
   class AsmPrinter;
@@ -165,7 +163,7 @@ namespace llvm {
   ///
   class GCModuleInfo : public ImmutablePass {
     typedef StringMap<GCStrategy*> strategy_map_type;
-    typedef std::vector<std::unique_ptr<GCStrategy>> list_type;
+    typedef std::vector<GCStrategy*> list_type;
     typedef DenseMap<const Function*,GCFunctionInfo*> finfo_map_type;
 
     strategy_map_type StrategyMap;
@@ -180,9 +178,9 @@ namespace llvm {
     static char ID;
 
     GCModuleInfo();
+    ~GCModuleInfo();
 
-    /// clear - Resets the pass. Any pass, which uses GCModuleInfo, should
-    /// call it in doFinalization().
+    /// clear - Resets the pass. The metadata deleter pass calls this.
     ///
     void clear();
 

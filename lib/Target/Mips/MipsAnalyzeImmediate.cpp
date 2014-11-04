@@ -40,7 +40,7 @@ void MipsAnalyzeImmediate::GetInstSeqLsORi(uint64_t Imm, unsigned RemSize,
 
 void MipsAnalyzeImmediate::GetInstSeqLsSLL(uint64_t Imm, unsigned RemSize,
                                            InstSeqLs &SeqLs) {
-  unsigned Shamt = countTrailingZeros(Imm);
+  unsigned Shamt = CountTrailingZeros_64(Imm);
   GetInstSeqLs(Imm >> Shamt, RemSize - Shamt, SeqLs);
   AddInstr(SeqLs, Inst(SLL, Shamt));
 }
@@ -72,8 +72,7 @@ void MipsAnalyzeImmediate::GetInstSeqLs(uint64_t Imm, unsigned RemSize,
   if (Imm & 0x8000) {
     InstSeqLs SeqLsORi;
     GetInstSeqLsORi(Imm, RemSize, SeqLsORi);
-    SeqLs.append(std::make_move_iterator(SeqLsORi.begin()),
-                 std::make_move_iterator(SeqLsORi.end()));
+    SeqLs.insert(SeqLs.end(), SeqLsORi.begin(), SeqLsORi.end());
   }
 }
 

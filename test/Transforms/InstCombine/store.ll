@@ -5,7 +5,7 @@ define void @test1(i32* %P) {
         store i32 123, i32* undef
         store i32 124, i32* null
         ret void
-; CHECK-LABEL: @test1(
+; CHECK: @test1(
 ; CHECK-NEXT: store i32 123, i32* undef
 ; CHECK-NEXT: store i32 undef, i32* null
 ; CHECK-NEXT: ret void
@@ -16,7 +16,7 @@ define void @test2(i32* %P) {
         %Y = add i32 %X, 0              ; <i32> [#uses=1]
         store i32 %Y, i32* %P
         ret void
-; CHECK-LABEL: @test2(
+; CHECK: @test2
 ; CHECK-NEXT: ret void
 }
 
@@ -38,7 +38,7 @@ Cond2:
 Cont:
 	%V = load i32* %A
 	ret i32 %V
-; CHECK-LABEL: @test3(
+; CHECK: @test3
 ; CHECK-NOT: alloca
 ; CHECK: Cont:
 ; CHECK-NEXT:  %storemerge = phi i32 [ 47, %Cond2 ], [ -987654321, %Cond ]
@@ -58,7 +58,7 @@ Cond:
 Cont:
 	%V = load i32* %A
 	ret i32 %V
-; CHECK-LABEL: @test4(
+; CHECK: @test4
 ; CHECK-NOT: alloca
 ; CHECK: Cont:
 ; CHECK-NEXT:  %storemerge = phi i32 [ -987654321, %Cond ], [ 47, %0 ]
@@ -76,45 +76,10 @@ Cond:
 
 Cont:
 	ret void
-; CHECK-LABEL: @test5(
+; CHECK: @test5
 ; CHECK: Cont:
 ; CHECK-NEXT:  %storemerge = phi i32
 ; CHECK-NEXT:  store i32 %storemerge, i32* %P, align 1
 ; CHECK-NEXT:  ret void
 }
 
-
-; PR14753 - merging two stores should preserve the TBAA tag.
-define void @test6(i32 %n, float* %a, i32* %gi) nounwind uwtable ssp {
-entry:
-  store i32 42, i32* %gi, align 4, !tbaa !0
-  br label %for.cond
-
-for.cond:                                         ; preds = %for.body, %entry
-  %storemerge = phi i32 [ 0, %entry ], [ %inc, %for.body ]
-  %0 = load i32* %gi, align 4, !tbaa !0
-  %cmp = icmp slt i32 %0, %n
-  br i1 %cmp, label %for.body, label %for.end
-
-for.body:                                         ; preds = %for.cond
-  %idxprom = sext i32 %0 to i64
-  %arrayidx = getelementptr inbounds float* %a, i64 %idxprom
-  store float 0.000000e+00, float* %arrayidx, align 4, !tbaa !3
-  %1 = load i32* %gi, align 4, !tbaa !0
-  %inc = add nsw i32 %1, 1
-  store i32 %inc, i32* %gi, align 4, !tbaa !0
-  br label %for.cond
-
-for.end:                                          ; preds = %for.cond
-  ret void
-; CHECK-LABEL: @test6(
-; CHECK: for.cond:
-; CHECK-NEXT: phi i32 [ 42
-; CHECK-NEXT: store i32 %storemerge, i32* %gi, align 4, !tbaa !0
-}
-
-!0 = metadata !{metadata !4, metadata !4, i64 0}
-!1 = metadata !{metadata !"omnipotent char", metadata !2}
-!2 = metadata !{metadata !"Simple C/C++ TBAA"}
-!3 = metadata !{metadata !"float", metadata !1}
-!4 = metadata !{metadata !"int", metadata !1}

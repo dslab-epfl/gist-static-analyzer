@@ -14,10 +14,10 @@ namespace std {
 @implementation Test
 
 struct EvilStruct {
-} // expected-error {{expected ';' after struct}}
+} // note the missing semicolon
 
-  typedef std::pair<int, int> IntegerPair;
-
-template<typename...Ts> void f(Ts); // expected-error {{unexpanded}} expected-warning {{extension}}
+  typedef std::pair<int, int> IntegerPair; // expected-error{{typedef declarator cannot be qualified}} \
+// expected-error{{typedef name must be an identifier}} \
+// expected-error{{expected ';' after top level declarator}}
 
 @end

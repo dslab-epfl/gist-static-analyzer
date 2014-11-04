@@ -1,3 +1,5 @@
+.. _makefile_guide:
+
 ===================
 LLVM Makefile Guide
 ===================
@@ -47,7 +49,9 @@ quickly by utilizing the built-in features that are used to compile LLVM. LLVM
 compiles itself using the same features of the makefile system as used for
 projects.
 
-For further details, consult the `Projects <Projects.html>`_ page.
+For complete details on setting up your projects configuration, simply mimic the
+``llvm/projects/sample`` project. Or for further details, consult the
+`Projects <Projects.html>`_ page.
 
 Variable Values
 ---------------
@@ -56,7 +60,7 @@ To use the makefile system, you simply create a file named ``Makefile`` in your
 directory and declare values for certain variables.  The variables and values
 that you select determine what the makefile system will do. These variables
 enable rules and processing in the makefile system that automatically Do The
-Right Thing (C).
+Right Thing&trade;.
 
 Including Makefiles
 -------------------
@@ -151,7 +155,7 @@ libraries are the default. For example:
 
   LIBRARYNAME = mylib
   SHARED_LIBRARY = 1
-  BUILD_ARCHIVE = 1
+  ARCHIVE_LIBRARY = 1
 
 says to build a library named ``mylib`` with both a shared library
 (``mylib.so``) and an archive library (``mylib.a``) version. The contents of all
@@ -166,9 +170,29 @@ openable with the ``dlopen`` function and searchable with the ``dlsym`` function
 (or your operating system's equivalents). While this isn't strictly necessary on
 Linux and a few other platforms, it is required on systems like HP-UX and
 Darwin. You should use ``LOADABLE_MODULE`` for any shared library that you
-intend to be loaded into an tool via the ``-load`` option.  :ref:`Pass
-documentation <writing-an-llvm-pass-makefile>` has an example of why you might
-want to do this.
+intend to be loaded into an tool via the ``-load`` option. See the
+`WritingAnLLVMPass.html <WritingAnLLVMPass.html#makefile>`_ document for an
+example of why you might want to do this.
+
+Bitcode Modules
+^^^^^^^^^^^^^^^
+
+In some situations, it is desirable to build a single bitcode module from a
+variety of sources, instead of an archive, shared library, or bitcode
+library. Bitcode modules can be specified in addition to any of the other types
+of libraries by defining the `MODULE_NAME`_ variable. For example:
+
+.. code-block:: makefile
+
+  LIBRARYNAME = mylib
+  BYTECODE_LIBRARY = 1
+  MODULE_NAME = mymod
+
+will build a module named ``mymod.bc`` from the sources in the directory. This
+module will be an aggregation of all the bitcode modules derived from the
+sources. The example will also build a bitcode archive containing a bitcode
+module for each compiled source file. The difference is subtle, but important
+depending on how the module or library is to be linked.
 
 Loadable Modules
 ^^^^^^^^^^^^^^^^
@@ -217,7 +241,7 @@ and the names of the libraries you wish to link with the tool. For example:
 says that we are to build a tool name ``mytool`` and that it requires three
 libraries: ``mylib``, ``LLVMSupport.a`` and ``LLVMSystem.a``.
 
-Note that two different variables are used to indicate which libraries are
+Note that two different variables are use to indicate which libraries are
 linked: ``USEDLIBS`` and ``LLVMLIBS``. This distinction is necessary to support
 projects. ``LLVMLIBS`` refers to the LLVM libraries found in the LLVM object
 directory. ``USEDLIBS`` refers to the libraries built by your project. In the
@@ -234,7 +258,7 @@ the ``-l`` option). In this case, only the symbols that are unresolved *at
 that point* will be resolved from the library, if they exist. Other
 (unreferenced) symbols will not be included when the ``.a`` syntax is used. Note
 that in order to use the ``.a`` suffix, the library in question must have been
-built with the ``BUILD_ARCHIVE`` option set.
+built with the ``ARCHIVE_LIBRARY`` option set.
 
 JIT Tools
 ^^^^^^^^^
@@ -315,7 +339,7 @@ the invocation of ``make check-local`` in the ``test`` directory. The intended
 usage for this is to assist in running specific suites of tests. If
 ``TESTSUITE`` is not set, the implementation of ``check-local`` should run all
 normal tests.  It is up to the project to define what different values for
-``TESTSUTE`` will do. See the :doc:`Testing Guide <TestingGuide>` for further
+``TESTSUTE`` will do. See the `Testing Guide <TestingGuide.html>`_ for further
 details.
 
 ``check-local``
@@ -324,9 +348,9 @@ details.
 This target should be implemented by the ``Makefile`` in the project's ``test``
 directory. It is invoked by the ``check`` target elsewhere.  Each project is
 free to define the actions of ``check-local`` as appropriate for that
-project. The LLVM project itself uses the :doc:`Lit <CommandGuide/lit>` testing
-tool to run a suite of feature and regression tests. Other projects may choose
-to use :program:`lit` or any other testing mechanism.
+project. The LLVM project itself uses dejagnu to run a suite of feature and
+regresson tests. Other projects may choose to use dejagnu or any other testing
+mechanism.
 
 ``clean``
 ---------
@@ -334,7 +358,7 @@ to use :program:`lit` or any other testing mechanism.
 This target cleans the build directory, recursively removing all things that the
 Makefile builds. The cleaning rules have been made guarded so they shouldn't go
 awry (via ``rm -f $(UNSET_VARIABLE)/*`` which will attempt to erase the entire
-directory structure).
+directory structure.
 
 ``clean-local``
 ---------------
@@ -464,6 +488,9 @@ system that tell it what to do for the current directory.
     files. These sources will be built before any other target processing to
     ensure they are present.
 
+``BYTECODE_LIBRARY``
+    If set to any value, causes a bitcode library (.bc) to be built.
+
 ``CONFIG_FILES``
     Specifies a set of configuration files to be installed.
 
@@ -565,6 +592,13 @@ system that tell it what to do for the current directory.
     setting this variable without also setting ``SHARED_LIBRARY`` will have no
     effect.
 
+.. _MODULE_NAME:
+
+``MODULE_NAME``
+    Specifies the name of a bitcode module to be created. A bitcode module can
+    be specified in conjunction with other kinds of library builds or by
+    itself. It constructs from the sources a single linked bitcode file.
+
 ``NO_INSTALL``
     Specifies that the build products of the directory should not be installed
     but should be built even if the ``install`` target is given.  This is handy
@@ -572,8 +606,8 @@ system that tell it what to do for the current directory.
     the build process, such as code generators (e.g.  ``tblgen``).
 
 ``OPTIONAL_DIRS``
-    Specify a set of directories that may be built, if they exist, but it is
-    not an error for them not to exist.
+    Specify a set of directories that may be built, if they exist, but its not
+    an error for them not to exist.
 
 ``PARALLEL_DIRS``
     Specify a set of directories to build recursively and in parallel if the
@@ -667,9 +701,6 @@ The override variables are given below:
 ``CFLAGS``
     Additional flags to be passed to the 'C' compiler.
 
-``CPPFLAGS``
-    Additional flags passed to the C/C++ preprocessor.
-
 ``CXX``
     Specifies the path to the C++ compiler.
 
@@ -706,6 +737,12 @@ The override variables are given below:
 
 ``LLVMAS`` (defaulted)
     Specifies the path to the ``llvm-as`` tool.
+
+``LLVMCC``
+    Specifies the path to the LLVM capable compiler.
+
+``LLVMCXX``
+    Specifies the path to the LLVM C++ capable compiler.
 
 ``LLVMGCC`` (defaulted)
     Specifies the path to the LLVM version of the GCC 'C' Compiler.
@@ -850,6 +887,8 @@ internal. You should not use these variables under any circumstances.
     Archive
     AR.Flags
     BaseNameSources
+    BCCompile.C
+    BCCompile.CXX
     BCLinkLib
     C.Flags
     Compile.C
@@ -896,6 +935,7 @@ internal. You should not use these variables under any circumstances.
     LLVMUsedLibs
     LocalTargets
     Module
+    ObjectsBC
     ObjectsLO
     ObjectsO
     ObjMakefiles

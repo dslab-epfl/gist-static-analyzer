@@ -5,34 +5,42 @@
 ; rdar://7354376
 ; rdar://8887598
 
+; The generated code is no where near ideal. It's not recognizing the two
+; constantpool entries being loaded can be merged into one.
+
 @GV = external global i32                         ; <i32*> [#uses=2]
 
 define void @t(i32* nocapture %vals, i32 %c) nounwind {
 entry:
-; ARM-LABEL: t:
+; ARM: t:
 ; ARM: ldr [[REGISTER_1:r[0-9]+]], LCPI0_0
+; Unfortunately currently ARM codegen doesn't cse the ldr from constantpool.
+; The issue is it can be read by an "add pc" or a "ldr [pc]" so it's messy
+; to add the pseudo instructions to make sure they are CSE'ed at the same
+; time as the "ldr cp".
+; ARM: ldr r{{[0-9]+}}, LCPI0_1
 ; ARM: LPC0_0:
 ; ARM: ldr r{{[0-9]+}}, [pc, [[REGISTER_1]]]
 ; ARM: ldr r{{[0-9]+}}, [r{{[0-9]+}}]
 
-; MOVT-LABEL: t:
+; MOVT: t:
 ; MOVT: movw [[REGISTER_2:r[0-9]+]], :lower16:(L_GV$non_lazy_ptr-(LPC0_0+8))
 ; MOVT: movt [[REGISTER_2]], :upper16:(L_GV$non_lazy_ptr-(LPC0_0+8))
 ; MOVT: LPC0_0:
 ; MOVT: ldr r{{[0-9]+}}, [pc, [[REGISTER_2]]]
 ; MOVT: ldr r{{[0-9]+}}, [r{{[0-9]+}}]
 
-; THUMB-LABEL: t:
+; THUMB: t:
   %0 = icmp eq i32 %c, 0                          ; <i1> [#uses=1]
   br i1 %0, label %return, label %bb.nph
 
 bb.nph:                                           ; preds = %entry
 ; ARM: LCPI0_0:
-; ARM-NOT: LCPI0_1:
+; ARM: LCPI0_1:
 ; ARM: .section
 
 ; THUMB: BB#1
-; THUMB: ldr r2, LCPI0_0
+; THUMB: ldr.n r2, LCPI0_0
 ; THUMB: add r2, pc
 ; THUMB: ldr r{{[0-9]+}}, [r2]
 ; THUMB: LBB0_2

@@ -1,5 +1,4 @@
 ; RUN: llvm-as < %s | llvm-dis | FileCheck %s
-; RUN: verify-uselistorder %s
 
 !0 = metadata !{metadata !"zero"}
 !1 = metadata !{metadata !"one"}

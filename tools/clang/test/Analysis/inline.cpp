@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -analyze -analyzer-checker=core,unix.Malloc,debug.ExprInspection -analyzer-config ipa=inlining -analyzer-config c++-allocator-inlining=true -verify %s
+// RUN: %clang_cc1 -analyze -analyzer-checker=core,unix.Malloc,debug.ExprInspection -analyzer-ipa=inlining -verify %s
 
 void clang_analyzer_eval(bool);
 void clang_analyzer_checkInlined(bool);
@@ -9,7 +9,6 @@ extern "C" void *malloc(size_t);
 // This is the standard placement new.
 inline void* operator new(size_t, void* __p) throw()
 {
-  clang_analyzer_checkInlined(true);// expected-warning{{TRUE}}
   return __p;
 }
 
@@ -193,7 +192,7 @@ namespace Invalidation {
     virtual void touchV2(int &x) const;
 
     int test() const {
-      // We were accidentally not invalidating under inlining
+      // We were accidentally not invalidating under -analyzer-ipa=inlining
       // at one point for virtual methods with visible definitions.
       int a, b, c, d;
       touch(a);
@@ -217,7 +216,7 @@ namespace DefaultArgs {
 
   class Secret {
   public:
-    static const int value = 40 + 2;
+    static const int value = 42;
     int get(int i = value) {
       return i;
     }
@@ -226,79 +225,16 @@ namespace DefaultArgs {
   void testMethod() {
     Secret obj;
     clang_analyzer_eval(obj.get(1) == 1); // expected-warning{{TRUE}}
-    clang_analyzer_eval(obj.get() == 42); // expected-warning{{TRUE}}
+
+    // FIXME: Should be 'TRUE'. See PR13673 or <rdar://problem/11720796>.
+    clang_analyzer_eval(obj.get() == 42); // expected-warning{{UNKNOWN}}
+
+    // FIXME: Even if we constrain the variable, we still have a problem.
+    // See PR13385 or <rdar://problem/12156507>.
+    if (Secret::value != 42)
+      return;
     clang_analyzer_eval(Secret::value == 42); // expected-warning{{TRUE}}
-  }
-
-  enum ABC {
-    A = 0,
-    B = 1,
-    C = 2
-  };
-
-  int enumUser(ABC input = B) {
-    return static_cast<int>(input);
-  }
-
-  void testEnum() {
-    clang_analyzer_eval(enumUser(C) == 2); // expected-warning{{TRUE}}
-    clang_analyzer_eval(enumUser() == 1); // expected-warning{{TRUE}}
-  }
-
-
-  int exprUser(int input = 2 * 4) {
-    return input;
-  }
-
-  int complicatedExprUser(int input = 2 * Secret::value) {
-    return input;
-  }
-
-  void testExprs() {
-    clang_analyzer_eval(exprUser(1) == 1); // expected-warning{{TRUE}}
-    clang_analyzer_eval(exprUser() == 8); // expected-warning{{TRUE}}
-
-    clang_analyzer_eval(complicatedExprUser(1) == 1); // expected-warning{{TRUE}}
-    clang_analyzer_eval(complicatedExprUser() == 84); // expected-warning{{TRUE}}
-  }
-
-  int defaultReference(const int &input = 42) {
-    return -input;
-  }
-  int defaultReferenceZero(const int &input = 0) {
-    return -input;
-  }
-
-  void testReference() {
-    clang_analyzer_eval(defaultReference(1) == -1); // expected-warning{{TRUE}}
-    clang_analyzer_eval(defaultReference() == -42); // expected-warning{{TRUE}}
-
-    clang_analyzer_eval(defaultReferenceZero(1) == -1); // expected-warning{{TRUE}}
-    clang_analyzer_eval(defaultReferenceZero() == 0); // expected-warning{{TRUE}}
-}
-
-  double defaultFloatReference(const double &i = 42) {
-    return -i;
-  }
-  double defaultFloatReferenceZero(const double &i = 0) {
-    return -i;
-  }
-
-  void testFloatReference() {
-    clang_analyzer_eval(defaultFloatReference(1) == -1); // expected-warning{{UNKNOWN}}
-    clang_analyzer_eval(defaultFloatReference() == -42); // expected-warning{{UNKNOWN}}
-
-    clang_analyzer_eval(defaultFloatReferenceZero(1) == -1); // expected-warning{{UNKNOWN}}
-    clang_analyzer_eval(defaultFloatReferenceZero() == 0); // expected-warning{{UNKNOWN}}
-  }
-
-  char defaultString(const char *s = "abc") {
-    return s[1];
-  }
-
-  void testString() {
-    clang_analyzer_eval(defaultString("xyz") == 'y'); // expected-warning{{TRUE}}
-    clang_analyzer_eval(defaultString() == 'b'); // expected-warning{{TRUE}}
+    clang_analyzer_eval(obj.get() == 42); // expected-warning{{UNKNOWN}}
   }
 }
 
@@ -319,7 +255,6 @@ namespace OperatorNew {
     IntWrapper *obj = new IntWrapper(42);
     // should be TRUE
     clang_analyzer_eval(obj->value == 42); // expected-warning{{UNKNOWN}}
-    delete obj;
   }
 
   void testPlacement() {
@@ -382,7 +317,9 @@ namespace VirtualWithSisterCasts {
 
   void testCastViaNew(B *b) {
     Grandchild *g = new (b) Grandchild();
-    clang_analyzer_eval(g->foo() == 42); // expected-warning{{TRUE}}
+    // FIXME: We actually now have perfect type info because of 'new'.
+    // This should be TRUE.
+    clang_analyzer_eval(g->foo() == 42); // expected-warning{{UNKNOWN}}
 
     g->x = 42;
     clang_analyzer_eval(g->x == 42); // expected-warning{{TRUE}}
@@ -428,12 +365,5 @@ namespace rdar12409977  {
     // go to layer a CXXBaseObjectRegion on it, the base isn't a direct base of
     // the object region and we get an assertion failure.
     clang_analyzer_eval(obj.getThis()->x == 42); // expected-warning{{TRUE}}
-  }
-}
-
-namespace bug16307 {
-  void one_argument(int a) { }
-  void call_with_less() {
-    reinterpret_cast<void (*)()>(one_argument)(); // expected-warning{{Function taking 1 argument}}
   }
 }

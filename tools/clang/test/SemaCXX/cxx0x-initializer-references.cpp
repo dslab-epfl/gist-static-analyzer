@@ -36,10 +36,10 @@ namespace reference {
   };
 
   void call() {
-    one f(const int&);
+    void f(const int&);
     f({1});
 
-    one g(int&); // expected-note {{passing argument}}
+    void g(int&); // expected-note {{passing argument}}
     g({1}); // expected-error {{cannot bind to an initializer list temporary}}
     int i = 0;
     g({i});
@@ -89,38 +89,4 @@ namespace PR12182 {
 namespace PR12660 {
   const int &i { 1 };
   struct S { S(int); } const &s { 2 };
-}
-
-namespace b7891773 {
-  typedef void (*ptr)();
-  template <class T> void f();
-  int g(const ptr &);
-  int k = g({ f<int> });
-}
-
-namespace inner_init {
-  struct A { int n; };
-  struct B { A &&r; };
-  B b1 { 0 }; // expected-error {{reference to type 'inner_init::A' could not bind to an rvalue of type 'int'}}
-  B b2 { { 0 } };
-  B b3 { { { 0 } } }; // expected-warning {{braces around scalar init}}
-
-  struct C { C(int); };
-  struct D { C &&r; };
-  D d1 { 0 }; // ok, 0 implicitly converts to C
-  D d2 { { 0 } }; // ok, { 0 } calls C(0)
-  D d3 { { { 0 } } }; // ok, { { 0 } } calls C({ 0 })
-  D d4 { { { { 0 } } } }; // expected-warning {{braces around scalar init}}
-
-  struct E { explicit E(int); }; // expected-note 2{{here}}
-  struct F { E &&r; };
-  F f1 { 0 }; // expected-error {{could not bind to an rvalue of type 'int'}}
-  F f2 { { 0 } }; // expected-error {{chosen constructor is explicit}}
-  F f3 { { { 0 } } }; // expected-error {{chosen constructor is explicit}}
-}
-
-namespace PR20844 {
-  struct A {};
-  struct B { operator A&(); } b;
-  A &a{b}; // expected-error {{excess elements}} expected-note {{in initialization of temporary of type 'PR20844::A'}}
 }

@@ -1,20 +1,20 @@
 // Test this without pch.
-// RUN: %clang_cc1 %s -include %s -verify -fsyntax-only -Wuninitialized
+// RUN: %clang_cc1 %s -include %s -verify -fsyntax-only
 
 // Test with pch.
 // RUN: %clang_cc1 %s -emit-pch -o %t
-// RUN: %clang_cc1 %s -include-pch %t -verify -fsyntax-only -Wuninitialized
+// RUN: %clang_cc1 %s -include-pch %t -verify -fsyntax-only
 
 #ifndef HEADER
 #define HEADER
 
 #pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wuninitialized"
+#pragma clang diagnostic ignored "-Wtautological-compare"
 template <typename T>
 struct TS1 {
     void m() {
-      T a;
-      T b = a;
+      T a = 0;
+      T b = a==a;
     }
 };
 #pragma clang diagnostic pop
@@ -25,10 +25,8 @@ struct TS1 {
 template <typename T>
 struct TS2 {
     void m() {
-      T a;
-      T b = a; // expected-warning {{variable 'a' is uninitialized}} \
-                  expected-note@41 {{in instantiation of member function}} \
-                  expected-note@28 {{initialize the variable 'a' to silence}}
+      T a = 0;
+      T b = a==a; // expected-warning {{self-comparison always evaluates to true}} expected-note@39 {{in instantiation of member function}}
     }
 };
 

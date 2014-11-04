@@ -17,7 +17,7 @@ entry:
 ; WIN_X32:    calll __chkstk
 ; WIN_X64:    callq __chkstk
 ; MINGW_X32:  calll __alloca
-; MINGW_X64:  callq ___chkstk_ms
+; MINGW_X64:  callq ___chkstk
 ; LINUX-NOT:  call __chkstk
   %array4096 = alloca [4096 x i8], align 16       ; <[4096 x i8]*> [#uses=0]
   ret i32 0
@@ -36,25 +36,12 @@ entry:
 ; WIN_X64:       ret
 
 ; MINGW_X64:     # BB#0:
-; MINGW_X64-NOT: callq ___chkstk_ms
+; MINGW_X64-NOT: callq _alloca
 ; MINGW_X64:     ret
 
 ; LINUX:         # BB#0:
 ; LINUX-NOT:     call __chkstk
 ; LINUX:         ret
   %array128 = alloca [128 x i8], align 16         ; <[128 x i8]*> [#uses=0]
-  ret i32 0
-}
-
-; Make sure we don't call __chkstk or __alloca on non-Windows even if the
-; caller has the Win64 calling convention.
-define x86_64_win64cc i32 @main4k_win64() nounwind {
-entry:
-; WIN_X32:    calll __chkstk
-; WIN_X64:    callq __chkstk
-; MINGW_X32:  calll __alloca
-; MINGW_X64:  callq ___chkstk_ms
-; LINUX-NOT:  call __chkstk
-  %array4096 = alloca [4096 x i8], align 16       ; <[4096 x i8]*> [#uses=0]
   ret i32 0
 }

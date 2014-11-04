@@ -13,15 +13,30 @@
 #ifndef TSAN_SUPPRESSIONS_H
 #define TSAN_SUPPRESSIONS_H
 
-#include "sanitizer_common/sanitizer_suppressions.h"
 #include "tsan_report.h"
 
 namespace __tsan {
 
 void InitializeSuppressions();
-void PrintMatchedSuppressions();
-uptr IsSuppressed(ReportType typ, const ReportStack *stack, Suppression **sp);
-uptr IsSuppressed(ReportType typ, const ReportLocation *loc, Suppression **sp);
+void FinalizeSuppressions();
+uptr IsSuppressed(ReportType typ, const ReportStack *stack);
+
+// Exposed for testing.
+enum SuppressionType {
+  SuppressionRace,
+  SuppressionMutex,
+  SuppressionThread,
+  SuppressionSignal
+};
+
+struct Suppression {
+  Suppression *next;
+  SuppressionType type;
+  char *templ;
+};
+
+Suppression *SuppressionParse(const char* supp);
+bool SuppressionMatch(char *templ, const char *str);
 
 }  // namespace __tsan
 

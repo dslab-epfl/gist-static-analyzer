@@ -56,9 +56,7 @@
 #include "gtest/internal/gtest-filepath.h"
 #include "gtest/internal/gtest-type-util.h"
 
-#if !GTEST_NO_LLVM_RAW_OSTREAM
 #include "llvm/Support/raw_os_ostream.h"
-#endif
 
 // Due to C++ preprocessor weirdness, we need double indirection to
 // concatenate two tokens when one of them is __LINE__.  Writing
@@ -102,10 +100,8 @@
 // std::ostream with an implicit conversion to raw_ostream& and stream
 // to that.  This causes the compiler to prefer std::ostream overloads
 // but still find raw_ostream& overloads.
-#if !GTEST_NO_LLVM_RAW_OSTREAM
 namespace llvm {
 class convertible_fwd_ostream : public std::ostream {
-  virtual void anchor();
   raw_os_ostream ros_;
 
 public:
@@ -119,12 +115,6 @@ inline void GTestStreamToHelper(std::ostream* os, const T& val) {
   llvm::convertible_fwd_ostream cos(*os);
   cos << val;
 }
-#else
-template <typename T>
-inline void GTestStreamToHelper(std::ostream* os, const T& val) {
-  *os << val;
-}
-#endif
 
 class ProtocolMessage;
 namespace proto2 { class Message; }
@@ -537,7 +527,7 @@ GTEST_API_ TypeId GetTestTypeId();
 // of a Test object.
 class TestFactoryBase {
  public:
-  virtual ~TestFactoryBase();
+  virtual ~TestFactoryBase() {}
 
   // Creates a test instance to run. The instance is both created and destroyed
   // within TestInfoImpl::Run()

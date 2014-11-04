@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_MSP430_MSP430SELECTIONDAGINFO_H
-#define LLVM_LIB_TARGET_MSP430_MSP430SELECTIONDAGINFO_H
+#ifndef MSP430SELECTIONDAGINFO_H
+#define MSP430SELECTIONDAGINFO_H
 
 #include "llvm/Target/TargetSelectionDAGInfo.h"
 
@@ -22,7 +22,7 @@ class MSP430TargetMachine;
 
 class MSP430SelectionDAGInfo : public TargetSelectionDAGInfo {
 public:
-  explicit MSP430SelectionDAGInfo(const DataLayout &DL);
+  explicit MSP430SelectionDAGInfo(const MSP430TargetMachine &TM);
   ~MSP430SelectionDAGInfo();
 };
 

@@ -1,7 +1,5 @@
-; RUN: llc < %s  -mtriple=x86_64-linux -mcpu=corei7 | FileCheck %s
+; RUN: llc < %s  -mtriple=x86_64-linux -mcpu=corei7 | grep pinsr
 ; PR2562
-
-; CHECK: pinsr
 
 external global i16		; <i16*>:0 [#uses=1]
 external global <4 x i16>		; <<4 x i16>*>:1 [#uses=2]

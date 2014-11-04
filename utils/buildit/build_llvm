@@ -77,49 +77,6 @@ rm $SRC_DIR/Makefile || exit 1
 # Now create our own by editing the top-level Makefile, deleting every line marked "Apple-style":
 sed -e '/[Aa]pple-style/d' -e '/include.*GNUmakefile/d' $ORIG_SRC_DIR/Makefile > $SRC_DIR/Makefile || exit 1
 
-SUBVERSION=`echo $RC_ProjectSourceVersion | sed -e 's/.*\.\([0-9]*\).*/\1/'`
-if [ "x$SUBVERSION" != "x$RC_ProjectSourceVersion" ]; then
-    LLVM_SUBMIT_SUBVERSION=`printf "%02d" $SUBVERSION`
-    RC_ProjectSourceVersion=`echo $RC_ProjectSourceVersion | sed -e 's/\..*//'`
-    LLVM_SUBMIT_VERSION=$RC_ProjectSourceVersion
-fi
-if [ "x$LLVM_SUBMIT_SUBVERSION" = "x00" -o "x$LLVM_SUBMIT_SUBVERSION" = "x0" ]; then
-    LLVM_VERSION="$LLVM_SUBMIT_VERSION"
-else
-    LLVM_VERSION="$LLVM_SUBMIT_VERSION-$LLVM_SUBMIT_SUBVERSION"
-fi
-
-SDKROOT_PATH=`xcodebuild -version -sdk $SDKROOT Path`
-
-# Figure out how many make processes to run.
-SYSCTL=`sysctl -n hw.activecpu`
-# sysctl -n hw.* does not work when invoked via B&I chroot /BuildRoot.
-# Builders can default to 2, since even if they are single processor,
-# nothing else is running on the machine.
-if [ -z "$SYSCTL" ]; then
-    SYSCTL=2
-fi
-JOBS_FLAG="-j $SYSCTL"
-
-COMMON_CONFIGURE_OPTS="\
-  --prefix=$DEST_DIR$DEST_ROOT \
-  --enable-assertions=$LLVM_ASSERTIONS \
-  --enable-optimized=$LLVM_OPTIMIZED \
-  --disable-bindings \
-  --disable-zlib \
-  --enable-terminfo=no"
-
-COMMON_MAKEFLAGS="\
-  UNIVERSAL=1 \
-  UNIVERSAL_SDK_PATH=$SDKROOT_PATH \
-  NO_RUNTIME_LIBS=1 \
-  DISABLE_EDIS=1 \
-  REQUIRES_RTTI=1 \
-  DEBUG_SYMBOLS=1 \
-  LLVM_SUBMIT_VERSION=$LLVM_SUBMIT_VERSION \
-  LLVM_SUBMIT_SUBVERSION=$LLVM_SUBMIT_SUBVERSION \
-  VERBOSE=1"
-
 # Build the LLVM tree universal.
 mkdir -p $DIR/obj-llvm || exit 1
 cd $DIR/obj-llvm || exit 1
@@ -132,7 +89,6 @@ if [ "$ARM_HOSTED_BUILD" = yes ]; then
   for prog in ar nm ranlib strip lipo ld as ; do
     P=$DIR/bin/arm-apple-darwin$DARWIN_VERS-${prog}
     T=`xcrun -sdk $SDKROOT -find ${prog}`
-    ln -s $T $DIR/bin/$prog
     echo '#!/bin/sh' > $P || exit 1
     echo 'exec '$T' "$@"' >> $P || exit 1
     chmod a+x $P || exit 1
@@ -141,77 +97,80 @@ if [ "$ARM_HOSTED_BUILD" = yes ]; then
   for prog in clang clang++ ; do
     P=$DIR/bin/arm-apple-darwin$DARWIN_VERS-${prog}
     T=`xcrun -sdk $SDKROOT -find ${prog}`
-    ln -s $T $DIR/bin/$prog
     echo '#!/bin/sh' > $P || exit 1
-    echo 'exec '$T' -arch armv7 -isysroot '${SDKROOT_PATH}' "$@"' >> $P || exit 1
+    echo 'exec '$T' -arch armv7 -isysroot '${SDKROOT}' "$@"' >> $P || exit 1
     chmod a+x $P || exit 1
   done
 
   PATH=$DIR/bin:$PATH
+fi
 
-  unset SDKROOT && \
-  $SRC_DIR/configure $COMMON_CONFIGURE_OPTS \
-    --enable-targets=arm,arm64 \
-    --host=arm-apple-darwin10 \
-    --target=arm-apple-darwin10 \
-    --build=i686-apple-darwin10 \
-    --program-prefix="" \
-    || exit 1
-
-  if [ -n "$IPHONEOS_DEPLOYMENT_TARGET" ]; then
-    COMMON_MAKEFLAGS="$COMMON_MAKEFLAGS \
-      DEPLOYMENT_TARGET=-mios-version-min=$IPHONEOS_DEPLOYMENT_TARGET"
-  fi
-
-  make $JOBS_FLAG $COMMON_MAKEFLAGS SDKROOT= UNIVERSAL_ARCH="$HOSTS" \
-    CXXFLAGS="-DLLVM_VERSION_INFO='\" Apple Build #$LLVM_VERSION\"'"
-  if [ $? != 0 ] ; then
-    echo "error: LLVM 'make' failed!"
-    exit 1
-  fi 
-
+if [ "$ARM_HOSTED_BUILD" = yes ]; then
+  configure_opts="--enable-targets=arm --host=arm-apple-darwin10 \
+                  --target=arm-apple-darwin10 --build=i686-apple-darwin10"
+elif [ "$IOS_SIM_BUILD" = yes ]; then
+  # Use a non-standard "darwin_sim" host triple to trigger a cross-build.
+  configure_opts="--enable-targets=x86 --host=i686-apple-darwin_sim \
+                  --build=i686-apple-darwin10"
 else
-# not $ARM_HOSTED_BUILD
+  configure_opts="--enable-targets=arm,x86"
+fi
 
-  if [ "$IOS_SIM_BUILD" = yes ]; then
-    export CC=`xcrun -sdk iphonesimulator -find clang`
-    export CXX=`xcrun -sdk iphonesimulator -find clang++`
-
-    # Use a non-standard "darwin_sim" host triple to trigger a cross-build.
-    configure_opts="--enable-targets=x86 --host=i686-apple-darwin_sim \
-                    --build=i686-apple-darwin10"
-    if [ -n "$IPHONEOS_DEPLOYMENT_TARGET" ]; then
-      COMMON_MAKEFLAGS="$COMMON_MAKEFLAGS \
-        DEPLOYMENT_TARGET=-mios-simulator-version-min=$IPHONEOS_DEPLOYMENT_TARGET"
-    fi
-  else
-    export CC=`xcrun -sdk macosx -find clang`
-    export CXX=`xcrun -sdk macosx -find clang++`
-
-    configure_opts="--enable-targets=arm,arm64,x86"
-    if [ -n "$MACOSX_DEPLOYMENT_TARGET" ]; then
-      COMMON_MAKEFLAGS="$COMMON_MAKEFLAGS \
-        DEPLOYMENT_TARGET=-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
-    fi
-  fi
-
-  if [ $SDKROOT_PATH ]; then
-    CPPFLAGS="$CPPFLAGS -isysroot $SDKROOT_PATH"
+if [ "$ARM_HOSTED_BUILD" != yes ]; then
+  if [ $SDKROOT ]; then
+    CPPFLAGS="$CPPFLAGS -isysroot $SDKROOT"
   fi
   for host in $HOSTS; do :; done
   CPPFLAGS="$CPPFLAGS -arch $host"
+fi
 
-  $SRC_DIR/configure $COMMON_CONFIGURE_OPTS $configure_opts \
-    --program-prefix="" \
+if [ \! -f Makefile.config ]; then
+  $SRC_DIR/configure --prefix=$DEST_DIR$DEST_ROOT $configure_opts \
+    --enable-assertions=$LLVM_ASSERTIONS \
+    --enable-optimized=$LLVM_OPTIMIZED \
+    --disable-bindings \
     CPPFLAGS="$CPPFLAGS" \
     || exit 1
+fi
 
-  make $JOBS_FLAG $COMMON_MAKEFLAGS UNIVERSAL_ARCH="$HOSTS" \
-    CXXFLAGS="-DLLVM_VERSION_INFO='\" Apple Build #$LLVM_VERSION\"'"
-  if [ $? != 0 ] ; then
+SUBVERSION=`echo $RC_ProjectSourceVersion | sed -e 's/.*\.\([0-9]*\).*/\1/'`
+
+if [ "x$SUBVERSION" != "x$RC_ProjectSourceVersion" ]; then
+    LLVM_SUBMIT_SUBVERSION=`printf "%02d" $SUBVERSION`
+    RC_ProjectSourceVersion=`echo $RC_ProjectSourceVersion | sed -e 's/\..*//'`
+    LLVM_SUBMIT_VERSION=$RC_ProjectSourceVersion
+fi
+
+if [ "x$LLVM_SUBMIT_SUBVERSION" = "x00" -o "x$LLVM_SUBMIT_SUBVERSION" = "x0" ]; then
+    LLVM_VERSION="$LLVM_SUBMIT_VERSION"
+else
+    LLVM_VERSION="$LLVM_SUBMIT_VERSION-$LLVM_SUBMIT_SUBVERSION"
+fi
+
+# Figure out how many make processes to run.
+SYSCTL=`sysctl -n hw.activecpu`
+# sysctl -n hw.* does not work when invoked via B&I chroot /BuildRoot.
+# Builders can default to 2, since even if they are single processor,
+# nothing else is running on the machine.
+if [ -z "$SYSCTL" ]; then
+    SYSCTL=2
+fi
+JOBS_FLAG="-j $SYSCTL"
+
+make $JOBS_FLAG $OPTIMIZE_OPTS UNIVERSAL=1 UNIVERSAL_ARCH="$HOSTS" \
+    UNIVERSAL_SDK_PATH=$SDKROOT \
+    NO_RUNTIME_LIBS=1 \
+    DISABLE_EDIS=1 \
+    REQUIRES_RTTI=1 \
+    DEBUG_SYMBOLS=1 \
+    LLVM_SUBMIT_VERSION=$LLVM_SUBMIT_VERSION \
+    LLVM_SUBMIT_SUBVERSION=$LLVM_SUBMIT_SUBVERSION \
+    CXXFLAGS="-DLLVM_VERSION_INFO='\" Apple Build #$LLVM_VERSION\"'" \
+    VERBOSE=1
+
+if [ $? != 0 ] ; then
     echo "error: LLVM 'make' failed!"
     exit 1
-  fi 
 fi 
 
 ################################################################################
@@ -226,7 +185,14 @@ rm -rf * || exit 1
 cd $DIR/obj-llvm || exit 1
 
 # Install the tree into the destination directory.
-make $JOBS_FLAG $COMMON_MAKEFLAGS UNIVERSAL_ARCH="$HOSTS" install
+make $LOCAL_MAKEFLAGS $OPTIMIZE_OPTS UNIVERSAL=1 UNIVERSAL_ARCH="$HOSTS" \
+    NO_RUNTIME_LIBS=1 \
+    DISABLE_EDIS=1 \
+    DEBUG_SYMBOLS=1 \
+    LLVM_SUBMIT_VERSION=$LLVM_SUBMIT_VERSION \
+    LLVM_SUBMIT_SUBVERSION=$LLVM_SUBMIT_SUBVERSION \
+    OPTIMIZE_OPTION='-O3' VERBOSE=1 install
+
 if ! test $? == 0 ; then
     echo "error: LLVM 'make install' failed!"
     exit 1
@@ -240,16 +206,6 @@ fi
 RC_ProjectSourceSubversion=`printf "%d" $LLVM_MINOR_VERSION`
 echo "#define LLVM_VERSION ${RC_ProjectSourceVersion}" > $DEST_DIR$DEST_ROOT/include/llvm/Version.h
 echo "#define LLVM_MINOR_VERSION ${RC_ProjectSourceSubversion}" >> $DEST_DIR$DEST_ROOT/include/llvm/Version.h
-
-# Run unifdef to preprocess the installed headers to reflect whether this
-# was a debug or release build.
-for file in `find $DEST_DIR$DEST_ROOT/include -type f -print`; do
-  if [ "$LLVM_ASSERTIONS" = yes ]; then
-    unifdef -UNDEBUG -D_DEBUG -o $file $file
-  else
-    unifdef -DNDEBUG -U_DEBUG -ULLVM_ENABLE_DUMP -o $file $file
-  fi
-done
 
 # Find the right version of strip to use.
 STRIP=strip
@@ -307,10 +263,9 @@ cd $SYM_DIR || exit 1
 rm -rf * || exit 1
 
 # Generate .dSYM files
-DSYMUTIL=`xcrun -find dsymutil`
 find $DEST_DIR -perm -0111 -type f \
     ! \( -name '*.la' -o -name gccas -o -name gccld -o -name llvm-config -o -name '*.a' \) \
-    -print | xargs -n 1 -P ${SYSCTL} ${DSYMUTIL}
+    -print | xargs -n 1 -P ${SYSCTL} dsymutil
 
 # Save .dSYM files and .a archives
 cd $DEST_DIR || exit 1

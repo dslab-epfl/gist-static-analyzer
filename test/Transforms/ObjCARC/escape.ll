@@ -9,9 +9,9 @@ target datalayout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f3
 ; Don't optimize away the retainBlock, because the object's address "escapes"
 ; with the objc_storeWeak call.
 
-; CHECK-LABEL: define void @test0(
-; CHECK: %tmp7 = call i8* @objc_retainBlock(i8* %tmp6) [[NUW:#[0-9]+]], !clang.arc.copy_on_escape !0
-; CHECK: call void @objc_release(i8* %tmp7) [[NUW]], !clang.imprecise_release !0
+; CHECK: define void @test0(
+; CHECK: %tmp7 = call i8* @objc_retainBlock(i8* %tmp6) nounwind, !clang.arc.copy_on_escape !0
+; CHECK: call void @objc_release(i8* %tmp7) nounwind, !clang.imprecise_release !0
 ; CHECK: }
 define void @test0() nounwind {
 entry:
@@ -65,7 +65,7 @@ entry:
 ; Like test0, but it makes a regular call instead of a storeWeak call,
 ; so the optimization is valid.
 
-; CHECK-LABEL: define void @test1(
+; CHECK: define void @test1(
 ; CHECK-NOT: @objc_retainBlock
 ; CHECK: }
 define void @test1() nounwind {
@@ -129,6 +129,3 @@ declare i8* @not_really_objc_storeWeak(i8**, i8*)
 declare void @objc_release(i8*)
 
 !0 = metadata !{}
-
-; CHECK: attributes [[NUW]] = { nounwind }
-; CHECK: attributes #1 = { nounwind ssp }

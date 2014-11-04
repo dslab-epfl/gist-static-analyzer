@@ -1,4 +1,5 @@
 // REQUIRES: nvptx-registered-target
+// REQUIRES: nvptx64-registered-target
 // RUN: %clang_cc1 -triple nvptx-unknown-unknown -S -emit-llvm -o - %s | FileCheck %s
 // RUN: %clang_cc1 -triple nvptx64-unknown-unknown -S -emit-llvm -o - %s | FileCheck %s
 
@@ -164,13 +165,4 @@ void nvvm_math(float f1, float f2, double d1, double d2) {
   double td3 = __nvvm_sqrt_rn_d(d1);
 // CHECK: call double @llvm.nvvm.rcp.rn.d
   double td4 = __nvvm_rcp_rn_d(d2);
-
-// CHECK: call void @llvm.nvvm.membar.cta()
-  __nvvm_membar_cta();
-// CHECK: call void @llvm.nvvm.membar.gl()
-  __nvvm_membar_gl();
-// CHECK: call void @llvm.nvvm.membar.sys()
-  __nvvm_membar_sys();
-// CHECK: call void @llvm.nvvm.barrier0()
-  __nvvm_bar0();
 }

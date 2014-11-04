@@ -1,7 +1,5 @@
-; RUN: opt < %s -instcombine -inline -S | FileCheck %s
+; RUN: opt < %s -instcombine -inline -S | not grep '-715827882'
 ; PR3142
-
-; CHECK-NOT: -715827882
 
 define i32 @a(i32 %X) nounwind readnone {
 entry:

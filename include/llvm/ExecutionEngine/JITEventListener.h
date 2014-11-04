@@ -12,12 +12,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_EXECUTIONENGINE_JITEVENTLISTENER_H
-#define LLVM_EXECUTIONENGINE_JITEVENTLISTENER_H
+#ifndef LLVM_EXECUTION_ENGINE_JIT_EVENTLISTENER_H
+#define LLVM_EXECUTION_ENGINE_JIT_EVENTLISTENER_H
 
-#include "llvm/Config/llvm-config.h"
-#include "llvm/IR/DebugLoc.h"
+#include "llvm/Config/config.h"
 #include "llvm/Support/DataTypes.h"
+#include "llvm/Support/DebugLoc.h"
+
 #include <vector>
 
 namespace llvm {
@@ -98,11 +99,11 @@ public:
   static JITEventListener *createIntelJITEventListener(
                                       IntelJITEventsWrapper* AlternativeImpl);
 #else
-  static JITEventListener *createIntelJITEventListener() { return nullptr; }
+  static JITEventListener *createIntelJITEventListener() { return 0; }
 
   static JITEventListener *createIntelJITEventListener(
                                       IntelJITEventsWrapper* AlternativeImpl) {
-    return nullptr;
+    return 0;
   }
 #endif // USE_INTEL_JITEVENTS
 
@@ -115,11 +116,11 @@ public:
                                       OProfileWrapper* AlternativeImpl);
 #else
 
-  static JITEventListener *createOProfileJITEventListener() { return nullptr; }
+  static JITEventListener *createOProfileJITEventListener() { return 0; }
 
   static JITEventListener *createOProfileJITEventListener(
                                       OProfileWrapper* AlternativeImpl) {
-    return nullptr;
+    return 0;
   }
 #endif // USE_OPROFILE
 
@@ -127,4 +128,4 @@ public:
 
 } // end namespace llvm.
 
-#endif // defined LLVM_EXECUTIONENGINE_JITEVENTLISTENER_H
+#endif // defined LLVM_EXECUTION_ENGINE_JIT_EVENTLISTENER_H

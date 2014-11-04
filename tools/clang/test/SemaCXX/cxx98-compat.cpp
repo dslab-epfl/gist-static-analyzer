@@ -1,5 +1,5 @@
 // RUN: %clang_cc1 -fsyntax-only -std=c++11 -Wc++98-compat -verify %s
-// RUN: %clang_cc1 -fsyntax-only -std=c++14 -Wc++98-compat -verify %s -DCXX14COMPAT
+// RUN: %clang_cc1 -fsyntax-only -std=c++11 %s
 
 namespace std {
   struct type_info;
@@ -8,8 +8,6 @@ namespace std {
     initializer_list(T*, size_t);
     T *p;
     size_t n;
-    T *begin();
-    T *end();
   };
 }
 
@@ -23,7 +21,7 @@ template<int ...I>  // expected-warning {{variadic templates are incompatible wi
 class Variadic3 {};
 
 alignas(8) int with_alignas; // expected-warning {{'alignas' is incompatible with C++98}}
-int with_attribute [[ ]]; // expected-warning {{C++11 attribute syntax is incompatible with C++98}}
+int with_attribute [[ ]]; // expected-warning {{attributes are incompatible with C++98}}
 
 void Literals() {
   (void)u8"str"; // expected-warning {{unicode literals are incompatible with C++98}}
@@ -73,7 +71,7 @@ int InitList(int i = {}) { // expected-warning {{generalized initializer lists a
   Ctor c2 = { 3.0, 4l }; // expected-warning {{constructor call from initializer list is incompatible with C++98}}
   InitListCtor ilc = { true, false }; // expected-warning {{initialization of initializer_list object is incompatible with C++98}}
   const int &r = { 0 }; // expected-warning {{reference initialized from initializer list is incompatible with C++98}}
-  struct { int a; const int &r; } rr = { 0, {0} }; // expected-warning {{reference initialized from initializer list is incompatible with C++98}}
+  struct { int a; const int &r; } rr = { 0, {{0}} }; // expected-warning {{reference initialized from initializer list is incompatible with C++98}}
   return { 0 }; // expected-warning {{generalized initializer lists are incompatible with C++98}}
 }
 struct DelayedDefaultArgumentParseInitList {
@@ -105,13 +103,6 @@ void RangeFor() {
   int xs[] = {1, 2, 3};
   for (int &a : xs) { // expected-warning {{range-based for loop is incompatible with C++98}}
   }
-  for (auto &b : {1, 2, 3}) {
-  // expected-warning@-1 {{range-based for loop is incompatible with C++98}}
-  // expected-warning@-2 {{'auto' type specifier is incompatible with C++98}}
-  // expected-warning@-3 {{initialization of initializer_list object is incompatible with C++98}}
-  // expected-warning@-4 {{reference initialized from initializer list is incompatible with C++98}}
-  }
-  struct Agg { int a, b; } const &agg = { 1, 2 }; // expected-warning {{reference initialized from initializer list is incompatible with C++98}}
 }
 
 struct InClassInit {
@@ -147,12 +138,16 @@ bool no_except_expr = noexcept(1 + 1); // expected-warning {{noexcept expression
 void *null = nullptr; // expected-warning {{'nullptr' is incompatible with C++98}}
 static_assert(true, "!"); // expected-warning {{static_assert declarations are incompatible with C++98}}
 
+// FIXME: Reintroduce this test if support for inheriting constructors is
+//        implemented.
+#if 0
 struct InhCtorBase {
   InhCtorBase(int);
 };
 struct InhCtorDerived : InhCtorBase {
-  using InhCtorBase::InhCtorBase; // expected-warning {{inheriting constructors are incompatible with C++98}}
+  using InhCtorBase::InhCtorBase; // xpected-warning {{inheriting constructors are incompatible with C++98}}
 };
+#endif
 
 struct FriendMember {
   static void MemberFn();
@@ -219,21 +214,53 @@ int n = {}; // expected-warning {{scalar initialized from empty initializer list
 class PrivateMember {
   struct ImPrivate {};
 };
-template<typename T> typename T::ImPrivate SFINAEAccessControl(T t) { // expected-warning {{substitution failure due to access control is incompatible with C++98}}
+template<typename T> typename T::ImPrivate SFINAEAccessControl(T t) { // expected-warning {{substitution failure due to access control is incompatible with C++98}} expected-note {{while substituting deduced template arguments into function template 'SFINAEAccessControl' [with T = PrivateMember]}}
   return typename T::ImPrivate();
 }
 int SFINAEAccessControl(...) { return 0; }
-int CheckSFINAEAccessControl = SFINAEAccessControl(PrivateMember()); // expected-note {{while substituting deduced template arguments into function template 'SFINAEAccessControl' [with T = PrivateMember]}}
+int CheckSFINAEAccessControl = SFINAEAccessControl(PrivateMember());
+
+template<typename T>
+struct FriendRedefinition {
+  friend void Friend() {} // expected-warning {{friend function 'Friend' would be implicitly redefined in C++98}} expected-note {{previous}}
+};
+FriendRedefinition<int> FriendRedef1;
+FriendRedefinition<char> FriendRedef2; // expected-note {{requested here}}
+
+namespace CopyCtorIssues {
+  struct Private {
+    Private();
+  private:
+    Private(const Private&); // expected-note {{declared private here}}
+  };
+  struct NoViable {
+    NoViable();
+    NoViable(NoViable&); // expected-note {{not viable}}
+  };
+  struct Ambiguous {
+    Ambiguous();
+    Ambiguous(const Ambiguous &, int = 0); // expected-note {{candidate}}
+    Ambiguous(const Ambiguous &, double = 0); // expected-note {{candidate}}
+  };
+  struct Deleted {
+    Private p; // expected-note {{implicitly deleted}}
+  };
+
+  const Private &a = Private(); // expected-warning {{copying variable of type 'CopyCtorIssues::Private' when binding a reference to a temporary would invoke an inaccessible constructor in C++98}}
+  const NoViable &b = NoViable(); // expected-warning {{copying variable of type 'CopyCtorIssues::NoViable' when binding a reference to a temporary would find no viable constructor in C++98}}
+  const Ambiguous &c = Ambiguous(); // expected-warning {{copying variable of type 'CopyCtorIssues::Ambiguous' when binding a reference to a temporary would find ambiguous constructors in C++98}}
+  const Deleted &d = Deleted(); // expected-warning {{copying variable of type 'CopyCtorIssues::Deleted' when binding a reference to a temporary would invoke a deleted constructor in C++98}}
+}
 
 namespace UnionOrAnonStructMembers {
   struct NonTrivCtor {
-    NonTrivCtor(); // expected-note 2{{user-provided default constructor}}
+    NonTrivCtor(); // expected-note 2{{user-declared constructor}}
   };
   struct NonTrivCopy {
-    NonTrivCopy(const NonTrivCopy&); // expected-note 2{{user-provided copy constructor}}
+    NonTrivCopy(const NonTrivCopy&); // expected-note 2{{user-declared copy constructor}}
   };
   struct NonTrivDtor {
-    ~NonTrivDtor(); // expected-note 2{{user-provided destructor}}
+    ~NonTrivDtor(); // expected-note 2{{user-declared destructor}}
   };
   union BadUnion {
     NonTrivCtor ntc; // expected-warning {{union member 'ntc' with a non-trivial constructor is incompatible with C++98}}
@@ -261,18 +288,18 @@ template<typename T> void EnumNNSFn() {
 template void EnumNNSFn<Enum>(); // expected-note {{in instantiation}}
 
 void JumpDiagnostics(int n) {
-  goto DirectJump; // expected-warning {{jump from this goto statement to its label is incompatible with C++98}}
+  goto DirectJump; // expected-warning {{goto would jump into protected scope in C++98}}
   TrivialButNonPOD tnp1; // expected-note {{jump bypasses initialization of non-POD variable}}
 
 DirectJump:
   void *Table[] = {&&DirectJump, &&Later};
-  goto *Table[n]; // expected-warning {{jump from this indirect goto statement to one of its possible targets is incompatible with C++98}}
+  goto *Table[n]; // expected-warning {{indirect goto might cross protected scopes in C++98}}
 
   TrivialButNonPOD tnp2; // expected-note {{jump bypasses initialization of non-POD variable}}
-Later: // expected-note {{possible target of indirect goto statement}}
+Later: // expected-note {{possible target of indirect goto}}
   switch (n) {
     TrivialButNonPOD tnp3; // expected-note {{jump bypasses initialization of non-POD variable}}
-  default: // expected-warning {{jump from switch statement to this case label is incompatible with C++98}}
+  default: // expected-warning {{switch case would be in a protected scope in C++98}}
     return;
   }
 }
@@ -311,8 +338,8 @@ namespace NullPointerTemplateArg {
 
 namespace PR13480 {
   struct basic_iterator {
-    basic_iterator(const basic_iterator &it) {} // expected-note {{because type 'PR13480::basic_iterator' has a user-provided copy constructor}}
-    basic_iterator(basic_iterator &it) {}
+    basic_iterator(const basic_iterator &it) {}
+    basic_iterator(basic_iterator &it) {} // expected-note {{because type 'PR13480::basic_iterator' has a user-declared copy constructor}}
   };
 
   union test {
@@ -322,12 +349,12 @@ namespace PR13480 {
 
 namespace AssignOpUnion {
   struct a {
-    void operator=(const a &it) {} // expected-note {{because type 'AssignOpUnion::a' has a user-provided copy assignment operator}}
-    void operator=(a &it) {}
+    void operator=(const a &it) {}
+    void operator=(a &it) {} // expected-note {{because type 'AssignOpUnion::a' has a user-declared copy assignment operator}}
   };
 
   struct b {
-    void operator=(const b &it) {} // expected-note {{because type 'AssignOpUnion::b' has a user-provided copy assignment operator}}
+    void operator=(const b &it) {} // expected-note {{because type 'AssignOpUnion::b' has a user-declared copy assignment operator}}
   };
 
   union test1 {
@@ -337,60 +364,12 @@ namespace AssignOpUnion {
 }
 
 namespace rdar11736429 {
-  struct X { // expected-note {{because type 'rdar11736429::X' has no default constructor}}
+  struct X {
     X(const X&) = delete; // expected-warning{{deleted function definitions are incompatible with C++98}} \
-    // expected-note {{implicit default constructor suppressed by user-declared constructor}}
+    // expected-note{{because type 'rdar11736429::X' has a user-declared constructor}}
   };
 
   union S {
     X x; // expected-warning{{union member 'x' with a non-trivial constructor is incompatible with C++98}}
   };
 }
-
-template<typename T> T var = T(10);
-#ifdef CXX14COMPAT
-// expected-warning@-2 {{variable templates are incompatible with C++ standards before C++14}}
-#else
-// expected-warning@-4 {{variable templates are a C++14 extension}}
-#endif
-
-// No diagnostic for specializations of variable templates; we will have
-// diagnosed the primary template.
-template<typename T> T* var<T*> = new T();
-template<> int var<int> = 10;
-template int var<int>;
-float fvar = var<float>;
-
-class A {
-  template<typename T> static T var = T(10);
-#ifdef CXX14COMPAT
-// expected-warning@-2 {{variable templates are incompatible with C++ standards before C++14}}
-#else
-// expected-warning@-4 {{variable templates are a C++14 extension}}
-#endif
-
-  template<typename T> static T* var<T*> = new T();
-};
-
-struct B {  template<typename T> static T v; };
-#ifdef CXX14COMPAT
-// expected-warning@-2 {{variable templates are incompatible with C++ standards before C++14}}
-#else
-// expected-warning@-4 {{variable templates are a C++14 extension}}
-#endif
-
-template<typename T> T B::v = T();
-#ifdef CXX14COMPAT
-// expected-warning@-2 {{variable templates are incompatible with C++ standards before C++14}}
-#else
-// expected-warning@-4 {{variable templates are a C++14 extension}}
-#endif
-
-template<typename T> T* B::v<T*> = new T();
-template<> int B::v<int> = 10;
-template int B::v<int>;
-float fsvar = B::v<float>;
-
-#ifdef CXX14COMPAT
-int digit_seps = 123'456; // expected-warning {{digit separators are incompatible with C++ standards before C++14}}
-#endif

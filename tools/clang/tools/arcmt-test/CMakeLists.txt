@@ -1,5 +1,8 @@
 set(LLVM_LINK_COMPONENTS
+  ${LLVM_TARGETS_TO_BUILD}
+  asmparser
   support
+  mc
   )
 
 add_clang_executable(arcmt-test
@@ -8,7 +11,6 @@ add_clang_executable(arcmt-test
 
 target_link_libraries(arcmt-test
   clangARCMigrate
-  clangBasic
-  clangFrontend
-  clangLex
+  clangEdit
+  clangRewriteCore
   )

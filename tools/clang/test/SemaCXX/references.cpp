@@ -85,18 +85,8 @@ void test8(int& const,// expected-error{{'const' qualifier may not be applied to
   typedef int& intref;
   typedef intref& intrefref; // C++ DR 106: reference collapsing
 
-  typedef intref const intref_c; // expected-warning {{'const' qualifier on reference type 'intref' (aka 'int &') has no effect}}
-  typedef intref_c intref; // ok, same type
-
-  typedef intref volatile intref; // expected-warning {{'volatile' qualifier on reference type 'intref' (aka 'int &') has no effect}}
-  typedef intref _Atomic intref; // expected-warning {{'_Atomic' qualifier on reference type 'intref' (aka 'int &') has no effect}}
-
-  void restrict_ref(__restrict intref); // ok
-  void restrict_ref(int &__restrict); // ok
+  typedef intref const intref_c; // okay. FIXME: how do we verify that this is the same type as intref?
 }
-
-template<typename T> int const_param(const T) {}
-int const_ref_param = const_param<int&>(const_ref_param); // no-warning
 
 
 class string {
@@ -147,10 +137,3 @@ namespace PR8608 {
 
 // The following crashed trying to recursively evaluate the LValue.
 const int &do_not_crash = do_not_crash; // expected-warning{{reference 'do_not_crash' is not yet bound to a value when used within its own initialization}}
-
-namespace ExplicitRefInit {
-  // This is invalid: we can't copy-initialize an 'A' temporary using an
-  // explicit constructor.
-  struct A { explicit A(int); };
-  const A &a(0); // expected-error {{reference to type 'const ExplicitRefInit::A' could not bind to an rvalue of type 'int'}}
-}

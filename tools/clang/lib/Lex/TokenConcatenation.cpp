@@ -12,25 +12,25 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Lex/TokenConcatenation.h"
-#include "clang/Basic/CharInfo.h"
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/Support/ErrorHandling.h"
+#include <cctype>
 using namespace clang;
 
 
 /// IsStringPrefix - Return true if Str is a string prefix.
 /// 'L', 'u', 'U', or 'u8'. Including raw versions.
-static bool IsStringPrefix(StringRef Str, bool CPlusPlus11) {
+static bool IsStringPrefix(StringRef Str, bool CPlusPlus0x) {
 
   if (Str[0] == 'L' ||
-      (CPlusPlus11 && (Str[0] == 'u' || Str[0] == 'U' || Str[0] == 'R'))) {
+      (CPlusPlus0x && (Str[0] == 'u' || Str[0] == 'U' || Str[0] == 'R'))) {
 
     if (Str.size() == 1)
       return true; // "L", "u", "U", and "R"
 
     // Check for raw flavors. Need to make sure the first character wasn't
-    // already R. Need CPlusPlus11 check for "LR".
-    if (Str[1] == 'R' && Str[0] != 'R' && Str.size() == 2 && CPlusPlus11)
+    // already R. Need CPlusPlus0x check for "LR".
+    if (Str[1] == 'R' && Str[0] != 'R' && Str.size() == 2 && CPlusPlus0x)
       return true; // "LR", "uR", "UR"
 
     // Check for "u8" and "u8R"
@@ -54,17 +54,17 @@ bool TokenConcatenation::IsIdentifierStringPrefix(const Token &Tok) const {
     SourceManager &SM = PP.getSourceManager();
     const char *Ptr = SM.getCharacterData(SM.getSpellingLoc(Tok.getLocation()));
     return IsStringPrefix(StringRef(Ptr, Tok.getLength()),
-                          LangOpts.CPlusPlus11);
+                          LangOpts.CPlusPlus0x);
   }
 
   if (Tok.getLength() < 256) {
     char Buffer[256];
     const char *TokPtr = Buffer;
     unsigned length = PP.getSpelling(Tok, TokPtr);
-    return IsStringPrefix(StringRef(TokPtr, length), LangOpts.CPlusPlus11);
+    return IsStringPrefix(StringRef(TokPtr, length), LangOpts.CPlusPlus0x);
   }
 
-  return IsStringPrefix(StringRef(PP.getSpelling(Tok)), LangOpts.CPlusPlus11);
+  return IsStringPrefix(StringRef(PP.getSpelling(Tok)), LangOpts.CPlusPlus0x);
 }
 
 TokenConcatenation::TokenConcatenation(Preprocessor &pp) : PP(pp) {
@@ -87,7 +87,7 @@ TokenConcatenation::TokenConcatenation(Preprocessor &pp) : PP(pp) {
   TokenInfo[tok::arrow           ] |= aci_custom_firstchar;
 
   // These tokens have custom code in C++11 mode.
-  if (PP.getLangOpts().CPlusPlus11) {
+  if (PP.getLangOpts().CPlusPlus0x) {
     TokenInfo[tok::string_literal      ] |= aci_custom;
     TokenInfo[tok::wide_string_literal ] |= aci_custom;
     TokenInfo[tok::utf8_string_literal ] |= aci_custom;
@@ -156,15 +156,14 @@ bool TokenConcatenation::AvoidConcat(const Token &PrevPrevTok,
   // First, check to see if the tokens were directly adjacent in the original
   // source.  If they were, it must be okay to stick them together: if there
   // were an issue, the tokens would have been lexed differently.
-  SourceManager &SM = PP.getSourceManager();
-  SourceLocation PrevSpellLoc = SM.getSpellingLoc(PrevTok.getLocation());
-  SourceLocation SpellLoc = SM.getSpellingLoc(Tok.getLocation());
-  if (PrevSpellLoc.getLocWithOffset(PrevTok.getLength()) == SpellLoc)
+  if (PrevTok.getLocation().isFileID() && Tok.getLocation().isFileID() &&
+      PrevTok.getLocation().getLocWithOffset(PrevTok.getLength()) ==
+        Tok.getLocation())
     return false;
 
   tok::TokenKind PrevKind = PrevTok.getKind();
-  if (!PrevTok.isAnnotation() && PrevTok.getIdentifierInfo())
-    PrevKind = tok::identifier; // Language keyword or named operator.
+  if (PrevTok.getIdentifierInfo())  // Language keyword or named operator.
+    PrevKind = tok::identifier;
 
   // Look up information on when we should avoid concatenation with prevtok.
   unsigned ConcatInfo = TokenInfo[PrevKind];
@@ -177,14 +176,6 @@ bool TokenConcatenation::AvoidConcat(const Token &PrevPrevTok,
     if (Tok.is(tok::equal) || Tok.is(tok::equalequal))
       return true;
     ConcatInfo &= ~aci_avoid_equal;
-  }
-  if (Tok.isAnnotation()) {
-    // Modules annotation can show up when generated automatically for includes.
-    assert((Tok.is(tok::annot_module_include) ||
-            Tok.is(tok::annot_module_begin) ||
-            Tok.is(tok::annot_module_end)) &&
-           "unexpected annotation in AvoidConcat");
-    ConcatInfo = 0;
   }
 
   if (ConcatInfo == 0) return false;
@@ -215,7 +206,7 @@ bool TokenConcatenation::AvoidConcat(const Token &PrevPrevTok,
   case tok::wide_char_constant:
   case tok::utf16_char_constant:
   case tok::utf32_char_constant:
-    if (!PP.getLangOpts().CPlusPlus11)
+    if (!PP.getLangOpts().CPlusPlus0x)
       return false;
 
     // In C++11, a string or character literal followed by an identifier is a
@@ -248,12 +239,13 @@ bool TokenConcatenation::AvoidConcat(const Token &PrevPrevTok,
     return IsIdentifierStringPrefix(PrevTok);
 
   case tok::numeric_constant:
-    return isPreprocessingNumberBody(FirstChar) ||
-           FirstChar == '+' || FirstChar == '-';
+    return isalnum(FirstChar) || Tok.is(tok::numeric_constant) ||
+           FirstChar == '+' || FirstChar == '-' || FirstChar == '.' ||
+           (PP.getLangOpts().CPlusPlus0x && FirstChar == '_');
   case tok::period:          // ..., .*, .1234
     return (FirstChar == '.' && PrevPrevTok.is(tok::period)) ||
-           isDigit(FirstChar) ||
-           (PP.getLangOpts().CPlusPlus && FirstChar == '*');
+    isdigit(FirstChar) ||
+    (PP.getLangOpts().CPlusPlus && FirstChar == '*');
   case tok::amp:             // &&
     return FirstChar == '&';
   case tok::plus:            // ++

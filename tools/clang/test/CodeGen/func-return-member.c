@@ -10,17 +10,17 @@ int X;
 struct frk F;
 float _Complex C;
 
-// CHECK-LABEL: define void @bar
+// CHECK: define void @bar
 void bar(void) {
   X = foo().f.f.x;
 }
 
-// CHECK-LABEL: define void @bun
+// CHECK: define void @bun
 void bun(void) {
   F = foo().f.f;
 }
 
-// CHECK-LABEL: define void @ban
+// CHECK: define void @ban
 void ban(void) {
   C = foo().f.f.c;
 }

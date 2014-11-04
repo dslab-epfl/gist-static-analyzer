@@ -15,7 +15,7 @@
 CLANG_LEVEL := ../..
 include $(CLANG_LEVEL)/Makefile
 
-PROJ_libcxx_hdrs := $(DESTDIR)$(PROJ_prefix)/include
+PROJ_libcxx_hdrs := $(DESTDIR)$(PROJ_prefix)/lib
 
 # Expect libcxx to be in llvm/projects/libcxx
 LIBCXX_SRC_ROOT := $(LLVM_SRC_ROOT)/projects/libcxx

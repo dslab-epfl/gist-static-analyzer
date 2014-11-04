@@ -9,7 +9,6 @@
 @class B;
 
 @interface Root
-@property(readonly) int p0;
 @end
 
 @interface A : Root <P1> {

@@ -1,6 +1,8 @@
 set(LLVM_LINK_COMPONENTS
-  Option
-  Support
+  ${LLVM_TARGETS_TO_BUILD}
+  asmparser
+  support
+  mc
   )
 
 add_clang_executable(clang-check
@@ -8,13 +10,9 @@ add_clang_executable(clang-check
   )
 
 target_link_libraries(clang-check
-  clangAST
-  clangBasic
-  clangDriver
-  clangFrontend
-  clangRewriteFrontend
-  clangStaticAnalyzerFrontend
   clangTooling
+  clangBasic
+  clangRewriteFrontend
   )
 
 install(TARGETS clang-check

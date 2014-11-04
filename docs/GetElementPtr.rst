@@ -1,3 +1,5 @@
+.. _gep:
+
 =======================================
 The Often Misunderstood GEP Instruction
 =======================================
@@ -20,7 +22,7 @@ Address Computation
 When people are first confronted with the GEP instruction, they tend to relate
 it to known concepts from other programming paradigms, most notably C array
 indexing and field selection. GEP closely resembles C array indexing and field
-selection, however it is a little different and this leads to the following
+selection, however it's is a little different and this leads to the following
 questions.
 
 What is the first index of the GEP instruction?
@@ -77,7 +79,7 @@ therefore be indexed and requires an index operand. Consider this example:
   ...
   munge(Array);
 
-In this "C" example, the front end compiler (Clang) will generate three GEP
+In this "C" example, the front end compiler (llvm-gcc) will generate three GEP
 instructions for the three indices through "P" in the assignment statement.  The
 function argument ``P`` will be the first operand of each of these GEP
 instructions.  The second operand indexes through that pointer.  The third
@@ -188,7 +190,7 @@ In this example, we have a global variable, ``%MyVar`` that is a pointer to a
 structure containing a pointer to an array of 40 ints. The GEP instruction seems
 to be accessing the 18th integer of the structure's array of ints. However, this
 is actually an illegal GEP instruction. It won't compile. The reason is that the
-pointer in the structure *must* be dereferenced in order to index into the
+pointer in the structure <i>must</i> be dereferenced in order to index into the
 array of 40 ints. Since the GEP instruction never accesses memory, it is
 illegal.
 
@@ -414,7 +416,7 @@ arithmetic, and inttoptr sequences.
 Can I compute the distance between two objects, and add that value to one address to compute the other address?
 ---------------------------------------------------------------------------------------------------------------
 
-As with arithmetic on null, you can use GEP to compute an address that way, but
+As with arithmetic on null, You can use GEP to compute an address that way, but
 you can't use that pointer to actually access the object if you do, unless the
 object is managed outside of LLVM.
 

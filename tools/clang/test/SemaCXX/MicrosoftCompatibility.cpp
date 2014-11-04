@@ -3,7 +3,6 @@
 
 typedef unsigned short char16_t;
 typedef unsigned int char32_t;
-struct _Atomic {};
 
 typename decltype(3) a; // expected-warning {{expected a qualified name after 'typename'}}
 
@@ -22,19 +21,13 @@ void test()
 }
 
 
-namespace ms_predefined_types {
-  // ::type_info is a built-in forward class declaration.
-  void f(const type_info &a);
-  void f(size_t);
-}
-
 
 namespace ms_protected_scope {
   struct C { C(); };
 
   int jump_over_variable_init(bool b) {
     if (b)
-      goto foo; // expected-warning {{jump from this goto statement to its label is a Microsoft extension}}
+      goto foo; // expected-warning {{goto into protected scope}}
     C c; // expected-note {{jump bypasses variable initialization}}
   foo:
     return 1;
@@ -45,7 +38,7 @@ struct Y {
 };
 
 void jump_over_var_with_dtor() {
-  goto end; // expected-warning{{jump from this goto statement to its label is a Microsoft extension}}
+  goto end; // expected-warning{{goto into protected scope}}
   Y y; // expected-note {{jump bypasses variable with a non-trivial destructor}}
  end:
     ;
@@ -55,14 +48,14 @@ void jump_over_var_with_dtor() {
     switch (c) {
     case 0:
       int x = 56; // expected-note {{jump bypasses variable initialization}}
-    case 1:       // expected-error {{cannot jump}}
+    case 1:       // expected-error {{switch case is in protected scope}}
       x = 10;
     }
   }
 
  
 void exception_jump() {
-  goto l2; // expected-error {{cannot jump}}
+  goto l2; // expected-error {{goto into protected scope}}
   try { // expected-note {{jump bypasses initialization of try block}}
      l2: ;
   } catch(int) {
@@ -71,7 +64,7 @@ void exception_jump() {
 
 int jump_over_indirect_goto() {
   static void *ps[] = { &&a0 };
-  goto *&&a0; // expected-warning {{jump from this goto statement to its label is a Microsoft extension}}
+  goto *&&a0; // expected-warning {{goto into protected scope}}
   int a = 3; // expected-note {{jump bypasses variable initialization}}
  a0:
   return 0;
@@ -112,9 +105,6 @@ public:
 class B : public A {
 private:   
   using A::f;
-  void g() {
-    f(); // no diagnostic
-  }
 };
 
 class C : public B { 
@@ -122,27 +112,6 @@ private:
   using B::f; // expected-warning {{using declaration referring to inaccessible member 'ms_using_declaration_bug::B::f' (which refers to accessible member 'ms_using_declaration_bug::A::f') is a Microsoft compatibility extension}}
 };
 
-}
-
-namespace using_tag_redeclaration
-{
-  struct S;
-  namespace N {
-    using ::using_tag_redeclaration::S;
-    struct S {}; // expected-note {{previous definition is here}}
-  }
-  void f() {
-    N::S s1;
-    S s2;
-  }
-  void g() {
-    struct S; // expected-note {{forward declaration of 'S'}}
-    S s3; // expected-error {{variable has incomplete type 'S'}}
-  }
-  void h() {
-    using ::using_tag_redeclaration::S;
-    struct S {}; // expected-error {{redefinition of 'S'}}
-  }
 }
 
 
@@ -208,20 +177,4 @@ namespace PR11791 {
     int* a = 0;
     del((void*)a);  // expected-note {{in instantiation of function template specialization}}
   }
-}
-
-namespace IntToNullPtrConv {
-  struct Foo {
-    static const int ZERO = 0;
-    typedef void (Foo::*MemberFcnPtr)();
-  };
-
-  struct Bar {
-    const Foo::MemberFcnPtr pB;
-  };
-
-  Bar g_bar = { (Foo::MemberFcnPtr)Foo::ZERO };
-
-  template<int N> int *get_n() { return N; }   // expected-warning {{expression which evaluates to zero treated as a null pointer constant}}
-  int *g_nullptr = get_n<0>();  // expected-note {{in instantiation of function template specialization}}
 }

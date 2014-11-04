@@ -1,7 +1,7 @@
-; RUN: llc -mtriple=arm-eabi -mattr=+neon %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm -mattr=+neon | FileCheck %s
 
 define <8 x i8> @vqadds8(<8 x i8>* %A, <8 x i8>* %B) nounwind {
-;CHECK-LABEL: vqadds8:
+;CHECK: vqadds8:
 ;CHECK: vqadd.s8
 	%tmp1 = load <8 x i8>* %A
 	%tmp2 = load <8 x i8>* %B
@@ -10,7 +10,7 @@ define <8 x i8> @vqadds8(<8 x i8>* %A, <8 x i8>* %B) nounwind {
 }
 
 define <4 x i16> @vqadds16(<4 x i16>* %A, <4 x i16>* %B) nounwind {
-;CHECK-LABEL: vqadds16:
+;CHECK: vqadds16:
 ;CHECK: vqadd.s16
 	%tmp1 = load <4 x i16>* %A
 	%tmp2 = load <4 x i16>* %B
@@ -19,7 +19,7 @@ define <4 x i16> @vqadds16(<4 x i16>* %A, <4 x i16>* %B) nounwind {
 }
 
 define <2 x i32> @vqadds32(<2 x i32>* %A, <2 x i32>* %B) nounwind {
-;CHECK-LABEL: vqadds32:
+;CHECK: vqadds32:
 ;CHECK: vqadd.s32
 	%tmp1 = load <2 x i32>* %A
 	%tmp2 = load <2 x i32>* %B
@@ -28,7 +28,7 @@ define <2 x i32> @vqadds32(<2 x i32>* %A, <2 x i32>* %B) nounwind {
 }
 
 define <1 x i64> @vqadds64(<1 x i64>* %A, <1 x i64>* %B) nounwind {
-;CHECK-LABEL: vqadds64:
+;CHECK: vqadds64:
 ;CHECK: vqadd.s64
 	%tmp1 = load <1 x i64>* %A
 	%tmp2 = load <1 x i64>* %B
@@ -37,7 +37,7 @@ define <1 x i64> @vqadds64(<1 x i64>* %A, <1 x i64>* %B) nounwind {
 }
 
 define <8 x i8> @vqaddu8(<8 x i8>* %A, <8 x i8>* %B) nounwind {
-;CHECK-LABEL: vqaddu8:
+;CHECK: vqaddu8:
 ;CHECK: vqadd.u8
 	%tmp1 = load <8 x i8>* %A
 	%tmp2 = load <8 x i8>* %B
@@ -46,7 +46,7 @@ define <8 x i8> @vqaddu8(<8 x i8>* %A, <8 x i8>* %B) nounwind {
 }
 
 define <4 x i16> @vqaddu16(<4 x i16>* %A, <4 x i16>* %B) nounwind {
-;CHECK-LABEL: vqaddu16:
+;CHECK: vqaddu16:
 ;CHECK: vqadd.u16
 	%tmp1 = load <4 x i16>* %A
 	%tmp2 = load <4 x i16>* %B
@@ -55,7 +55,7 @@ define <4 x i16> @vqaddu16(<4 x i16>* %A, <4 x i16>* %B) nounwind {
 }
 
 define <2 x i32> @vqaddu32(<2 x i32>* %A, <2 x i32>* %B) nounwind {
-;CHECK-LABEL: vqaddu32:
+;CHECK: vqaddu32:
 ;CHECK: vqadd.u32
 	%tmp1 = load <2 x i32>* %A
 	%tmp2 = load <2 x i32>* %B
@@ -64,7 +64,7 @@ define <2 x i32> @vqaddu32(<2 x i32>* %A, <2 x i32>* %B) nounwind {
 }
 
 define <1 x i64> @vqaddu64(<1 x i64>* %A, <1 x i64>* %B) nounwind {
-;CHECK-LABEL: vqaddu64:
+;CHECK: vqaddu64:
 ;CHECK: vqadd.u64
 	%tmp1 = load <1 x i64>* %A
 	%tmp2 = load <1 x i64>* %B
@@ -73,7 +73,7 @@ define <1 x i64> @vqaddu64(<1 x i64>* %A, <1 x i64>* %B) nounwind {
 }
 
 define <16 x i8> @vqaddQs8(<16 x i8>* %A, <16 x i8>* %B) nounwind {
-;CHECK-LABEL: vqaddQs8:
+;CHECK: vqaddQs8:
 ;CHECK: vqadd.s8
 	%tmp1 = load <16 x i8>* %A
 	%tmp2 = load <16 x i8>* %B
@@ -82,7 +82,7 @@ define <16 x i8> @vqaddQs8(<16 x i8>* %A, <16 x i8>* %B) nounwind {
 }
 
 define <8 x i16> @vqaddQs16(<8 x i16>* %A, <8 x i16>* %B) nounwind {
-;CHECK-LABEL: vqaddQs16:
+;CHECK: vqaddQs16:
 ;CHECK: vqadd.s16
 	%tmp1 = load <8 x i16>* %A
 	%tmp2 = load <8 x i16>* %B
@@ -91,7 +91,7 @@ define <8 x i16> @vqaddQs16(<8 x i16>* %A, <8 x i16>* %B) nounwind {
 }
 
 define <4 x i32> @vqaddQs32(<4 x i32>* %A, <4 x i32>* %B) nounwind {
-;CHECK-LABEL: vqaddQs32:
+;CHECK: vqaddQs32:
 ;CHECK: vqadd.s32
 	%tmp1 = load <4 x i32>* %A
 	%tmp2 = load <4 x i32>* %B
@@ -100,7 +100,7 @@ define <4 x i32> @vqaddQs32(<4 x i32>* %A, <4 x i32>* %B) nounwind {
 }
 
 define <2 x i64> @vqaddQs64(<2 x i64>* %A, <2 x i64>* %B) nounwind {
-;CHECK-LABEL: vqaddQs64:
+;CHECK: vqaddQs64:
 ;CHECK: vqadd.s64
 	%tmp1 = load <2 x i64>* %A
 	%tmp2 = load <2 x i64>* %B
@@ -109,7 +109,7 @@ define <2 x i64> @vqaddQs64(<2 x i64>* %A, <2 x i64>* %B) nounwind {
 }
 
 define <16 x i8> @vqaddQu8(<16 x i8>* %A, <16 x i8>* %B) nounwind {
-;CHECK-LABEL: vqaddQu8:
+;CHECK: vqaddQu8:
 ;CHECK: vqadd.u8
 	%tmp1 = load <16 x i8>* %A
 	%tmp2 = load <16 x i8>* %B
@@ -118,7 +118,7 @@ define <16 x i8> @vqaddQu8(<16 x i8>* %A, <16 x i8>* %B) nounwind {
 }
 
 define <8 x i16> @vqaddQu16(<8 x i16>* %A, <8 x i16>* %B) nounwind {
-;CHECK-LABEL: vqaddQu16:
+;CHECK: vqaddQu16:
 ;CHECK: vqadd.u16
 	%tmp1 = load <8 x i16>* %A
 	%tmp2 = load <8 x i16>* %B
@@ -127,7 +127,7 @@ define <8 x i16> @vqaddQu16(<8 x i16>* %A, <8 x i16>* %B) nounwind {
 }
 
 define <4 x i32> @vqaddQu32(<4 x i32>* %A, <4 x i32>* %B) nounwind {
-;CHECK-LABEL: vqaddQu32:
+;CHECK: vqaddQu32:
 ;CHECK: vqadd.u32
 	%tmp1 = load <4 x i32>* %A
 	%tmp2 = load <4 x i32>* %B
@@ -136,7 +136,7 @@ define <4 x i32> @vqaddQu32(<4 x i32>* %A, <4 x i32>* %B) nounwind {
 }
 
 define <2 x i64> @vqaddQu64(<2 x i64>* %A, <2 x i64>* %B) nounwind {
-;CHECK-LABEL: vqaddQu64:
+;CHECK: vqaddQu64:
 ;CHECK: vqadd.u64
 	%tmp1 = load <2 x i64>* %A
 	%tmp2 = load <2 x i64>* %B

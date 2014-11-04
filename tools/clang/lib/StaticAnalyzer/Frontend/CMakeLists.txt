@@ -1,22 +1,31 @@
-include_directories( ${CMAKE_CURRENT_BINARY_DIR}/../Checkers )
+set(LLVM_NO_RTTI 1)
 
-set(LLVM_LINK_COMPONENTS
-  Support
-  )
+include_directories( ${CMAKE_CURRENT_BINARY_DIR}/../Checkers )
 
 add_clang_library(clangStaticAnalyzerFrontend
   AnalysisConsumer.cpp
   CheckerRegistration.cpp
-  ModelConsumer.cpp
   FrontendActions.cpp
-  ModelInjector.cpp
+  )
 
-  LINK_LIBS
-  clangAST
-  clangAnalysis
-  clangBasic
-  clangFrontend
-  clangLex
+add_dependencies(clangStaticAnalyzerFrontend
   clangStaticAnalyzerCheckers
   clangStaticAnalyzerCore
+  ClangAttrClasses
+  ClangAttrList
+  ClangCommentNodes
+  ClangDeclNodes
+  ClangDiagnosticCommon
+  ClangDiagnosticFrontend
+  ClangStmtNodes
+  )
+
+target_link_libraries(clangStaticAnalyzerFrontend
+  clangBasic
+  clangLex
+  clangAST
+  clangFrontend
+  clangRewriteCore
+  clangRewriteFrontend
+  clangStaticAnalyzerCheckers
   )

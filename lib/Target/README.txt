@@ -95,6 +95,44 @@ something that reassoc doesn't think about yet.
 
 //===---------------------------------------------------------------------===//
 
+This function: (derived from GCC PR19988)
+double foo(double x, double y) {
+  return ((x + 0.1234 * y) * (x + -0.1234 * y));
+}
+
+compiles to:
+_foo:
+	movapd	%xmm1, %xmm2
+	mulsd	LCPI1_1(%rip), %xmm1
+	mulsd	LCPI1_0(%rip), %xmm2
+	addsd	%xmm0, %xmm1
+	addsd	%xmm0, %xmm2
+	movapd	%xmm1, %xmm0
+	mulsd	%xmm2, %xmm0
+	ret
+
+Reassociate should be able to turn it into:
+
+double foo(double x, double y) {
+  return ((x + 0.1234 * y) * (x - 0.1234 * y));
+}
+
+Which allows the multiply by constant to be CSE'd, producing:
+
+_foo:
+	mulsd	LCPI1_0(%rip), %xmm1
+	movapd	%xmm1, %xmm2
+	addsd	%xmm0, %xmm2
+	subsd	%xmm1, %xmm0
+	mulsd	%xmm2, %xmm0
+	ret
+
+This doesn't need -ffast-math support at all.  This is particularly bad because
+the llvm-gcc frontend is canonicalizing the later into the former, but clang
+doesn't have this problem.
+
+//===---------------------------------------------------------------------===//
+
 These two functions should generate the same code on big-endian systems:
 
 int g(int *j,int *l)  {  return memcmp(j,l,4);  }
@@ -224,7 +262,22 @@ unsigned countbits_slow(unsigned v) {
     c += v & 1;
   return c;
 }
+unsigned countbits_fast(unsigned v){
+  unsigned c;
+  for (c = 0; v; c++)
+    v &= v - 1; // clear the least significant bit set
+  return c;
+}
 
+BITBOARD = unsigned long long
+int PopCnt(register BITBOARD a) {
+  register int c=0;
+  while(a) {
+    c++;
+    a &= a - 1;
+  }
+  return c;
+}
 unsigned int popcount(unsigned int input) {
   unsigned int count = 0;
   for (unsigned int i =  0; i < 4 * 8; i++)
@@ -1125,7 +1178,7 @@ There are many load PRE testcases in testsuite/gcc.dg/tree-ssa/loadpre* in the
 GCC testsuite, ones we don't get yet are (checked through loadpre25):
 
 [CRIT EDGE BREAKING]
-predcom-4.c
+loadpre3.c predcom-4.c
 
 [PRE OF READONLY CALL]
 loadpre5.c

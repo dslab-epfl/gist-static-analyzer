@@ -5,11 +5,11 @@
 
 define i32 @t1(i32 %x) nounwind readnone ssp {
 entry:
-; 32-LABEL: t1:
+; 32: t1:
 ; 32: cmpl $1
 ; 32: sbbl
 
-; 64-LABEL: t1:
+; 64: t1:
 ; 64: cmpl $1
 ; 64: sbbl
   %0 = icmp eq i32 %x, 0
@@ -19,11 +19,11 @@ entry:
 
 define i32 @t2(i32 %x) nounwind readnone ssp {
 entry:
-; 32-LABEL: t2:
+; 32: t2:
 ; 32: cmpl $1
 ; 32: sbbl
 
-; 64-LABEL: t2:
+; 64: t2:
 ; 64: cmpl $1
 ; 64: sbbl
   %0 = icmp eq i32 %x, 0
@@ -36,13 +36,13 @@ entry:
 
 define i32 @t3() nounwind readonly {
 entry:
-; 32-LABEL: t3:
+; 32: t3:
 ; 32: cmpl $1
 ; 32: sbbl
 ; 32: cmpl
 ; 32: xorl
 
-; 64-LABEL: t3:
+; 64: t3:
 ; 64: cmpl $1
 ; 64: sbbq
 ; 64: cmpq
@@ -61,36 +61,3 @@ if.end:                                           ; preds = %if.then, %entry
   %xor27 = xor i32 undef, %cond                   ; <i32> [#uses=0]
   ret i32 0
 }
-
-define i32 @t4(i64 %x) nounwind readnone ssp {
-entry:
-; 32-LABEL: t4:
-; 32: movl
-; 32: orl
-; 32: movl
-; 32: je
-; 32: xorl
-
-; 64-LABEL: t4:
-; 64: cmpq $1
-; 64: sbbl
-  %0 = icmp eq i64 %x, 0
-  %1 = sext i1 %0 to i32
-  ret i32 %1
-}
-
-define i64 @t5(i32 %x) nounwind readnone ssp {
-entry:
-; 32-LABEL: t5:
-; 32: cmpl $1
-; 32: sbbl
-; 32: movl
-
-; 64-LABEL: t5:
-; 64: cmpl $1
-; 64: sbbq
-  %0 = icmp eq i32 %x, 0
-  %1 = sext i1 %0 to i64
-  ret i64 %1
-}
-

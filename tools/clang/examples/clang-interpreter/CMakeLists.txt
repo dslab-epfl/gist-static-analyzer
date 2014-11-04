@@ -1,10 +1,14 @@
 set(LLVM_LINK_COMPONENTS
-  Core
-  ExecutionEngine
-  MC
-  MCJIT
-  Support
-  native
+  jit
+  interpreter
+  nativecodegen
+  asmparser
+  bitreader
+  bitwriter
+  codegen
+  ipo
+  linker
+  selectiondag
   )
 
 add_clang_executable(clang-interpreter
@@ -16,8 +20,19 @@ add_dependencies(clang-interpreter
   )
 
 target_link_libraries(clang-interpreter
-  clangBasic
-  clangCodeGen
-  clangDriver
   clangFrontend
+  clangSerialization
+  clangDriver
+  clangCodeGen
+  clangSema
+  clangStaticAnalyzerFrontend
+  clangStaticAnalyzerCheckers
+  clangStaticAnalyzerCore
+  clangAnalysis
+  clangRewriteCore
+  clangRewriteFrontend
+  clangAST
+  clangParse
+  clangLex
+  clangBasic
   )

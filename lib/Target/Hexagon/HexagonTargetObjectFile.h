@@ -7,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_HEXAGON_HEXAGONTARGETOBJECTFILE_H
-#define LLVM_LIB_TARGET_HEXAGON_HEXAGONTARGETOBJECTFILE_H
+#ifndef HexagonTARGETOBJECTFILE_H
+#define HexagonTARGETOBJECTFILE_H
 
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
 #include "llvm/MC/MCSectionELF.h"
@@ -19,7 +19,7 @@ namespace llvm {
     const MCSectionELF *SmallDataSection;
     const MCSectionELF *SmallBSSSection;
   public:
-    void Initialize(MCContext &Ctx, const TargetMachine &TM) override;
+    virtual void Initialize(MCContext &Ctx, const TargetMachine &TM);
 
     /// IsGlobalInSmallSection - Return true if this global address should be
     /// placed into small data/bss section.
@@ -29,10 +29,10 @@ namespace llvm {
     bool IsGlobalInSmallSection(const GlobalValue *GV,
                                 const TargetMachine &TM) const;
 
-    bool IsSmallDataEnabled () const;
-    const MCSection *SelectSectionForGlobal(const GlobalValue *GV,
-                                        SectionKind Kind, Mangler &Mang,
-                                        const TargetMachine &TM) const override;
+    const MCSection* SelectSectionForGlobal(const GlobalValue *GV,
+                                            SectionKind Kind,
+                                            Mangler *Mang,
+                                            const TargetMachine &TM) const;
   };
 
 } // namespace llvm

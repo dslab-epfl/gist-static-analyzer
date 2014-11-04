@@ -13,32 +13,36 @@
 
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
-#include "llvm/Support/raw_os_ostream.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetSubtargetInfo.h"
-
 using namespace llvm;
 
-// Pin the vtable to this file.
-void MachineRegisterInfo::Delegate::anchor() {}
-
-MachineRegisterInfo::MachineRegisterInfo(const MachineFunction *MF)
-  : MF(MF), TheDelegate(nullptr), IsSSA(true), TracksLiveness(true) {
+MachineRegisterInfo::MachineRegisterInfo(const TargetRegisterInfo &TRI)
+  : TRI(&TRI), IsSSA(true), TracksLiveness(true) {
   VRegInfo.reserve(256);
   RegAllocHints.reserve(256);
-  UsedRegUnits.resize(getTargetRegisterInfo()->getNumRegUnits());
-  UsedPhysRegMask.resize(getTargetRegisterInfo()->getNumRegs());
+  UsedRegUnits.resize(TRI.getNumRegUnits());
+  UsedPhysRegMask.resize(TRI.getNumRegs());
 
   // Create the physreg use/def lists.
-  PhysRegUseDefLists.resize(getTargetRegisterInfo()->getNumRegs(), nullptr);
+  PhysRegUseDefLists = new MachineOperand*[TRI.getNumRegs()];
+  memset(PhysRegUseDefLists, 0, sizeof(MachineOperand*)*TRI.getNumRegs());
+}
+
+MachineRegisterInfo::~MachineRegisterInfo() {
+#ifndef NDEBUG
+  clearVirtRegs();
+  for (unsigned i = 0, e = TRI->getNumRegs(); i != e; ++i)
+    assert(!PhysRegUseDefLists[i] &&
+           "PhysRegUseDefLists has entries after all instructions are deleted");
+#endif
+  delete [] PhysRegUseDefLists;
 }
 
 /// setRegClass - Set the register class of the specified virtual register.
 ///
 void
 MachineRegisterInfo::setRegClass(unsigned Reg, const TargetRegisterClass *RC) {
-  assert(RC && RC->isAllocatable() && "Invalid RC for virtual register");
   VRegInfo[Reg].first = RC;
 }
 
@@ -49,34 +53,37 @@ MachineRegisterInfo::constrainRegClass(unsigned Reg,
   const TargetRegisterClass *OldRC = getRegClass(Reg);
   if (OldRC == RC)
     return RC;
-  const TargetRegisterClass *NewRC =
-    getTargetRegisterInfo()->getCommonSubClass(OldRC, RC);
+  const TargetRegisterClass *NewRC = TRI->getCommonSubClass(OldRC, RC);
   if (!NewRC || NewRC == OldRC)
     return NewRC;
   if (NewRC->getNumRegs() < MinNumRegs)
-    return nullptr;
+    return 0;
   setRegClass(Reg, NewRC);
   return NewRC;
 }
 
 bool
 MachineRegisterInfo::recomputeRegClass(unsigned Reg, const TargetMachine &TM) {
-  const TargetInstrInfo *TII = TM.getSubtargetImpl()->getInstrInfo();
+  const TargetInstrInfo *TII = TM.getInstrInfo();
   const TargetRegisterClass *OldRC = getRegClass(Reg);
-  const TargetRegisterClass *NewRC =
-    getTargetRegisterInfo()->getLargestLegalSuperClass(OldRC);
+  const TargetRegisterClass *NewRC = TRI->getLargestLegalSuperClass(OldRC);
 
   // Stop early if there is no room to grow.
   if (NewRC == OldRC)
     return false;
 
   // Accumulate constraints from all uses.
-  for (MachineOperand &MO : reg_nodbg_operands(Reg)) {
-    // Apply the effect of the given operand to NewRC.
-    MachineInstr *MI = MO.getParent();
-    unsigned OpNo = &MO - &MI->getOperand(0);
-    NewRC = MI->getRegClassConstraintEffect(OpNo, NewRC, TII,
-                                            getTargetRegisterInfo());
+  for (reg_nodbg_iterator I = reg_nodbg_begin(Reg), E = reg_nodbg_end(); I != E;
+       ++I) {
+    const TargetRegisterClass *OpRC =
+      I->getRegClassConstraint(I.getOperandNo(), TII, TRI);
+    if (unsigned SubIdx = I.getOperand().getSubReg()) {
+      if (OpRC)
+        NewRC = TRI->getMatchingSuperRegClass(NewRC, OpRC, SubIdx);
+      else
+        NewRC = TRI->getSubClassWithSubReg(NewRC, SubIdx);
+    } else if (OpRC)
+      NewRC = TRI->getCommonSubClass(NewRC, OpRC);
     if (!NewRC || NewRC == OldRC)
       return false;
   }
@@ -98,69 +105,17 @@ MachineRegisterInfo::createVirtualRegister(const TargetRegisterClass *RegClass){
   VRegInfo.grow(Reg);
   VRegInfo[Reg].first = RegClass;
   RegAllocHints.grow(Reg);
-  if (TheDelegate)
-    TheDelegate->MRI_NoteNewVirtualRegister(Reg);
   return Reg;
 }
 
 /// clearVirtRegs - Remove all virtual registers (after physreg assignment).
 void MachineRegisterInfo::clearVirtRegs() {
 #ifndef NDEBUG
-  for (unsigned i = 0, e = getNumVirtRegs(); i != e; ++i) {
-    unsigned Reg = TargetRegisterInfo::index2VirtReg(i);
-    if (!VRegInfo[Reg].second)
-      continue;
-    verifyUseList(Reg);
-    llvm_unreachable("Remaining virtual register operands");
-  }
+  for (unsigned i = 0, e = getNumVirtRegs(); i != e; ++i)
+    assert(VRegInfo[TargetRegisterInfo::index2VirtReg(i)].second == 0 &&
+           "Vreg use list non-empty still?");
 #endif
   VRegInfo.clear();
-}
-
-void MachineRegisterInfo::verifyUseList(unsigned Reg) const {
-#ifndef NDEBUG
-  bool Valid = true;
-  for (MachineOperand &M : reg_operands(Reg)) {
-    MachineOperand *MO = &M;
-    MachineInstr *MI = MO->getParent();
-    if (!MI) {
-      errs() << PrintReg(Reg, getTargetRegisterInfo())
-             << " use list MachineOperand " << MO
-             << " has no parent instruction.\n";
-      Valid = false;
-    }
-    MachineOperand *MO0 = &MI->getOperand(0);
-    unsigned NumOps = MI->getNumOperands();
-    if (!(MO >= MO0 && MO < MO0+NumOps)) {
-      errs() << PrintReg(Reg, getTargetRegisterInfo())
-             << " use list MachineOperand " << MO
-             << " doesn't belong to parent MI: " << *MI;
-      Valid = false;
-    }
-    if (!MO->isReg()) {
-      errs() << PrintReg(Reg, getTargetRegisterInfo())
-             << " MachineOperand " << MO << ": " << *MO
-             << " is not a register\n";
-      Valid = false;
-    }
-    if (MO->getReg() != Reg) {
-      errs() << PrintReg(Reg, getTargetRegisterInfo())
-             << " use-list MachineOperand " << MO << ": "
-             << *MO << " is the wrong register\n";
-      Valid = false;
-    }
-  }
-  assert(Valid && "Invalid use list");
-#endif
-}
-
-void MachineRegisterInfo::verifyUseLists() const {
-#ifndef NDEBUG
-  for (unsigned i = 0, e = getNumVirtRegs(); i != e; ++i)
-    verifyUseList(TargetRegisterInfo::index2VirtReg(i));
-  for (unsigned i = 1, e = getTargetRegisterInfo()->getNumRegs(); i != e; ++i)
-    verifyUseList(i);
-#endif
 }
 
 /// Add MO to the linked list of operands for its register.
@@ -176,7 +131,7 @@ void MachineRegisterInfo::addRegOperandToUseList(MachineOperand *MO) {
   // Head is NULL for an empty list.
   if (!Head) {
     MO->Contents.Reg.Prev = MO;
-    MO->Contents.Reg.Next = nullptr;
+    MO->Contents.Reg.Next = 0;
     HeadRef = MO;
     return;
   }
@@ -197,7 +152,7 @@ void MachineRegisterInfo::addRegOperandToUseList(MachineOperand *MO) {
     HeadRef = MO;
   } else {
     // Insert use at the end.
-    MO->Contents.Reg.Next = nullptr;
+    MO->Contents.Reg.Next = 0;
     Last->Contents.Reg.Next = MO;
   }
 }
@@ -221,100 +176,44 @@ void MachineRegisterInfo::removeRegOperandFromUseList(MachineOperand *MO) {
 
   (Next ? Next : Head)->Contents.Reg.Prev = Prev;
 
-  MO->Contents.Reg.Prev = nullptr;
-  MO->Contents.Reg.Next = nullptr;
-}
-
-/// Move NumOps operands from Src to Dst, updating use-def lists as needed.
-///
-/// The Dst range is assumed to be uninitialized memory. (Or it may contain
-/// operands that won't be destroyed, which is OK because the MO destructor is
-/// trivial anyway).
-///
-/// The Src and Dst ranges may overlap.
-void MachineRegisterInfo::moveOperands(MachineOperand *Dst,
-                                       MachineOperand *Src,
-                                       unsigned NumOps) {
-  assert(Src != Dst && NumOps && "Noop moveOperands");
-
-  // Copy backwards if Dst is within the Src range.
-  int Stride = 1;
-  if (Dst >= Src && Dst < Src + NumOps) {
-    Stride = -1;
-    Dst += NumOps - 1;
-    Src += NumOps - 1;
-  }
-
-  // Copy one operand at a time.
-  do {
-    new (Dst) MachineOperand(*Src);
-
-    // Dst takes Src's place in the use-def chain.
-    if (Src->isReg()) {
-      MachineOperand *&Head = getRegUseDefListHead(Src->getReg());
-      MachineOperand *Prev = Src->Contents.Reg.Prev;
-      MachineOperand *Next = Src->Contents.Reg.Next;
-      assert(Head && "List empty, but operand is chained");
-      assert(Prev && "Operand was not on use-def list");
-
-      // Prev links are circular, next link is NULL instead of looping back to
-      // Head.
-      if (Src == Head)
-        Head = Dst;
-      else
-        Prev->Contents.Reg.Next = Dst;
-
-      // Update Prev pointer. This also works when Src was pointing to itself
-      // in a 1-element list. In that case Head == Dst.
-      (Next ? Next : Head)->Contents.Reg.Prev = Dst;
-    }
-
-    Dst += Stride;
-    Src += Stride;
-  } while (--NumOps);
+  MO->Contents.Reg.Prev = 0;
+  MO->Contents.Reg.Next = 0;
 }
 
 /// replaceRegWith - Replace all instances of FromReg with ToReg in the
 /// machine function.  This is like llvm-level X->replaceAllUsesWith(Y),
 /// except that it also changes any definitions of the register as well.
-/// If ToReg is a physical register we apply the sub register to obtain the
-/// final/proper physical register.
 void MachineRegisterInfo::replaceRegWith(unsigned FromReg, unsigned ToReg) {
   assert(FromReg != ToReg && "Cannot replace a reg with itself");
 
-  const TargetRegisterInfo *TRI = getTargetRegisterInfo();
-  
   // TODO: This could be more efficient by bulk changing the operands.
   for (reg_iterator I = reg_begin(FromReg), E = reg_end(); I != E; ) {
-    MachineOperand &O = *I;
+    MachineOperand &O = I.getOperand();
     ++I;
-    if (TargetRegisterInfo::isPhysicalRegister(ToReg)) {
-      O.substPhysReg(ToReg, *TRI);
-    } else {
-      O.setReg(ToReg);
-    }
+    O.setReg(ToReg);
   }
 }
+
 
 /// getVRegDef - Return the machine instr that defines the specified virtual
 /// register or null if none is found.  This assumes that the code is in SSA
 /// form, so there should only be one definition.
 MachineInstr *MachineRegisterInfo::getVRegDef(unsigned Reg) const {
   // Since we are in SSA form, we can use the first definition.
-  def_instr_iterator I = def_instr_begin(Reg);
-  assert((I.atEnd() || std::next(I) == def_instr_end()) &&
+  def_iterator I = def_begin(Reg);
+  assert((I.atEnd() || llvm::next(I) == def_end()) &&
          "getVRegDef assumes a single definition or no definition");
-  return !I.atEnd() ? &*I : nullptr;
+  return !I.atEnd() ? &*I : 0;
 }
 
 /// getUniqueVRegDef - Return the unique machine instr that defines the
 /// specified virtual register or null if none is found.  If there are
 /// multiple definitions or no definition, return null.
 MachineInstr *MachineRegisterInfo::getUniqueVRegDef(unsigned Reg) const {
-  if (def_empty(Reg)) return nullptr;
-  def_instr_iterator I = def_instr_begin(Reg);
-  if (std::next(I) != def_instr_end())
-    return nullptr;
+  if (def_empty(Reg)) return 0;
+  def_iterator I = def_begin(Reg);
+  if (llvm::next(I) != def_end())
+    return 0;
   return &*I;
 }
 
@@ -330,13 +229,20 @@ bool MachineRegisterInfo::hasOneNonDBGUse(unsigned RegNo) const {
 /// optimization passes which extend register lifetimes and need only
 /// preserve conservative kill flag information.
 void MachineRegisterInfo::clearKillFlags(unsigned Reg) const {
-  for (MachineOperand &MO : use_operands(Reg))
-    MO.setIsKill(false);
+  for (use_iterator UI = use_begin(Reg), UE = use_end(); UI != UE; ++UI)
+    UI.getOperand().setIsKill(false);
 }
 
 bool MachineRegisterInfo::isLiveIn(unsigned Reg) const {
   for (livein_iterator I = livein_begin(), E = livein_end(); I != E; ++I)
     if (I->first == Reg || I->second == Reg)
+      return true;
+  return false;
+}
+
+bool MachineRegisterInfo::isLiveOut(unsigned Reg) const {
+  for (liveout_iterator I = liveout_begin(), E = liveout_end(); I != E; ++I)
+    if (*I == Reg)
       return true;
   return false;
 }
@@ -393,14 +299,14 @@ MachineRegisterInfo::EmitLiveInCopies(MachineBasicBlock *EntryMBB,
 
 #ifndef NDEBUG
 void MachineRegisterInfo::dumpUses(unsigned Reg) const {
-  for (MachineInstr &I : use_instructions(Reg))
-    I.dump();
+  for (use_iterator I = use_begin(Reg), E = use_end(); I != E; ++I)
+    I.getOperand().getParent()->dump();
 }
 #endif
 
 void MachineRegisterInfo::freezeReservedRegs(const MachineFunction &MF) {
-  ReservedRegs = getTargetRegisterInfo()->getReservedRegs(MF);
-  assert(ReservedRegs.size() == getTargetRegisterInfo()->getNumRegs() &&
+  ReservedRegs = TRI->getReservedRegs(MF);
+  assert(ReservedRegs.size() == TRI->getNumRegs() &&
          "Invalid ReservedRegs vector from target");
 }
 
@@ -410,24 +316,8 @@ bool MachineRegisterInfo::isConstantPhysReg(unsigned PhysReg,
 
   // Check if any overlapping register is modified, or allocatable so it may be
   // used later.
-  for (MCRegAliasIterator AI(PhysReg, getTargetRegisterInfo(), true);
-       AI.isValid(); ++AI)
+  for (MCRegAliasIterator AI(PhysReg, TRI, true); AI.isValid(); ++AI)
     if (!def_empty(*AI) || isAllocatable(*AI))
       return false;
   return true;
-}
-
-/// markUsesInDebugValueAsUndef - Mark every DBG_VALUE referencing the
-/// specified register as undefined which causes the DBG_VALUE to be
-/// deleted during LiveDebugVariables analysis.
-void MachineRegisterInfo::markUsesInDebugValueAsUndef(unsigned Reg) const {
-  // Mark any DBG_VALUE that uses Reg as undef (but don't delete it.)
-  MachineRegisterInfo::use_instr_iterator nextI;
-  for (use_instr_iterator I = use_instr_begin(Reg), E = use_instr_end();
-       I != E; I = nextI) {
-    nextI = std::next(I);  // I is invalidated by the setReg
-    MachineInstr *UseMI = &*I;
-    if (UseMI->isDebugValue())
-      UseMI->getOperand(0).setReg(0U);
-  }
 }

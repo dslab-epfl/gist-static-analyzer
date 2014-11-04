@@ -27,7 +27,7 @@ static inline const VariableArrayType *FindVA(const Type* t) {
     t = vt->getElementType().getTypePtr();
   }
 
-  return nullptr;
+  return NULL;
 }
 
 void StmtIteratorBase::NextVA() {
@@ -40,7 +40,14 @@ void StmtIteratorBase::NextVA() {
   if (p)
     return;
 
-  if (inDeclGroup()) {
+  if (inDecl()) {
+    if (VarDecl* VD = dyn_cast<VarDecl>(decl))
+      if (VD->Init)
+        return;
+
+    NextDecl();
+  }
+  else if (inDeclGroup()) {
     if (VarDecl* VD = dyn_cast<VarDecl>(*DGI))
       if (VD->Init)
         return;
@@ -48,26 +55,40 @@ void StmtIteratorBase::NextVA() {
     NextDecl();
   }
   else {
-    assert(inSizeOfTypeVA());
+    assert (inSizeOfTypeVA());
+    assert(!decl);
     RawVAPtr = 0;
   }
 }
 
 void StmtIteratorBase::NextDecl(bool ImmediateAdvance) {
-  assert(getVAPtr() == nullptr);
-  assert(inDeclGroup());
+  assert (getVAPtr() == NULL);
 
-  if (ImmediateAdvance)
-    ++DGI;
+  if (inDecl()) {
+    assert(decl);
 
-  for ( ; DGI != DGE; ++DGI)
-    if (HandleDecl(*DGI))
+    // FIXME: SIMPLIFY AWAY.
+    if (ImmediateAdvance)
+      decl = 0;
+    else if (HandleDecl(decl))
       return;
+  }
+  else {
+    assert(inDeclGroup());
+
+    if (ImmediateAdvance)
+      ++DGI;
+
+    for ( ; DGI != DGE; ++DGI)
+      if (HandleDecl(*DGI))
+        return;
+  }
 
   RawVAPtr = 0;
 }
 
 bool StmtIteratorBase::HandleDecl(Decl* D) {
+
   if (VarDecl* VD = dyn_cast<VarDecl>(D)) {
     if (const VariableArrayType* VAPtr = FindVA(VD->getType().getTypePtr())) {
       setVAPtr(VAPtr);
@@ -92,23 +113,43 @@ bool StmtIteratorBase::HandleDecl(Decl* D) {
   return false;
 }
 
+StmtIteratorBase::StmtIteratorBase(Decl *d, Stmt **s)
+  : stmt(s), decl(d), RawVAPtr(d ? DeclMode : 0) {
+  if (decl)
+    NextDecl(false);
+}
+
 StmtIteratorBase::StmtIteratorBase(Decl** dgi, Decl** dge)
-  : stmt(nullptr), DGI(dgi), RawVAPtr(DeclGroupMode), DGE(dge) {
+  : stmt(0), DGI(dgi), RawVAPtr(DeclGroupMode), DGE(dge) {
   NextDecl(false);
 }
 
 StmtIteratorBase::StmtIteratorBase(const VariableArrayType* t)
-  : stmt(nullptr), DGI(nullptr), RawVAPtr(SizeOfTypeVAMode) {
+  : stmt(0), decl(0), RawVAPtr(SizeOfTypeVAMode) {
   RawVAPtr |= reinterpret_cast<uintptr_t>(t);
 }
 
 Stmt*& StmtIteratorBase::GetDeclExpr() const {
+
   if (const VariableArrayType* VAPtr = getVAPtr()) {
     assert (VAPtr->SizeExpr);
     return const_cast<Stmt*&>(VAPtr->SizeExpr);
   }
 
-  assert (inDeclGroup());
-  VarDecl* VD = cast<VarDecl>(*DGI);
-  return *VD->getInitAddress();
+  assert (inDecl() || inDeclGroup());
+
+  if (inDeclGroup()) {
+    VarDecl* VD = cast<VarDecl>(*DGI);
+    return *VD->getInitAddress();
+  }
+
+  assert (inDecl());
+
+  if (VarDecl* VD = dyn_cast<VarDecl>(decl)) {
+    assert (VD->Init);
+    return *VD->getInitAddress();
+  }
+
+  EnumConstantDecl* ECD = cast<EnumConstantDecl>(decl);
+  return ECD->Init;
 }

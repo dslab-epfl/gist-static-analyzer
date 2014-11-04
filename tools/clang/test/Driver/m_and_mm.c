@@ -1,3 +1,3 @@
 // RUN: %clang -### \
 // RUN:   -M -MM %s 2> %t
-// RUN: not grep '"-sys-header-deps"' %t
+// RUN: grep '"-sys-header-deps"' %t | count 0

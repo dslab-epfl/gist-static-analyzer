@@ -14,22 +14,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Support/DataStream.h"
+#define DEBUG_TYPE "Data-stream"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/DataStream.h"
 #include "llvm/Support/Program.h"
+#include "llvm/Support/system_error.h"
+#include <string>
 #include <cerrno>
 #include <cstdio>
-#include <string>
-#include <system_error>
 #if !defined(_MSC_VER) && !defined(__MINGW32__)
 #include <unistd.h>
 #else
 #include <io.h>
 #endif
+#include <fcntl.h>
 using namespace llvm;
-
-#define DEBUG_TYPE "Data-stream"
 
 // Interface goals:
 // * StreamableMemoryObject doesn't care about complexities like using
@@ -59,19 +58,26 @@ public:
   virtual ~DataFileStreamer() {
     close(Fd);
   }
-  size_t GetBytes(unsigned char *buf, size_t len) override {
+  virtual size_t GetBytes(unsigned char *buf, size_t len) LLVM_OVERRIDE {
     NumStreamFetches++;
     return read(Fd, buf, len);
   }
 
-  std::error_code OpenFile(const std::string &Filename) {
+  error_code OpenFile(const std::string &Filename) {
     if (Filename == "-") {
       Fd = 0;
-      sys::ChangeStdinToBinary();
-      return std::error_code();
+      sys::Program::ChangeStdinToBinary();
+      return error_code::success();
     }
-
-    return sys::fs::openFileForRead(Filename, Fd);
+  
+    int OpenFlags = O_RDONLY;
+#ifdef O_BINARY
+    OpenFlags |= O_BINARY;  // Open input file in binary mode on win32.
+#endif
+    Fd = ::open(Filename.c_str(), OpenFlags);
+    if (Fd == -1)
+      return error_code(errno, posix_category());
+    return error_code::success();
   }
 };
 
@@ -81,10 +87,10 @@ namespace llvm {
 DataStreamer *getDataFileStreamer(const std::string &Filename,
                                   std::string *StrError) {
   DataFileStreamer *s = new DataFileStreamer();
-  if (std::error_code e = s->OpenFile(Filename)) {
+  if (error_code e = s->OpenFile(Filename)) {
     *StrError = std::string("Could not open ") + Filename + ": " +
         e.message() + "\n";
-    return nullptr;
+    return NULL;
   }
   return s;
 }

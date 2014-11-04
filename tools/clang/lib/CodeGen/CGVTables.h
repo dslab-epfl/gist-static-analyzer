@@ -11,16 +11,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_LIB_CODEGEN_CGVTABLES_H
-#define LLVM_CLANG_LIB_CODEGEN_CGVTABLES_H
+#ifndef CLANG_CODEGEN_CGVTABLE_H
+#define CLANG_CODEGEN_CGVTABLE_H
 
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/GlobalVariable.h"
+#include "clang/Basic/ABI.h"
 #include "clang/AST/BaseSubobject.h"
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/GlobalDecl.h"
 #include "clang/AST/VTableBuilder.h"
-#include "clang/Basic/ABI.h"
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/IR/GlobalVariable.h"
 
 namespace clang {
   class CXXRecordDecl;
@@ -31,8 +31,11 @@ namespace CodeGen {
 class CodeGenVTables {
   CodeGenModule &CGM;
 
-  VTableContextBase *VTContext;
+  VTableContext VTContext;
 
+  /// VTables - All the vtables which have been defined.
+  llvm::DenseMap<const CXXRecordDecl *, llvm::GlobalVariable *> VTables;
+  
   /// VTableAddressPointsMapTy - Address points for a single vtable.
   typedef llvm::DenseMap<BaseSubobject, uint64_t> VTableAddressPointsMapTy;
 
@@ -49,32 +52,39 @@ class CodeGenVTables {
   /// indices.
   SecondaryVirtualPointerIndicesMapTy SecondaryVirtualPointerIndices;
 
-  /// emitThunk - Emit a single thunk.
-  void emitThunk(GlobalDecl GD, const ThunkInfo &Thunk, bool ForVTable);
+  /// EmitThunk - Emit a single thunk.
+  void EmitThunk(GlobalDecl GD, const ThunkInfo &Thunk, 
+                 bool UseAvailableExternallyLinkage);
 
-  /// maybeEmitThunkForVTable - Emit the given thunk for the vtable if needed by
-  /// the ABI.
-  void maybeEmitThunkForVTable(GlobalDecl GD, const ThunkInfo &Thunk);
+  /// MaybeEmitThunkAvailableExternally - Try to emit the given thunk with
+  /// available_externally linkage to allow for inlining of thunks.
+  /// This will be done iff optimizations are enabled and the member function
+  /// doesn't contain any incomplete types.
+  void MaybeEmitThunkAvailableExternally(GlobalDecl GD, const ThunkInfo &Thunk);
 
-public:
   /// CreateVTableInitializer - Create a vtable initializer for the given record
   /// decl.
   /// \param Components - The vtable components; this is really an array of
   /// VTableComponents.
-  llvm::Constant *CreateVTableInitializer(
-      const CXXRecordDecl *RD, const VTableComponent *Components,
-      unsigned NumComponents, const VTableLayout::VTableThunkTy *VTableThunks,
-      unsigned NumVTableThunks, llvm::Constant *RTTI);
+  llvm::Constant *CreateVTableInitializer(const CXXRecordDecl *RD,
+                                          const VTableComponent *Components, 
+                                          unsigned NumComponents,
+                                const VTableLayout::VTableThunkTy *VTableThunks,
+                                          unsigned NumVTableThunks);
 
+public:
   CodeGenVTables(CodeGenModule &CGM);
 
-  ItaniumVTableContext &getItaniumVTableContext() {
-    return *cast<ItaniumVTableContext>(VTContext);
-  }
+  VTableContext &getVTableContext() { return VTContext; }
 
-  MicrosoftVTableContext &getMicrosoftVTableContext() {
-    return *cast<MicrosoftVTableContext>(VTContext);
-  }
+  /// \brief True if the VTable of this record must be emitted in the
+  /// translation unit.
+  bool ShouldEmitVTableInThisTU(const CXXRecordDecl *RD);
+
+  /// needsVTTParameter - Return whether the given global decl needs a VTT
+  /// parameter, which it does if it's a base constructor or destructor with
+  /// virtual bases.
+  static bool needsVTTParameter(GlobalDecl GD);
 
   /// getSubVTTIndex - Return the index of the sub-VTT for the base class of the
   /// given record decl.
@@ -89,6 +99,14 @@ public:
   /// class decl.
   uint64_t getAddressPoint(BaseSubobject Base, const CXXRecordDecl *RD);
   
+  /// GetAddrOfVTable - Get the address of the vtable for the given record decl.
+  llvm::GlobalVariable *GetAddrOfVTable(const CXXRecordDecl *RD);
+
+  /// EmitVTableDefinition - Emit the definition of the given vtable.
+  void EmitVTableDefinition(llvm::GlobalVariable *VTable,
+                            llvm::GlobalVariable::LinkageTypes Linkage,
+                            const CXXRecordDecl *RD);
+  
   /// GenerateConstructionVTable - Generate a construction vtable for the given 
   /// base subobject.
   llvm::GlobalVariable *
@@ -98,7 +116,7 @@ public:
                              VTableAddressPointsMapTy& AddressPoints);
 
     
-  /// GetAddrOfVTT - Get the address of the VTT for the given record decl.
+  /// GetAddrOfVTable - Get the address of the VTT for the given record decl.
   llvm::GlobalVariable *GetAddrOfVTT(const CXXRecordDecl *RD);
 
   /// EmitVTTDefinition - Emit the definition of the given vtable.
@@ -109,13 +127,13 @@ public:
   /// EmitThunks - Emit the associated thunks for the given global decl.
   void EmitThunks(GlobalDecl GD);
     
-  /// GenerateClassData - Generate all the class data required to be
-  /// generated upon definition of a KeyFunction.  This includes the
-  /// vtable, the RTTI data structure (if RTTI is enabled) and the VTT
-  /// (if the class has virtual bases).
-  void GenerateClassData(const CXXRecordDecl *RD);
-
-  bool isVTableExternal(const CXXRecordDecl *RD);
+  /// GenerateClassData - Generate all the class data required to be generated
+  /// upon definition of a KeyFunction.  This includes the vtable, the
+  /// rtti data structure and the VTT.
+  ///
+  /// \param Linkage - The desired linkage of the vtable, the RTTI and the VTT.
+  void GenerateClassData(llvm::GlobalVariable::LinkageTypes Linkage,
+                         const CXXRecordDecl *RD);
 };
 
 } // end namespace CodeGen

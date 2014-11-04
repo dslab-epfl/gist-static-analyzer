@@ -12,9 +12,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Lex/PreprocessorLexer.h"
-#include "clang/Basic/SourceManager.h"
-#include "clang/Lex/LexDiagnostic.h"
 #include "clang/Lex/Preprocessor.h"
+#include "clang/Lex/LexDiagnostic.h"
+#include "clang/Basic/SourceManager.h"
 using namespace clang;
 
 void PreprocessorLexer::anchor() { }
@@ -38,10 +38,7 @@ void PreprocessorLexer::LexIncludeFilename(Token &FilenameTok) {
   ParsingFilename = true;
 
   // Lex the filename.
-  if (LexingRawMode)
-    IndirectLex(FilenameTok);
-  else
-    PP->Lex(FilenameTok);
+  IndirectLex(FilenameTok);
 
   // We should have obtained the filename now.
   ParsingFilename = false;

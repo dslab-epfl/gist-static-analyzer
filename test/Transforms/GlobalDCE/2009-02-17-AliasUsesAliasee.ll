@@ -1,4 +1,4 @@
 ; RUN: opt < %s -globaldce
 
-@A = internal alias void ()* @F
+@A = alias internal void ()* @F
 define internal void @F() { ret void }

@@ -14,7 +14,6 @@
 
 #include "clang/Sema/ScopeInfo.h"
 #include "clang/AST/Decl.h"
-#include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
@@ -27,12 +26,6 @@ void FunctionScopeInfo::Clear() {
   HasBranchProtectedScope = false;
   HasBranchIntoScope = false;
   HasIndirectGoto = false;
-  HasDroppedStmt = false;
-  ObjCShouldCallSuper = false;
-  ObjCIsDesignatedInit = false;
-  ObjCWarnForNoDesignatedInitChain = false;
-  ObjCIsSecondaryInit = false;
-  ObjCWarnForNoInitDelegation = false;
 
   SwitchStack.clear();
   Returns.clear();
@@ -52,7 +45,7 @@ FunctionScopeInfo::WeakObjectProfileTy::BaseInfoTy
 FunctionScopeInfo::WeakObjectProfileTy::getBaseInfo(const Expr *E) {
   E = E->IgnoreParenCasts();
 
-  const NamedDecl *D = nullptr;
+  const NamedDecl *D = 0;
   bool IsExact = false;
 
   switch (E->getStmtClass()) {
@@ -94,18 +87,10 @@ FunctionScopeInfo::WeakObjectProfileTy::getBaseInfo(const Expr *E) {
   return BaseInfoTy(D, IsExact);
 }
 
-bool CapturingScopeInfo::isVLATypeCaptured(const VariableArrayType *VAT) const {
-  if (auto *LSI = dyn_cast<LambdaScopeInfo>(this))
-    for (auto *FD : LSI->Lambda->fields()) {
-      if (FD->hasCapturedVLAType() && FD->getCapturedVLAType() == VAT)
-        return true;
-    }
-  return false;
-}
 
 FunctionScopeInfo::WeakObjectProfileTy::WeakObjectProfileTy(
                                           const ObjCPropertyRefExpr *PropE)
-    : Base(nullptr, true), Property(getBestPropertyDecl(PropE)) {
+    : Base(0, true), Property(getBestPropertyDecl(PropE)) {
 
   if (PropE->isObjectReceiver()) {
     const OpaqueValueExpr *OVE = cast<OpaqueValueExpr>(PropE->getBase());
@@ -120,7 +105,7 @@ FunctionScopeInfo::WeakObjectProfileTy::WeakObjectProfileTy(
 
 FunctionScopeInfo::WeakObjectProfileTy::WeakObjectProfileTy(const Expr *BaseE,
                                                 const ObjCPropertyDecl *Prop)
-    : Base(nullptr, true), Property(Prop) {
+    : Base(0, true), Property(Prop) {
   if (BaseE)
     Base = getBaseInfo(BaseE);
   // else, this is a message accessing a property on super.
@@ -128,7 +113,7 @@ FunctionScopeInfo::WeakObjectProfileTy::WeakObjectProfileTy(const Expr *BaseE,
 
 FunctionScopeInfo::WeakObjectProfileTy::WeakObjectProfileTy(
                                                       const DeclRefExpr *DRE)
-  : Base(nullptr, true), Property(DRE->getDecl()) {
+  : Base(0, true), Property(DRE->getDecl()) {
   assert(isa<VarDecl>(Property));
 }
 
@@ -168,14 +153,8 @@ void FunctionScopeInfo::markSafeWeakUse(const Expr *E) {
 
   // Has this weak object been seen before?
   FunctionScopeInfo::WeakObjectUseMap::iterator Uses;
-  if (const ObjCPropertyRefExpr *RefExpr = dyn_cast<ObjCPropertyRefExpr>(E)) {
-    if (isa<OpaqueValueExpr>(RefExpr->getBase()))
-     Uses = WeakObjectUses.find(WeakObjectProfileTy(RefExpr));
-    else {
-      markSafeWeakUse(RefExpr->getBase());
-      return;
-    }
-  }
+  if (const ObjCPropertyRefExpr *RefExpr = dyn_cast<ObjCPropertyRefExpr>(E))
+    Uses = WeakObjectUses.find(WeakObjectProfileTy(RefExpr));
   else if (const ObjCIvarRefExpr *IvarE = dyn_cast<ObjCIvarRefExpr>(E))
     Uses = WeakObjectUses.find(WeakObjectProfileTy(IvarE));
   else if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E))
@@ -205,23 +184,6 @@ void FunctionScopeInfo::markSafeWeakUse(const Expr *E) {
   ThisUse->markSafe();
 }
 
-void LambdaScopeInfo::getPotentialVariableCapture(unsigned Idx, VarDecl *&VD,
-                                                  Expr *&E) const {
-  assert(Idx < getNumPotentialVariableCaptures() &&
-         "Index of potential capture must be within 0 to less than the "
-         "number of captures!");
-  E = PotentiallyCapturingExprs[Idx];
-  if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E))
-    VD = dyn_cast<VarDecl>(DRE->getFoundDecl());
-  else if (MemberExpr *ME = dyn_cast<MemberExpr>(E))
-    VD = dyn_cast<VarDecl>(ME->getMemberDecl());
-  else
-    llvm_unreachable("Only DeclRefExprs or MemberExprs should be added for "
-    "potential captures");
-  assert(VD);
-}
-
 FunctionScopeInfo::~FunctionScopeInfo() { }
 BlockScopeInfo::~BlockScopeInfo() { }
 LambdaScopeInfo::~LambdaScopeInfo() { }
-CapturedRegionScopeInfo::~CapturedRegionScopeInfo() { }

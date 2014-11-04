@@ -11,7 +11,6 @@
 #define LLVM_CLANG_STATICANALYZER_CORE_CHECKEROPTINFO_H
 
 #include "clang/Basic/LLVM.h"
-#include "llvm/ADT/StringRef.h"
 
 namespace clang {
 namespace ento {

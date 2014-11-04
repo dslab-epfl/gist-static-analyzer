@@ -1,16 +1,16 @@
-// RUN: llvm-mc -filetype=obj -triple x86_64-pc-linux-gnu %s -o - | llvm-readobj -s | FileCheck %s
+// RUN: llvm-mc -filetype=obj -triple x86_64-pc-linux-gnu %s -o - | elf-dump  | FileCheck %s
 
 // Test that these names are accepted.
 
 .section	.note.GNU-stack,"",@progbits
 .section	.note.GNU-stack2,"",%progbits
 .section	.note.GNU-,"",@progbits
-.section	-.note.GNU,"","progbits"
+.section	-.note.GNU,"",@progbits
 
-// CHECK: Name: .note.GNU-stack (56)
-// CHECK: Name: .note.GNU-stack2 (153)
-// CHECK: Name: .note.GNU- (170)
-// CHECK: Name: -.note.GNU (142)
+// CHECK: ('sh_name', 0x00000038) # '.note.GNU-stack'
+// CHECK: ('sh_name', 0x0000008f) # '.note.GNU-stack2'
+// CHECK: ('sh_name', 0x000000a0) # '.note.GNU-'
+// CHECK: ('sh_name', 0x00000084) # '-.note.GNU'
 
 // Test that the defaults are used
 
@@ -19,81 +19,66 @@
 .section	.rodata
 .section	zed, ""
 
-// CHECK:        Section {
-// CHECK:          Name: .init
-// CHECK-NEXT:     Type: SHT_PROGBITS
-// CHECK-NEXT:     Flags [
-// CHECK-NEXT:       SHF_ALLOC
-// CHECK-NEXT:       SHF_EXECINSTR
-// CHECK-NEXT:     ]
-// CHECK-NEXT:     Address: 0x0
-// CHECK-NEXT:     Offset: 0x50
-// CHECK-NEXT:     Size: 0
-// CHECK-NEXT:     Link: 0
-// CHECK-NEXT:     Info: 0
-// CHECK-NEXT:     AddressAlignment: 1
-// CHECK-NEXT:     EntrySize: 0
-// CHECK-NEXT:   }
-// CHECK-NEXT:   Section {
-// CHECK-NEXT:     Index: 11
-// CHECK-NEXT:     Name: .fini
-// CHECK-NEXT:     Type: SHT_PROGBITS
-// CHECK-NEXT:     Flags [
-// CHECK-NEXT:       SHF_ALLOC
-// CHECK-NEXT:       SHF_EXECINSTR
-// CHECK-NEXT:     ]
-// CHECK-NEXT:     Address: 0x0
-// CHECK-NEXT:     Offset: 0x50
-// CHECK-NEXT:     Size: 0
-// CHECK-NEXT:     Link: 0
-// CHECK-NEXT:     Info: 0
-// CHECK-NEXT:     AddressAlignment: 1
-// CHECK-NEXT:     EntrySize: 0
-// CHECK-NEXT:   }
-// CHECK-NEXT:   Section {
-// CHECK-NEXT:     Index: 12
-// CHECK-NEXT:     Name: .rodata
-// CHECK-NEXT:     Type: SHT_PROGBITS
-// CHECK-NEXT:     Flags [
-// CHECK-NEXT:       SHF_ALLOC
-// CHECK-NEXT:     ]
-// CHECK-NEXT:     Address: 0x0
-// CHECK-NEXT:     Offset: 0x50
-// CHECK-NEXT:     Size: 0
-// CHECK-NEXT:     Link: 0
-// CHECK-NEXT:     Info: 0
-// CHECK-NEXT:     AddressAlignment: 1
-// CHECK-NEXT:     EntrySize: 0
-// CHECK-NEXT:   }
-// CHECK-NEXT:   Section {
-// CHECK-NEXT:     Index: 13
-// CHECK-NEXT:     Name: zed
-// CHECK-NEXT:     Type: SHT_PROGBITS
-// CHECK-NEXT:     Flags [
-// CHECK-NEXT:     ]
-// CHECK-NEXT:     Address: 0x0
-// CHECK-NEXT:     Offset: 0x50
-// CHECK-NEXT:     Size: 0
-// CHECK-NEXT:     Link: 0
-// CHECK-NEXT:     Info: 0
-// CHECK-NEXT:     AddressAlignment: 1
-// CHECK-NEXT:     EntrySize: 0
-// CHECK-NEXT:   }
+// CHECK:      (('sh_name', 0x00000012) # '.init'
+// CHECK-NEXT:  ('sh_type', 0x00000001)
+// CHECK-NEXT:  ('sh_flags', 0x0000000000000006)
+// CHECK-NEXT:  ('sh_addr', 0x0000000000000000)
+// CHECK-NEXT:  ('sh_offset', 0x0000000000000050)
+// CHECK-NEXT:  ('sh_size', 0x0000000000000000)
+// CHECK-NEXT:  ('sh_link', 0x00000000)
+// CHECK-NEXT:  ('sh_info', 0x00000000)
+// CHECK-NEXT:  ('sh_addralign', 0x0000000000000001)
+// CHECK-NEXT:  ('sh_entsize', 0x0000000000000000)
+// CHECK-NEXT: ),
+// CHECK-NEXT: # Section 11
+// CHECK-NEXT: (('sh_name', 0x00000048) # '.fini'
+// CHECK-NEXT:  ('sh_type', 0x00000001)
+// CHECK-NEXT:  ('sh_flags', 0x0000000000000006)
+// CHECK-NEXT:  ('sh_addr', 0x0000000000000000)
+// CHECK-NEXT:  ('sh_offset', 0x0000000000000050)
+// CHECK-NEXT:  ('sh_size', 0x0000000000000000)
+// CHECK-NEXT:  ('sh_link', 0x00000000)
+// CHECK-NEXT:  ('sh_info', 0x00000000)
+// CHECK-NEXT:  ('sh_addralign', 0x0000000000000001)
+// CHECK-NEXT:  ('sh_entsize', 0x0000000000000000)
+// CHECK-NEXT: ),
+// CHECK-NEXT: # Section 12
+// CHECK-NEXT: (('sh_name', 0x00000076) # '.rodata'
+// CHECK-NEXT:  ('sh_type', 0x00000001)
+// CHECK-NEXT:  ('sh_flags', 0x0000000000000002)
+// CHECK-NEXT:  ('sh_addr', 0x0000000000000000)
+// CHECK-NEXT:  ('sh_offset', 0x0000000000000050)
+// CHECK-NEXT:  ('sh_size', 0x0000000000000000)
+// CHECK-NEXT:  ('sh_link', 0x00000000)
+// CHECK-NEXT:  ('sh_info', 0x00000000)
+// CHECK-NEXT:  ('sh_addralign', 0x0000000000000001)
+// CHECK-NEXT:  ('sh_entsize', 0x0000000000000000)
+// CHECK-NEXT: ),
+// CHECK-NEXT: # Section 13
+// CHECK-NEXT: (('sh_name', 0x00000058) # 'zed'
+// CHECK-NEXT:  ('sh_type', 0x00000001)
+// CHECK-NEXT:  ('sh_flags', 0x0000000000000000)
+// CHECK-NEXT:  ('sh_addr', 0x0000000000000000)
+// CHECK-NEXT:  ('sh_offset', 0x0000000000000050)
+// CHECK-NEXT:  ('sh_size', 0x0000000000000000)
+// CHECK-NEXT:  ('sh_link', 0x00000000)
+// CHECK-NEXT:  ('sh_info', 0x00000000)
+// CHECK-NEXT:  ('sh_addralign', 0x0000000000000001)
+// CHECK-NEXT:  ('sh_entsize', 0x0000000000000000)
+// CHECK-NEXT: ),
 
 .section	.note.test,"",@note
-// CHECK:        Section {
-// CHECK:          Name: .note.test
-// CHECK-NEXT:     Type: SHT_NOTE
-// CHECK-NEXT:     Flags [
-// CHECK-NEXT:     ]
-// CHECK-NEXT:     Address: 0x0
-// CHECK-NEXT:     Offset: 0x50
-// CHECK-NEXT:     Size: 0
-// CHECK-NEXT:     Link: 0
-// CHECK-NEXT:     Info: 0
-// CHECK-NEXT:     AddressAlignment: 1
-// CHECK-NEXT:     EntrySize: 0
-// CHECK-NEXT:   }
+// CHECK:       (('sh_name', 0x00000007) # '.note.test'
+// CHECK-NEXT:   ('sh_type', 0x00000007)
+// CHECK-NEXT:   ('sh_flags', 0x0000000000000000)
+// CHECK-NEXT:   ('sh_addr', 0x0000000000000000)
+// CHECK-NEXT:   ('sh_offset', 0x0000000000000050)
+// CHECK-NEXT:   ('sh_size', 0x0000000000000000)
+// CHECK-NEXT:   ('sh_link', 0x00000000)
+// CHECK-NEXT:   ('sh_info', 0x00000000)
+// CHECK-NEXT:   ('sh_addralign', 0x0000000000000001)
+// CHECK-NEXT:   ('sh_entsize', 0x0000000000000000)
+// CHECK-NEXT:  ),
 
 // Test that we can parse these
 foo:
@@ -105,43 +90,21 @@ bar:
 
 .section .eh_frame,"a",@unwind
 
-// CHECK:        Section {
-// CHECK:          Name: .eh_frame
-// CHECK-NEXT:     Type: SHT_X86_64_UNWIND
-// CHECK-NEXT:     Flags [
-// CHECK-NEXT:       SHF_ALLOC
-// CHECK-NEXT:     ]
-// CHECK-NEXT:     Address: 0x0
-// CHECK-NEXT:     Offset: 0x50
-// CHECK-NEXT:     Size: 0
-// CHECK-NEXT:     Link: 0
-// CHECK-NEXT:     Info: 0
-// CHECK-NEXT:     AddressAlignment: 1
-// CHECK-NEXT:     EntrySize: 0
-// CHECK-NEXT:   }
-
-.section .excluded,"e",@progbits
-
-// CHECK:      Section {
-// CHECK:        Name: .excluded (92)
-// CHECK-NEXT:   Type: SHT_PROGBITS (0x1)
-// CHECK-NEXT:   Flags [ (0x80000000)
-// CHECK-NEXT:     SHF_EXCLUDE (0x80000000)
-// CHECK-NEXT:   ]
-// CHECK-NEXT:   Address: 0x0
-// CHECK-NEXT:   Offset: 0x50
-// CHECK-NEXT:   Size: 0
-// CHECK-NEXT:   Link: 0
-// CHECK-NEXT:   Info: 0
-// CHECK-NEXT:   AddressAlignment: 1
-// CHECK-NEXT:   EntrySize: 0
-// CHECK-NEXT: }
+// CHECK:       (('sh_name', 0x0000004e) # '.eh_frame'
+// CHECK-NEXT:   ('sh_type', 0x70000001)
+// CHECK-NEXT:   ('sh_flags', 0x0000000000000002)
+// CHECK-NEXT:   ('sh_addr', 0x0000000000000000)
+// CHECK-NEXT:   ('sh_offset', 0x0000000000000050)
+// CHECK-NEXT:   ('sh_size', 0x0000000000000000)
+// CHECK-NEXT:   ('sh_link', 0x00000000)
+// CHECK-NEXT:   ('sh_info', 0x00000000)
+// CHECK-NEXT:   ('sh_addralign', 0x0000000000000001)
+// CHECK-NEXT:   ('sh_entsize', 0x0000000000000000)
+// CHECK-NEXT:  ),
 
 // Test that we handle the strings like gas
 .section bar-"foo"
 .section "foo"
 
-// CHECK:        Section {
-// CHECK:          Name: bar-"foo" (181)
-// CHECK:        Section {
-// CHECK:          Name: foo (52)
+// CHECK: ('sh_name', 0x000000ab) # 'bar-"foo"'
+// CHECK: ('sh_name', 0x00000034) # 'foo'

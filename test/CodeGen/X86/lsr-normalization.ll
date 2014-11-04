@@ -1,16 +1,10 @@
-; REQUIRES: asserts
-; RUN: llc < %s -march=x86-64 | FileCheck %s --check-prefix=ASM
-; RUN: llc -debug -o /dev/null < %s -march=x86-64 2>&1 | FileCheck %s --check-prefix=DBG
+; RUN: llc < %s -march=x86-64 | grep div | count 1
 ; rdar://8168938
 
 ; This testcase involves SCEV normalization with the exit value from
 ; one loop involved with the increment value for an addrec on another
 ; loop. The expression should be properly normalized and simplified,
 ; and require only a single division.
-
-; DBG-NOT: DISCARDING (NORMALIZATION ISN'T INVERTIBLE)
-; ASM: div
-; ASM-NOT: div
 
 %0 = type { %0*, %0* }
 

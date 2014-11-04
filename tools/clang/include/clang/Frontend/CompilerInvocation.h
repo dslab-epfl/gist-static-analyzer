@@ -10,34 +10,33 @@
 #ifndef LLVM_CLANG_FRONTEND_COMPILERINVOCATION_H_
 #define LLVM_CLANG_FRONTEND_COMPILERINVOCATION_H_
 
-#include "clang/Basic/DiagnosticOptions.h"
-#include "clang/Basic/FileSystemOptions.h"
 #include "clang/Basic/LangOptions.h"
 #include "clang/Basic/TargetOptions.h"
+#include "clang/Basic/FileSystemOptions.h"
+#include "clang/Basic/DiagnosticOptions.h"
+#include "clang/Lex/HeaderSearchOptions.h"
+#include "clang/Lex/PreprocessorOptions.h"
+#include "clang/StaticAnalyzer/Core/AnalyzerOptions.h"
+#include "clang/Frontend/MigratorOptions.h"
 #include "clang/Frontend/CodeGenOptions.h"
 #include "clang/Frontend/DependencyOutputOptions.h"
 #include "clang/Frontend/FrontendOptions.h"
 #include "clang/Frontend/LangStandard.h"
-#include "clang/Frontend/MigratorOptions.h"
 #include "clang/Frontend/PreprocessorOutputOptions.h"
-#include "clang/Lex/HeaderSearchOptions.h"
-#include "clang/Lex/PreprocessorOptions.h"
-#include "clang/StaticAnalyzer/Core/AnalyzerOptions.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
-#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringMap.h"
 #include <string>
 #include <vector>
 
-namespace llvm {
-namespace opt {
-class ArgList;
-}
-}
-
 namespace clang {
+
 class CompilerInvocation;
 class DiagnosticsEngine;
+
+namespace driver {
+class ArgList;
+}
 
 /// \brief Fill out Opts based on the options given in Args.
 ///
@@ -46,18 +45,16 @@ class DiagnosticsEngine;
 ///
 /// When errors are encountered, return false and, if Diags is non-null,
 /// report the error(s).
-bool ParseDiagnosticArgs(DiagnosticOptions &Opts, llvm::opt::ArgList &Args,
-                         DiagnosticsEngine *Diags = nullptr);
-
+bool ParseDiagnosticArgs(DiagnosticOptions &Opts, driver::ArgList &Args,
+                         DiagnosticsEngine *Diags = 0);
+  
 class CompilerInvocationBase : public RefCountedBase<CompilerInvocation> {
-  void operator=(const CompilerInvocationBase &) LLVM_DELETED_FUNCTION;
-
-public:
+protected:
   /// Options controlling the language variant.
-  std::shared_ptr<LangOptions> LangOpts;
+  IntrusiveRefCntPtr<LangOptions> LangOpts;
 
   /// Options controlling the target.
-  std::shared_ptr<TargetOptions> TargetOpts;
+  IntrusiveRefCntPtr<TargetOptions> TargetOpts;
 
   /// Options controlling the diagnostic engine.
   IntrusiveRefCntPtr<DiagnosticOptions> DiagnosticOpts;
@@ -68,17 +65,17 @@ public:
   /// Options controlling the preprocessor (aside from \#include handling).
   IntrusiveRefCntPtr<PreprocessorOptions> PreprocessorOpts;
 
+public:
   CompilerInvocationBase();
-  ~CompilerInvocationBase();
 
   CompilerInvocationBase(const CompilerInvocationBase &X);
   
-  LangOptions *getLangOpts() { return LangOpts.get(); }
-  const LangOptions *getLangOpts() const { return LangOpts.get(); }
+  LangOptions *getLangOpts() { return LangOpts.getPtr(); }
+  const LangOptions *getLangOpts() const { return LangOpts.getPtr(); }
 
-  TargetOptions &getTargetOpts() { return *TargetOpts.get(); }
+  TargetOptions &getTargetOpts() { return *TargetOpts.getPtr(); }
   const TargetOptions &getTargetOpts() const {
-    return *TargetOpts.get();
+    return *TargetOpts.getPtr();
   }
 
   DiagnosticOptions &getDiagnosticOpts() const { return *DiagnosticOpts; }
@@ -205,14 +202,6 @@ public:
 
   /// @}
 };
-
-namespace vfs {
-  class FileSystem;
-}
-
-IntrusiveRefCntPtr<vfs::FileSystem>
-createVFSFromCompilerInvocation(const CompilerInvocation &CI,
-                                DiagnosticsEngine &Diags);
 
 } // end namespace clang
 

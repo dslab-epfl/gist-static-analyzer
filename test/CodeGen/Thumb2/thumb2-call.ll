@@ -6,20 +6,20 @@
 declare void @g(i32, i32, i32, i32)
 
 define void @f() {
-; DARWIN-LABEL: f:
+; DARWIN: f:
 ; DARWIN: blx _g
 
-; LINUX-LABEL: f:
+; LINUX: f:
 ; LINUX: bl g
         call void @g( i32 1, i32 2, i32 3, i32 4 )
         ret void
 }
 
 define void @h() {
-; DARWIN-LABEL: h:
+; DARWIN: h:
 ; DARWIN: blx r0
 
-; LINUX-LABEL: h:
+; LINUX: h:
 ; LINUX: blx r0
         %tmp = load i32 ()** @t         ; <i32 ()*> [#uses=1]
         %tmp.upgrd.2 = call i32 %tmp( )            ; <i32> [#uses=0]

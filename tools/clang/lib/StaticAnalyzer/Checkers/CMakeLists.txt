@@ -3,15 +3,11 @@ clang_tablegen(Checkers.inc -gen-clang-sa-checkers
   SOURCE Checkers.td
   TARGET ClangSACheckers)
 
-set(LLVM_LINK_COMPONENTS
-  Support
-  )
-
 add_clang_library(clangStaticAnalyzerCheckers
-  AllocationDiagnostics.cpp
   AnalyzerStatsChecker.cpp
   ArrayBoundChecker.cpp
   ArrayBoundCheckerV2.cpp
+  AttrNonNullChecker.cpp
   BasicObjCFoundationChecks.cpp
   BoolAssignmentChecker.cpp
   BuiltinFunctionChecker.cpp
@@ -27,6 +23,7 @@ add_clang_library(clangStaticAnalyzerCheckers
   CheckerDocumentation.cpp
   ChrootChecker.cpp
   ClangCheckers.cpp
+  CommonBugCategories.cpp
   DeadStoresChecker.cpp
   DebugCheckers.cpp
   DereferenceChecker.cpp
@@ -34,9 +31,10 @@ add_clang_library(clangStaticAnalyzerCheckers
   DivZeroChecker.cpp
   DynamicTypePropagation.cpp
   ExprInspectionChecker.cpp
+  SimpleStreamChecker.cpp
   FixedAddressChecker.cpp
   GenericTaintChecker.cpp
-  IdenticalExprChecker.cpp
+  IdempotentOperationChecker.cpp
   IvarInvalidationChecker.cpp
   LLVMConventionsChecker.cpp
   MacOSKeychainAPIChecker.cpp
@@ -47,7 +45,6 @@ add_clang_library(clangStaticAnalyzerCheckers
   NSAutoreleasePoolChecker.cpp
   NSErrorChecker.cpp
   NoReturnFunctionChecker.cpp
-  NonNullParamChecker.cpp
   ObjCAtSyncChecker.cpp
   ObjCContainersASTChecker.cpp
   ObjCContainersChecker.cpp
@@ -60,11 +57,9 @@ add_clang_library(clangStaticAnalyzerCheckers
   RetainCountChecker.cpp
   ReturnPointerRangeChecker.cpp
   ReturnUndefChecker.cpp
-  SimpleStreamChecker.cpp
   StackAddrEscapeChecker.cpp
   StreamChecker.cpp
   TaintTesterChecker.cpp
-  TestAfterDivZeroChecker.cpp
   TraversalChecker.cpp
   UndefBranchChecker.cpp
   UndefCapturedBlockVarChecker.cpp
@@ -75,13 +70,21 @@ add_clang_library(clangStaticAnalyzerCheckers
   UnreachableCodeChecker.cpp
   VLASizeChecker.cpp
   VirtualCallChecker.cpp
+  )
 
-  DEPENDS
+add_dependencies(clangStaticAnalyzerCheckers
+  clangStaticAnalyzerCore
+  ClangAttrClasses
+  ClangAttrList
+  ClangCommentNodes
+  ClangDeclNodes
+  ClangDiagnosticCommon
+  ClangStmtNodes
   ClangSACheckers
+  )
 
-  LINK_LIBS
-  clangAST
-  clangAnalysis
+target_link_libraries(clangStaticAnalyzerCheckers
   clangBasic
+  clangAST
   clangStaticAnalyzerCore
   )

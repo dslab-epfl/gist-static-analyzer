@@ -1,14 +1,12 @@
-// RUN: %clang_cc1 -triple=i686-apple-darwin9 -emit-llvm -o - %s | FileCheck %s
+// RUN: %clang_cc1 -triple=i686-apple-darwin9 -emit-llvm -o %t %s
+// RUN: grep -e "\^i" %t | count 1
+// RUN: grep -e "\[0i\]" %t | count 1
 
 int main() {
   int n;
   
   const char * inc = @encode(int[]);
-// CHECK: ^i
-// CHECK-NOT: ^i
   const char * vla = @encode(int[n]);
-// CHECK: [0i]
-// CHECK-NOT: [0i]
 }
 
 // PR3648

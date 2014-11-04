@@ -7,20 +7,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/Frontend/SerializedDiagnosticPrinter.h"
-#include "clang/Frontend/SerializedDiagnostics.h"
-#include "clang/Basic/Diagnostic.h"
-#include "clang/Basic/DiagnosticOptions.h"
-#include "clang/Basic/FileManager.h"
-#include "clang/Basic/SourceManager.h"
-#include "clang/Basic/Version.h"
-#include "clang/Frontend/DiagnosticRenderer.h"
-#include "clang/Lex/Lexer.h"
-#include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/SmallString.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/Support/raw_ostream.h"
 #include <vector>
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/DenseSet.h"
+#include "clang/Basic/DiagnosticOptions.h"
+#include "clang/Basic/SourceManager.h"
+#include "clang/Basic/FileManager.h"
+#include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/Version.h"
+#include "clang/Lex/Lexer.h"
+#include "clang/Frontend/SerializedDiagnosticPrinter.h"
+#include "clang/Frontend/DiagnosticRenderer.h"
 
 using namespace clang;
 using namespace clang::serialized_diags;
@@ -45,8 +44,8 @@ public:
   }
 };
  
-typedef SmallVector<uint64_t, 64> RecordData;
-typedef SmallVectorImpl<uint64_t> RecordDataImpl;
+typedef llvm::SmallVector<uint64_t, 64> RecordData;
+typedef llvm::SmallVectorImpl<uint64_t> RecordDataImpl;
 
 class SDiagsWriter;
   
@@ -60,59 +59,59 @@ public:
   virtual ~SDiagsRenderer() {}
   
 protected:
-  void emitDiagnosticMessage(SourceLocation Loc,
-                             PresumedLoc PLoc,
-                             DiagnosticsEngine::Level Level,
-                             StringRef Message,
-                             ArrayRef<CharSourceRange> Ranges,
-                             const SourceManager *SM,
-                             DiagOrStoredDiag D) override;
+  virtual void emitDiagnosticMessage(SourceLocation Loc,
+                                     PresumedLoc PLoc,
+                                     DiagnosticsEngine::Level Level,
+                                     StringRef Message,
+                                     ArrayRef<CharSourceRange> Ranges,
+                                     const SourceManager *SM,
+                                     DiagOrStoredDiag D);
+  
+  virtual void emitDiagnosticLoc(SourceLocation Loc, PresumedLoc PLoc,
+                                 DiagnosticsEngine::Level Level,
+                                 ArrayRef<CharSourceRange> Ranges,
+                                 const SourceManager &SM) {}
 
-  void emitDiagnosticLoc(SourceLocation Loc, PresumedLoc PLoc,
-                         DiagnosticsEngine::Level Level,
-                         ArrayRef<CharSourceRange> Ranges,
-                         const SourceManager &SM) override {}
+  virtual void emitNote(SourceLocation Loc, StringRef Message,
+                        const SourceManager *SM);
 
-  void emitNote(SourceLocation Loc, StringRef Message,
-                const SourceManager *SM) override;
+  virtual void emitCodeContext(SourceLocation Loc,
+                               DiagnosticsEngine::Level Level,
+                               SmallVectorImpl<CharSourceRange>& Ranges,
+                               ArrayRef<FixItHint> Hints,
+                               const SourceManager &SM);
 
-  void emitCodeContext(SourceLocation Loc,
-                       DiagnosticsEngine::Level Level,
-                       SmallVectorImpl<CharSourceRange>& Ranges,
-                       ArrayRef<FixItHint> Hints,
-                       const SourceManager &SM) override;
-
-  void beginDiagnostic(DiagOrStoredDiag D,
-                       DiagnosticsEngine::Level Level) override;
-  void endDiagnostic(DiagOrStoredDiag D,
-                     DiagnosticsEngine::Level Level) override;
+  virtual void beginDiagnostic(DiagOrStoredDiag D,
+                               DiagnosticsEngine::Level Level);
+  virtual void endDiagnostic(DiagOrStoredDiag D,
+                             DiagnosticsEngine::Level Level);
 };
   
 class SDiagsWriter : public DiagnosticConsumer {
   friend class SDiagsRenderer;
-
-  struct SharedState;
-
-  explicit SDiagsWriter(IntrusiveRefCntPtr<SharedState> State)
-    : LangOpts(nullptr), OriginalInstance(false), State(State) {}
-
-public:
-  SDiagsWriter(std::unique_ptr<raw_ostream> os, DiagnosticOptions *diags)
-      : LangOpts(nullptr), OriginalInstance(true),
-        State(new SharedState(std::move(os), diags)) {
+public:  
+  explicit SDiagsWriter(llvm::raw_ostream *os, DiagnosticOptions *diags)
+    : LangOpts(0), DiagOpts(diags), Stream(Buffer), OS(os),
+      EmittedAnyDiagBlocks(false) {
     EmitPreamble();
   }
 
   ~SDiagsWriter() {}
-
+  
   void HandleDiagnostic(DiagnosticsEngine::Level DiagLevel,
-                        const Diagnostic &Info) override;
-
-  void BeginSourceFile(const LangOptions &LO, const Preprocessor *PP) override {
+                        const Diagnostic &Info);
+  
+  void BeginSourceFile(const LangOptions &LO,
+                       const Preprocessor *PP) {
     LangOpts = &LO;
   }
 
-  void finish() override;
+  virtual void finish();
+
+  DiagnosticConsumer *clone(DiagnosticsEngine &Diags) const {
+    // It makes no sense to clone this.
+    return 0;
+  }
 
 private:
   /// \brief Emit the preamble for the serialized diagnostics.
@@ -173,70 +172,54 @@ private:
   void AddCharSourceRangeToRecord(CharSourceRange R, RecordDataImpl &Record,
                                   const SourceManager &SM);
 
-  /// \brief Language options, which can differ from one clone of this client
-  /// to another.
+  /// \brief The version of the diagnostics file.
+  enum { Version = 1 };
+
   const LangOptions *LangOpts;
+  llvm::IntrusiveRefCntPtr<DiagnosticOptions> DiagOpts;
+  
+  /// \brief The byte buffer for the serialized content.
+  SmallString<1024> Buffer;
 
-  /// \brief Whether this is the original instance (rather than one of its
-  /// clones), responsible for writing the file at the end.
-  bool OriginalInstance;
+  /// \brief The BitStreamWriter for the serialized diagnostics.
+  llvm::BitstreamWriter Stream;
 
-  /// \brief State that is shared among the various clones of this diagnostic
-  /// consumer.
-  struct SharedState : RefCountedBase<SharedState> {
-    SharedState(std::unique_ptr<raw_ostream> os, DiagnosticOptions *diags)
-        : DiagOpts(diags), Stream(Buffer), OS(std::move(os)),
-          EmittedAnyDiagBlocks(false) {}
+  /// \brief The name of the diagnostics file.
+  OwningPtr<llvm::raw_ostream> OS;
+  
+  /// \brief The set of constructed record abbreviations.
+  AbbreviationMap Abbrevs;
 
-    /// \brief Diagnostic options.
-    IntrusiveRefCntPtr<DiagnosticOptions> DiagOpts;
+  /// \brief A utility buffer for constructing record content.
+  RecordData Record;
 
-    /// \brief The byte buffer for the serialized content.
-    SmallString<1024> Buffer;
+  /// \brief A text buffer for rendering diagnostic text.
+  SmallString<256> diagBuf;
+  
+  /// \brief The collection of diagnostic categories used.
+  llvm::DenseSet<unsigned> Categories;
+  
+  /// \brief The collection of files used.
+  llvm::DenseMap<const char *, unsigned> Files;
 
-    /// \brief The BitStreamWriter for the serialized diagnostics.
-    llvm::BitstreamWriter Stream;
+  typedef llvm::DenseMap<const void *, std::pair<unsigned, llvm::StringRef> > 
+          DiagFlagsTy;
 
-    /// \brief The name of the diagnostics file.
-    std::unique_ptr<raw_ostream> OS;
+  /// \brief Map for uniquing strings.
+  DiagFlagsTy DiagFlags;
 
-    /// \brief The set of constructed record abbreviations.
-    AbbreviationMap Abbrevs;
-
-    /// \brief A utility buffer for constructing record content.
-    RecordData Record;
-
-    /// \brief A text buffer for rendering diagnostic text.
-    SmallString<256> diagBuf;
-
-    /// \brief The collection of diagnostic categories used.
-    llvm::DenseSet<unsigned> Categories;
-
-    /// \brief The collection of files used.
-    llvm::DenseMap<const char *, unsigned> Files;
-
-    typedef llvm::DenseMap<const void *, std::pair<unsigned, StringRef> >
-    DiagFlagsTy;
-
-    /// \brief Map for uniquing strings.
-    DiagFlagsTy DiagFlags;
-
-    /// \brief Whether we have already started emission of any DIAG blocks. Once
-    /// this becomes \c true, we never close a DIAG block until we know that we're
-    /// starting another one or we're done.
-    bool EmittedAnyDiagBlocks;
-  };
-
-  /// \brief State shared among the various clones of this diagnostic consumer.
-  IntrusiveRefCntPtr<SharedState> State;
+  /// \brief Whether we have already started emission of any DIAG blocks. Once
+  /// this becomes \c true, we never close a DIAG block until we know that we're
+  /// starting another one or we're done.
+  bool EmittedAnyDiagBlocks;
 };
 } // end anonymous namespace
 
 namespace clang {
 namespace serialized_diags {
-std::unique_ptr<DiagnosticConsumer> create(std::unique_ptr<raw_ostream> OS,
-                                           DiagnosticOptions *diags) {
-  return llvm::make_unique<SDiagsWriter>(std::move(OS), diags);
+DiagnosticConsumer *create(llvm::raw_ostream *OS,
+                           DiagnosticOptions *diags) {
+  return new SDiagsWriter(OS, diags);
 }
 } // end namespace serialized_diags
 } // end namespace clang
@@ -254,7 +237,7 @@ static void EmitBlockID(unsigned ID, const char *Name,
   Stream.EmitRecord(llvm::bitc::BLOCKINFO_CODE_SETBID, Record);
   
   // Emit the block name if present.
-  if (!Name || Name[0] == 0)
+  if (Name == 0 || Name[0] == 0)
     return;
 
   Record.clear();
@@ -314,12 +297,12 @@ unsigned SDiagsWriter::getEmitFile(const char *FileName){
   if (!FileName)
     return 0;
   
-  unsigned &entry = State->Files[FileName];
+  unsigned &entry = Files[FileName];
   if (entry)
     return entry;
   
   // Lazily generate the record for the file.
-  entry = State->Files.size();
+  entry = Files.size();
   RecordData Record;
   Record.push_back(RECORD_FILENAME);
   Record.push_back(entry);
@@ -327,28 +310,26 @@ unsigned SDiagsWriter::getEmitFile(const char *FileName){
   Record.push_back(0); // For legacy.
   StringRef Name(FileName);
   Record.push_back(Name.size());
-  State->Stream.EmitRecordWithBlob(State->Abbrevs.get(RECORD_FILENAME), Record,
-                                   Name);
+  Stream.EmitRecordWithBlob(Abbrevs.get(RECORD_FILENAME), Record, Name);
 
   return entry;
 }
 
 void SDiagsWriter::EmitCharSourceRange(CharSourceRange R,
                                        const SourceManager &SM) {
-  State->Record.clear();
-  State->Record.push_back(RECORD_SOURCE_RANGE);
-  AddCharSourceRangeToRecord(R, State->Record, SM);
-  State->Stream.EmitRecordWithAbbrev(State->Abbrevs.get(RECORD_SOURCE_RANGE),
-                                     State->Record);
+  Record.clear();
+  Record.push_back(RECORD_SOURCE_RANGE);
+  AddCharSourceRangeToRecord(R, Record, SM);
+  Stream.EmitRecordWithAbbrev(Abbrevs.get(RECORD_SOURCE_RANGE), Record);
 }
 
 /// \brief Emits the preamble of the diagnostics file.
 void SDiagsWriter::EmitPreamble() {
   // Emit the file header.
-  State->Stream.Emit((unsigned)'D', 8);
-  State->Stream.Emit((unsigned)'I', 8);
-  State->Stream.Emit((unsigned)'A', 8);
-  State->Stream.Emit((unsigned)'G', 8);
+  Stream.Emit((unsigned)'D', 8);
+  Stream.Emit((unsigned)'I', 8);
+  Stream.Emit((unsigned)'A', 8);
+  Stream.Emit((unsigned)'G', 8);
 
   EmitBlockInfoBlock();
   EmitMetaBlock();
@@ -368,12 +349,9 @@ static void AddRangeLocationAbbrev(llvm::BitCodeAbbrev *Abbrev) {
 }
 
 void SDiagsWriter::EmitBlockInfoBlock() {
-  State->Stream.EnterBlockInfoBlock(3);
+  Stream.EnterBlockInfoBlock(3);
 
   using namespace llvm;
-  llvm::BitstreamWriter &Stream = State->Stream;
-  RecordData &Record = State->Record;
-  AbbreviationMap &Abbrevs = State->Abbrevs;
 
   // ==---------------------------------------------------------------------==//
   // The subsequent records and Abbrevs are for the "Meta" block.
@@ -457,22 +435,20 @@ void SDiagsWriter::EmitBlockInfoBlock() {
 }
 
 void SDiagsWriter::EmitMetaBlock() {
-  llvm::BitstreamWriter &Stream = State->Stream;
-  RecordData &Record = State->Record;
-  AbbreviationMap &Abbrevs = State->Abbrevs;
-
   Stream.EnterSubblock(BLOCK_META, 3);
   Record.clear();
   Record.push_back(RECORD_VERSION);
-  Record.push_back(VersionNumber);
+  Record.push_back(Version);
   Stream.EmitRecordWithAbbrev(Abbrevs.get(RECORD_VERSION), Record);  
   Stream.ExitBlock();
 }
 
 unsigned SDiagsWriter::getEmitCategory(unsigned int category) {
-  if (!State->Categories.insert(category).second)
+  if (Categories.count(category))
     return category;
-
+  
+  Categories.insert(category);
+  
   // We use a local version of 'Record' so that we can be generating
   // another record when we lazily generate one for the category entry.
   RecordData Record;
@@ -480,8 +456,7 @@ unsigned SDiagsWriter::getEmitCategory(unsigned int category) {
   Record.push_back(category);
   StringRef catName = DiagnosticIDs::getCategoryNameFromID(category);
   Record.push_back(catName.size());
-  State->Stream.EmitRecordWithBlob(State->Abbrevs.get(RECORD_CATEGORY), Record,
-                                   catName);
+  Stream.EmitRecordWithBlob(Abbrevs.get(RECORD_CATEGORY), Record, catName);
   
   return category;
 }
@@ -498,9 +473,9 @@ unsigned SDiagsWriter::getEmitDiagnosticFlag(DiagnosticsEngine::Level DiagLevel,
   // Here we assume that FlagName points to static data whose pointer
   // value is fixed.  This allows us to unique by diagnostic groups.
   const void *data = FlagName.data();
-  std::pair<unsigned, StringRef> &entry = State->DiagFlags[data];
+  std::pair<unsigned, StringRef> &entry = DiagFlags[data];
   if (entry.first == 0) {
-    entry.first = State->DiagFlags.size();
+    entry.first = DiagFlags.size();
     entry.second = FlagName;
     
     // Lazily emit the string in a separate record.
@@ -508,8 +483,8 @@ unsigned SDiagsWriter::getEmitDiagnosticFlag(DiagnosticsEngine::Level DiagLevel,
     Record.push_back(RECORD_DIAG_FLAG);
     Record.push_back(entry.first);
     Record.push_back(FlagName.size());
-    State->Stream.EmitRecordWithBlob(State->Abbrevs.get(RECORD_DIAG_FLAG),
-                                     Record, FlagName);
+    Stream.EmitRecordWithBlob(Abbrevs.get(RECORD_DIAG_FLAG),
+                              Record, FlagName);    
   }
 
   return entry.first;
@@ -521,60 +496,36 @@ void SDiagsWriter::HandleDiagnostic(DiagnosticsEngine::Level DiagLevel,
   // for beginDiagnostic, in case associated notes are emitted before we get
   // there.
   if (DiagLevel != DiagnosticsEngine::Note) {
-    if (State->EmittedAnyDiagBlocks)
+    if (EmittedAnyDiagBlocks)
       ExitDiagBlock();
 
     EnterDiagBlock();
-    State->EmittedAnyDiagBlocks = true;
+    EmittedAnyDiagBlocks = true;
   }
 
   // Compute the diagnostic text.
-  State->diagBuf.clear();
-  Info.FormatDiagnostic(State->diagBuf);
+  diagBuf.clear();
+  Info.FormatDiagnostic(diagBuf);
 
   if (Info.getLocation().isInvalid()) {
     // Special-case diagnostics with no location. We may not have entered a
     // source file in this case, so we can't use the normal DiagnosticsRenderer
     // machinery.
-
-    // Make sure we bracket all notes as "sub-diagnostics".  This matches
-    // the behavior in SDiagsRenderer::emitDiagnostic().
-    if (DiagLevel == DiagnosticsEngine::Note)
-      EnterDiagBlock();
-
     EmitDiagnosticMessage(SourceLocation(), PresumedLoc(), DiagLevel,
-                          State->diagBuf, nullptr, &Info);
-
-    if (DiagLevel == DiagnosticsEngine::Note)
-      ExitDiagBlock();
-
+                          diagBuf, 0, &Info);
     return;
   }
 
   assert(Info.hasSourceManager() && LangOpts &&
          "Unexpected diagnostic with valid location outside of a source file");
-  SDiagsRenderer Renderer(*this, *LangOpts, &*State->DiagOpts);
+  SDiagsRenderer Renderer(*this, *LangOpts, &*DiagOpts);
   Renderer.emitDiagnostic(Info.getLocation(), DiagLevel,
-                          State->diagBuf.str(),
+                          diagBuf.str(),
                           Info.getRanges(),
-                          Info.getFixItHints(),
+                          llvm::makeArrayRef(Info.getFixItHints(),
+                                             Info.getNumFixItHints()),
                           &Info.getSourceManager(),
                           &Info);
-}
-
-static serialized_diags::Level getStableLevel(DiagnosticsEngine::Level Level) {
-  switch (Level) {
-#define CASE(X) case DiagnosticsEngine::X: return serialized_diags::X;
-  CASE(Ignored)
-  CASE(Note)
-  CASE(Remark)
-  CASE(Warning)
-  CASE(Error)
-  CASE(Fatal)
-#undef CASE
-  }
-
-  llvm_unreachable("invalid diagnostic level");
 }
 
 void SDiagsWriter::EmitDiagnosticMessage(SourceLocation Loc,
@@ -583,14 +534,10 @@ void SDiagsWriter::EmitDiagnosticMessage(SourceLocation Loc,
                                          StringRef Message,
                                          const SourceManager *SM,
                                          DiagOrStoredDiag D) {
-  llvm::BitstreamWriter &Stream = State->Stream;
-  RecordData &Record = State->Record;
-  AbbreviationMap &Abbrevs = State->Abbrevs;
-  
   // Emit the RECORD_DIAG record.
   Record.clear();
   Record.push_back(RECORD_DIAG);
-  Record.push_back(getStableLevel(Level));
+  Record.push_back(Level);
   AddLocToRecord(Loc, SM, PLoc, Record);
 
   if (const Diagnostic *Info = D.dyn_cast<const Diagnostic*>()) {
@@ -620,11 +567,11 @@ SDiagsRenderer::emitDiagnosticMessage(SourceLocation Loc,
 }
 
 void SDiagsWriter::EnterDiagBlock() {
-  State->Stream.EnterSubblock(BLOCK_DIAG, 4);
+  Stream.EnterSubblock(BLOCK_DIAG, 4);
 }
 
 void SDiagsWriter::ExitDiagBlock() {
-  State->Stream.ExitBlock();
+  Stream.ExitBlock();
 }
 
 void SDiagsRenderer::beginDiagnostic(DiagOrStoredDiag D,
@@ -644,10 +591,6 @@ void SDiagsRenderer::endDiagnostic(DiagOrStoredDiag D,
 void SDiagsWriter::EmitCodeContext(SmallVectorImpl<CharSourceRange> &Ranges,
                                    ArrayRef<FixItHint> Hints,
                                    const SourceManager &SM) {
-  llvm::BitstreamWriter &Stream = State->Stream;
-  RecordData &Record = State->Record;
-  AbbreviationMap &Abbrevs = State->Abbrevs;
-
   // Emit Source Ranges.
   for (ArrayRef<CharSourceRange>::iterator I = Ranges.begin(), E = Ranges.end();
        I != E; ++I)
@@ -687,17 +630,13 @@ void SDiagsRenderer::emitNote(SourceLocation Loc, StringRef Message,
 }
 
 void SDiagsWriter::finish() {
-  // The original instance is responsible for writing the file.
-  if (!OriginalInstance)
-    return;
-
   // Finish off any diagnostic we were in the process of emitting.
-  if (State->EmittedAnyDiagBlocks)
+  if (EmittedAnyDiagBlocks)
     ExitDiagBlock();
 
   // Write the generated bitstream to "Out".
-  State->OS->write((char *)&State->Buffer.front(), State->Buffer.size());
-  State->OS->flush();
+  OS->write((char *)&Buffer.front(), Buffer.size());
+  OS->flush();
 
-  State->OS.reset();
+  OS.reset(0);
 }

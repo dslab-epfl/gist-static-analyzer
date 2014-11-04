@@ -37,8 +37,6 @@ struct AsanStats {
   uptr realloced;
   uptr mmaps;
   uptr mmaped;
-  uptr munmaps;
-  uptr munmaped;
   uptr mmaped_by_size[kNumberOfSizeClasses];
   uptr malloced_by_size[kNumberOfSizeClasses];
   uptr freed_by_size[kNumberOfSizeClasses];
@@ -47,21 +45,14 @@ struct AsanStats {
   uptr malloc_large;
   uptr malloc_small_slow;
 
-  // Ctor for global AsanStats (accumulated stats for dead threads).
+  // Ctor for global AsanStats (accumulated stats and main thread stats).
   explicit AsanStats(LinkerInitialized) { }
-  // Creates empty stats.
+  // Default ctor for thread-local stats.
   AsanStats();
 
-  void Print();  // Prints formatted stats to stderr.
-  void Clear();
-  void MergeFrom(const AsanStats *stats);
+  // Prints formatted stats to stderr.
+  void Print();
 };
-
-// Returns stats for GetCurrentThread(), or stats for fake "unknown thread"
-// if GetCurrentThread() returns 0.
-AsanStats &GetCurrentThreadStats();
-// Flushes a given stats into accumulated stats of dead threads.
-void FlushToDeadThreadStats(AsanStats *stats);
 
 // A cross-platform equivalent of malloc_statistics_t on Mac OS.
 struct AsanMallocStats {
@@ -70,8 +61,6 @@ struct AsanMallocStats {
   uptr max_size_in_use;
   uptr size_allocated;
 };
-
-void FillMallocStatistics(AsanMallocStats *malloc_stats);
 
 }  // namespace __asan
 

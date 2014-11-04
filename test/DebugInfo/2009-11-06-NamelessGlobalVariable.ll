@@ -2,13 +2,12 @@
 @0 = internal constant i32 1
 
 !llvm.dbg.cu = !{!0}
-!llvm.module.flags = !{!9}
 
-!0 = metadata !{metadata !"0x11\0012\00clang version 3.0 (trunk 139632)\001\00\000\00\000", metadata !8, metadata !2, metadata !2, metadata !2, metadata !3, null} ; [ DW_TAG_compile_unit ]
-!2 = metadata !{}
-!3 = metadata !{metadata !5}
-!5 = metadata !{metadata !"0x34\00a\00a\00\002\000\001", null, metadata !6, metadata !7, i32* @0, null} ; [ DW_TAG_variable ]
-!6 = metadata !{metadata !"0x29", metadata !8} ; [ DW_TAG_file_type ]
-!7 = metadata !{metadata !"0x24\00int\000\0032\0032\000\000\005", null, null} ; [ DW_TAG_base_type ]
-!8 = metadata !{metadata !"g.c", metadata !"/private/tmp"}
-!9 = metadata !{i32 1, metadata !"Debug Info Version", i32 2}
+!0 = metadata !{i32 720913, i32 0, i32 12, metadata !"g.c", metadata !"/private/tmp", metadata !"clang version 3.0 (trunk 139632)", i1 true, i1 true, metadata !"", i32 0, metadata !1, metadata !1, metadata !1, metadata !3} ; [ DW_TAG_compile_unit ]
+!1 = metadata !{metadata !2}
+!2 = metadata !{i32 0}
+!3 = metadata !{metadata !4}
+!4 = metadata !{metadata !5}
+!5 = metadata !{i32 720948, i32 0, null, metadata !"", metadata !"", metadata !"", metadata !6, i32 2, metadata !7, i32 0, i32 1, i32* @0} ; [ DW_TAG_variable ]
+!6 = metadata !{i32 720937, metadata !"g.c", metadata !"/private/tmp", null} ; [ DW_TAG_file_type ]
+!7 = metadata !{i32 720932, null, metadata !"int", null, i32 0, i64 32, i64 32, i64 0, i32 0, i32 5} ; [ DW_TAG_base_type ]

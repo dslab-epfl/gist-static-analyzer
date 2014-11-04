@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_MSP430_MSP430MACHINEFUNCTIONINFO_H
-#define LLVM_LIB_TARGET_MSP430_MSP430MACHINEFUNCTIONINFO_H
+#ifndef MSP430MACHINEFUNCTIONINFO_H
+#define MSP430MACHINEFUNCTIONINFO_H
 
 #include "llvm/CodeGen/MachineFunction.h"
 
@@ -30,9 +30,6 @@ class MSP430MachineFunctionInfo : public MachineFunctionInfo {
   /// ReturnAddrIndex - FrameIndex for return slot.
   int ReturnAddrIndex;
 
-  /// VarArgsFrameIndex - FrameIndex for start of varargs area.
-  int VarArgsFrameIndex;
-
 public:
   MSP430MachineFunctionInfo() : CalleeSavedFrameSize(0) {}
 
@@ -44,9 +41,6 @@ public:
 
   int getRAIndex() const { return ReturnAddrIndex; }
   void setRAIndex(int Index) { ReturnAddrIndex = Index; }
-
-  int getVarArgsFrameIndex() const { return VarArgsFrameIndex;}
-  void setVarArgsFrameIndex(int Index) { VarArgsFrameIndex = Index; }
 };
 
 } // End llvm namespace

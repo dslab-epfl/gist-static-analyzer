@@ -28,11 +28,7 @@ struct DynamicTypeCacheMissData {
 /// \brief Handle a runtime type check failure, caused by an incorrect vptr.
 /// When this handler is called, all we know is that the type was not in the
 /// cache; this does not necessarily imply the existence of a bug.
-extern "C" SANITIZER_INTERFACE_ATTRIBUTE
-void __ubsan_handle_dynamic_type_cache_miss(
-  DynamicTypeCacheMissData *Data, ValueHandle Pointer, ValueHandle Hash);
-extern "C" SANITIZER_INTERFACE_ATTRIBUTE
-void __ubsan_handle_dynamic_type_cache_miss_abort(
+extern "C" void __ubsan_handle_dynamic_type_cache_miss(
   DynamicTypeCacheMissData *Data, ValueHandle Pointer, ValueHandle Hash);
 
 }

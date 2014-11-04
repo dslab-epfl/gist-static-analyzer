@@ -1,3 +1,5 @@
+.. _lexicon:
+
 ================
 The LLVM Lexicon
 ================
@@ -15,28 +17,11 @@ A
 **ADCE**
     Aggressive Dead Code Elimination
 
-**AST**
-    Abstract Syntax Tree.
-
-    Due to Clang's influence (mostly the fact that parsing and semantic
-    analysis are so intertwined for C and especially C++), the typical
-    working definition of AST in the LLVM community is roughly "the
-    compiler's first complete symbolic (as opposed to textual)
-    representation of an input program".
-    As such, an "AST" might be a more general graph instead of a "tree"
-    (consider the symbolic representation for the type of a typical "linked
-    list node"). This working definition is closer to what some authors
-    call an "annotated abstract syntax tree".
-
-    Consult your favorite compiler book or search engine for more details.
-
 B
 -
 
-.. _lexicon-bb-vectorization:
-
 **BB Vectorization**
-    Basic-Block Vectorization
+    Basic Block Vectorization
 
 **BURS**
     Bottom Up Rewriting System --- A method of instruction selection for code
@@ -50,7 +35,7 @@ C
     Common Subexpression Elimination. An optimization that removes common
     subexpression compuation. For example ``(a+b)*(a+b)`` has two subexpressions
     that are the same: ``(a+b)``. This optimization would perform the addition
-    only once and then perform the multiply (but only if it's computationally
+    only once and then perform the multiply (but only if it's compulationally
     correct/safe).
 
 D
@@ -133,15 +118,6 @@ M
 **MC**
     Machine Code
 
-N
--
-
-**NFC**
-  "No functional change". Used in a commit message to indicate that a patch
-  is a pure refactoring/cleanup.
-  Usually used in the first line, so it is visible without opening the
-  actual commit email.
-
 O
 -
 .. _object pointer:
@@ -168,7 +144,7 @@ R
     ``Constant::replaceUsesOfWithOnConstant()`` implement the replacement of one
     Value with another by iterating over its def/use chain and fixing up all of
     the pointers to point to the new value.  See
-    also `def/use chains <ProgrammersManual.html#iterating-over-def-use-use-def-chains>`_.
+    also `def/use chains <ProgrammersManual.html#iterate_chains>`_.
 
 **Reassociation**
     Rearranging associative expressions to promote better redundancy elimination
@@ -208,10 +184,6 @@ S
 
 **SCCP**
     Sparse Conditional Constant Propagation
-
-**SLP**
-    Superword-Level Parallelism, same as :ref:`Basic-Block Vectorization
-    <lexicon-bb-vectorization>`.
 
 **SRoA**
     Scalar Replacement of Aggregates

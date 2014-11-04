@@ -2,11 +2,11 @@
 // rdar://9309489
 
 @interface MyClass {
-        id __weak myString; // expected-error {{existing instance variable 'myString' for strong property 'myString' may not be __weak}}
+        id __weak myString;
         id StrongIvar;
-        id __weak myString2; // expected-error {{existing instance variable 'myString2' for strong property 'myString2' may not be __weak}}
+        id __weak myString2;
         id __weak myString3;
-        id StrongIvar5; // expected-error {{existing instance variable 'StrongIvar5' for __weak property 'myString5' must be __weak}}
+        id StrongIvar5;
 }
 @property (strong) id myString; // expected-note {{property declared here}}
 @property (strong) id myString1;
@@ -18,21 +18,21 @@
 @end
 
 @implementation MyClass
-@synthesize myString; // expected-note {{property synthesized here}}
+@synthesize myString; // expected-error {{existing instance variable 'myString' for strong property 'myString' may not be __weak}}
 @synthesize myString1 = StrongIvar; // OK
-@synthesize myString2 = myString2; // expected-note {{property synthesized here}}
+@synthesize myString2 = myString2; // expected-error {{existing instance variable 'myString2' for strong property 'myString2' may not be __weak}}
 //
 @synthesize myString3; // OK
 @synthesize myString4; // OK
-@synthesize myString5 = StrongIvar5; // expected-note {{property synthesized here}}
+@synthesize myString5 = StrongIvar5; // expected-error {{existing instance variable 'StrongIvar5' for __weak property 'myString5' must be __weak}}
 
 @end
 
 // rdar://9340692
 @interface Foo {
 @public
-    id __unsafe_unretained x; // expected-error {{existing instance variable 'x' for __weak property 'x' must be __weak}}
-    id __strong y;  // expected-error {{existing instance variable 'y' for __weak property 'y' must be __weak}}
+    id __unsafe_unretained x;   // should be __weak
+    id __strong y;
     id __autoreleasing z; // expected-error {{instance variables cannot have __autoreleasing ownership}}
 }
 @property(weak) id x; // expected-note {{property declared here}}
@@ -41,8 +41,8 @@
 @end
 
 @implementation Foo
-@synthesize x; // expected-note {{property synthesized here}}
-@synthesize y; // expected-note {{property synthesized here}}
+@synthesize x;	// expected-error {{existing instance variable 'x' for __weak property 'x' must be __weak}}
+@synthesize y;	// expected-error {{existing instance variable 'y' for __weak property 'y' must be __weak}}
 @synthesize z;  // suppressed
 @end
 

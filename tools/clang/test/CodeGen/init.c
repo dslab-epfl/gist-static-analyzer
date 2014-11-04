@@ -130,13 +130,5 @@ void test13(int x) {
   struct X { int a; int b : 10; int c; };
   struct X y = {.c = x};
   // CHECK: @test13
-  // CHECK: and i16 {{.*}}, -1024
-}
-
-// CHECK-LABEL: @PR20473
-void PR20473() {
-  // CHECK: memcpy{{.*}}([2 x i8]* @
-  bar((char[2]) {""});
-  // CHECK: memcpy{{.*}}([3 x i8]* @
-  bar((char[3]) {""});
+  // CHECK: and i32 {{.*}}, -1024
 }

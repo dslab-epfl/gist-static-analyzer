@@ -144,7 +144,7 @@ namespace PR12119 {
   template<typename T> void g(std::initializer_list<std::initializer_list<T>>);
 
   void foo() {
-    f({0, {1}}); // expected-warning{{braces around scalar initializer}}
+    f({0, {1}});
     g({{0, 1}, {2, 3}});
     std::initializer_list<int> il = {1, 2};
     g({il, {2, 3}});
@@ -190,72 +190,4 @@ namespace rdar11948732 {
 
 namespace PR14272 {
   auto x { { 0, 0 } }; // expected-error {{cannot deduce actual type for variable 'x' with type 'auto' from initializer list}}
-}
-
-namespace initlist_of_array {
-  void f(std::initializer_list<int[2]>) {}
-  void f(std::initializer_list<int[2][2]>) = delete;
-  void h() {
-    f({{1,2},{3,4}});
-  }
-}
-
-namespace init_list_deduction_failure {
-  void f();
-  void f(int);
-  template<typename T> void g(std::initializer_list<T>);
-  // expected-note@-1 {{candidate template ignored: couldn't resolve reference to overloaded function 'f'}}
-  void h() { g({f}); }
-  // expected-error@-1 {{no matching function for call to 'g'}}
-}
-
-namespace deleted_copy {
-  struct X {
-    X(int i) {}
-    X(const X& x) = delete; // expected-note {{here}}
-    void operator=(const X& x) = delete;
-  };
-
-  std::initializer_list<X> x{1}; // expected-error {{invokes deleted constructor}}
-}
-
-namespace RefVersusInitList {
-  struct S {};
-  void f(const S &) = delete;
-  void f(std::initializer_list<S>);
-  void g(S s) { f({S()}); }
-}
-
-namespace PR18013 {
-  int f();
-  std::initializer_list<long (*)()> x = {f}; // expected-error {{cannot initialize an array element of type 'long (*const)()' with an lvalue of type 'int ()': different return type ('long' vs 'int')}}
-}
-
-namespace DR1070 {
-  struct S {
-    S(std::initializer_list<int>);
-  };
-  S s[3] = { {1, 2, 3}, {4, 5} }; // ok
-  S *p = new S[3] { {1, 2, 3}, {4, 5} }; // ok
-}
-
-namespace ListInitInstantiate {
-  struct A {
-    A(std::initializer_list<A>);
-    A(std::initializer_list<int>);
-  };
-  struct B : A {
-    B(int);
-  };
-  template<typename T> struct X {
-    X();
-    A a;
-  };
-  template<typename T> X<T>::X() : a{B{0}, B{1}} {}
-
-  X<int> x;
-
-  int f(const A&);
-  template<typename T> void g() { int k = f({0}); }
-  template void g<int>();
 }

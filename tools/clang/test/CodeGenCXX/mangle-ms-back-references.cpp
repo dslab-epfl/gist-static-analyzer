@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fms-extensions -fblocks -emit-llvm %s -o - -triple=i386-pc-win32 | FileCheck %s
+// RUN: %clang_cc1 -fms-extensions -fblocks -emit-llvm %s -o - -cxx-abi microsoft -triple=i386-pc-win32 | FileCheck %s
 
 void f1(const char* a, const char* b) {}
 // CHECK: "\01?f1@@YAXPBD0@Z"
@@ -61,8 +61,3 @@ void h2(void (*f_ptr)(void *), void *arg) {}
 
 PInt3Func h3(PInt3Func x, PInt3Func y, int* z) { return 0; }
 // CHECK: "\01?h3@@YAP6APAHPAH0@ZP6APAH00@Z10@Z"
-
-namespace foo {
-void foo() { }
-// CHECK: "\01?foo@0@YAXXZ"
-}

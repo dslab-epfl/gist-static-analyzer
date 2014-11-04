@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_SUPPORT_UNIX_UNIX_H
-#define LLVM_LIB_SUPPORT_UNIX_UNIX_H
+#ifndef LLVM_SYSTEM_UNIX_UNIX_H
+#define LLVM_SYSTEM_UNIX_UNIX_H
 
 //===----------------------------------------------------------------------===//
 //=== WARNING: Implementation here must contain only generic UNIX code that
@@ -21,21 +21,27 @@
 
 #include "llvm/Config/config.h"     // Get autoconf configuration settings
 #include "llvm/Support/Errno.h"
-#include <algorithm>
-#include <assert.h>
-#include <cerrno>
-#include <cstdio>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
+#include <cerrno>
 #include <string>
-#include <sys/types.h>
+#include <algorithm>
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 
+#ifdef HAVE_SYS_TYPES_H
+#include <sys/types.h>
+#endif
+
 #ifdef HAVE_SYS_PARAM_H
 #include <sys/param.h>
+#endif
+
+#ifdef HAVE_ASSERT_H
+#include <assert.h>
 #endif
 
 #ifdef HAVE_SYS_TIME_H
@@ -45,10 +51,6 @@
 
 #ifdef HAVE_SYS_WAIT_H
 # include <sys/wait.h>
-#endif
-
-#ifdef HAVE_DLFCN_H
-# include <dlfcn.h>
 #endif
 
 #ifndef WEXITSTATUS

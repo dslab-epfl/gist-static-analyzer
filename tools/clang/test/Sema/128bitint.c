@@ -1,13 +1,9 @@
-// RUN: %clang_cc1 -fsyntax-only -verify -triple x86_64-apple-darwin9 -fms-extensions %s -DHAVE
-// RUN: %clang_cc1 -fsyntax-only -verify -triple i686-linux-gnu -fms-extensions %s -DHAVE_NOT
-
-#ifdef HAVE
+// RUN: %clang_cc1 -fsyntax-only -verify -triple x86_64-apple-darwin9 -fms-extensions %s
 typedef int i128 __attribute__((__mode__(TI)));
 typedef unsigned u128 __attribute__((__mode__(TI)));
 
 int a[((i128)-1 ^ (i128)-2) == 1 ? 1 : -1];
 int a[(u128)-1 > 1LL ? 1 : -1];
-int a[__SIZEOF_INT128__ == 16 ? 1 : -1];
 
 // PR5435
 __uint128_t b = (__uint128_t)-1;
@@ -16,10 +12,10 @@ __uint128_t b = (__uint128_t)-1;
 __int128 i = (__int128)0;
 unsigned __int128 u = (unsigned __int128)-1;
 
-long long SignedTooBig = 123456789012345678901234567890; // expected-error {{integer literal is too large to be represented in any integer type}}
+long long SignedTooBig = 123456789012345678901234567890; // expected-warning {{integer constant is too large for its type}}
 __int128_t Signed128 = 123456789012345678901234567890i128;
 long long Signed64 = 123456789012345678901234567890i128; // expected-warning {{implicit conversion from '__int128' to 'long long' changes value from 123456789012345678901234567890 to -4362896299872285998}}
-unsigned long long UnsignedTooBig = 123456789012345678901234567890; // expected-error {{integer literal is too large to be represented in any integer type}}
+unsigned long long UnsignedTooBig = 123456789012345678901234567890; // expected-warning {{integer constant is too large for its type}}
 __uint128_t Unsigned128 = 123456789012345678901234567890Ui128;
 unsigned long long Unsigned64 = 123456789012345678901234567890Ui128; // expected-warning {{implicit conversion from 'unsigned __int128' to 'unsigned long long' changes value from 123456789012345678901234567890 to 14083847773837265618}}
 
@@ -40,12 +36,4 @@ void test(int *buf)
 {
   MPI_Send(buf, 0x10000000000000001i128); // expected-warning {{implicit conversion from '__int128' to 'int' changes value}}
 }
-#else
 
-__int128 n; // expected-error {{__int128 is not supported on this target}}
-
-#if defined(__SIZEOF_INT128__)
-#error __SIZEOF_INT128__ should not be defined
-#endif
-
-#endif

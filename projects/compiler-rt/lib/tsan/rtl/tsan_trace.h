@@ -15,14 +15,16 @@
 
 #include "tsan_defs.h"
 #include "tsan_mutex.h"
-#include "tsan_stack_trace.h"
-#include "tsan_mutexset.h"
+#include "tsan_sync.h"
 
 namespace __tsan {
 
-const int kTracePartSizeBits = 14;
-const int kTracePartSize = 1 << kTracePartSizeBits;
-const int kTraceParts = 4 * 1024 * 1024 / kTracePartSize;
+#ifndef TSAN_HISTORY_SIZE  // in kibitraces
+#define TSAN_HISTORY_SIZE 128
+#endif
+
+const int kTracePartSize = 16 * 1024;
+const int kTraceParts = TSAN_HISTORY_SIZE * 1024 / kTracePartSize;
 const int kTraceSize = kTracePartSize * kTraceParts;
 
 // Must fit into 3 bits.
@@ -44,7 +46,6 @@ typedef u64 Event;
 struct TraceHeader {
   StackTrace stack0;  // Start stack for the trace.
   u64        epoch0;  // Start epoch for the trace.
-  MutexSet   mset0;
 #ifndef TSAN_GO
   uptr       stack0buf[kTraceStackSize];
 #endif
@@ -60,13 +61,9 @@ struct TraceHeader {
 };
 
 struct Trace {
+  Event events[kTraceSize];
   TraceHeader headers[kTraceParts];
   Mutex mtx;
-#ifndef TSAN_GO
-  // Must be last to catch overflow as paging fault.
-  // Go shadow stack is dynamically allocated.
-  uptr shadow_stack[kShadowStackSize];
-#endif
 
   Trace()
     : mtx(MutexTypeTrace, StatMtxTrace) {

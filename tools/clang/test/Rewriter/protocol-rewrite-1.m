@@ -1,7 +1,4 @@
-// RUN: %clang_cc1 -x objective-c -Wno-objc-root-class -fms-extensions -rewrite-objc %s -o %t-rw.cpp
-// RUN: FileCheck  --input-file=%t-rw.cpp %s
-// rdar://9846759
-// rdar://15517895
+// RUN: %clang_cc1 -rewrite-objc -fobjc-runtime=macosx-fragile-10.5  %s -o -
 
 typedef struct MyWidget {
   int a;
@@ -49,25 +46,3 @@ int main(void) {
 
   return 0;
 }
-
-// rdar://15517895
-@class NSObject;
-
-@interface NSProtocolChecker
-+ (id)protocolCheckerWithTarget:(NSObject *)anObject protocol:(Protocol *)aProtocol;
-@end
-
-@protocol NSConnectionVersionedProtocol
-@end
-
-
-@interface NSConnection @end
-
-@implementation NSConnection
-- (void) Meth {
-  [NSProtocolChecker protocolCheckerWithTarget:0 protocol:@protocol(NSConnectionVersionedProtocol)];
-}
-@end
-
-// CHECK: static struct _protocol_t *_OBJC_PROTOCOL_REFERENCE_$_NSConnectionVersionedProtocol = &_OBJC_PROTOCOL_NSConnectionVersionedProtocol
-// CHECK: sel_registerName("protocolCheckerWithTarget:protocol:"), (NSObject *)0, (Protocol *)_OBJC_PROTOCOL_REFERENCE_$_NSConnectionVersionedProtocol

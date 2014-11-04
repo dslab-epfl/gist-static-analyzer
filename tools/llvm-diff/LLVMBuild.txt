@@ -19,4 +19,4 @@
 type = Tool
 name = llvm-diff
 parent = Tools
-required_libraries = AsmParser BitReader IRReader
+required_libraries = AsmParser BitReader

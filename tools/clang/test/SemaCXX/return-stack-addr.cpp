@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -verify -std=c++11 %s
+// RUN: %clang_cc1 -fsyntax-only -verify %s
 
 int* ret_local() {
   int x = 1;
@@ -108,11 +108,6 @@ int* ret_cpp_const_cast(const int x) {
   return const_cast<int*>(&x);  // expected-warning {{address of stack memory}}
 }
 
-struct A { virtual ~A(); }; struct B : A {};
-A* ret_cpp_dynamic_cast(B b) {
-  return dynamic_cast<A*>(&b); // expected-warning {{address of stack memory}}
-}
-
 // PR 7999 - handle the case where a field is itself a reference.
 template <typename T> struct PR7999 {
   PR7999(T& t) : value(t) {}
@@ -142,17 +137,5 @@ namespace PR8774 {
   }
 }
 
-// Don't warn about returning a local variable from a surrounding function if
-// we're within a lambda-expression.
-void ret_from_lambda() {
-  int a;
-  int &b = a;
-  (void) [&]() -> int& { return a; };
-  (void) [&]() -> int& { return b; };
-  (void) [=]() mutable -> int& { return a; };
-  (void) [=]() mutable -> int& { return b; };
-  (void) [&]() -> int& { int a; return a; }; // expected-warning {{reference to stack}}
-  (void) [=]() -> int& { int a; return a; }; // expected-warning {{reference to stack}}
-  (void) [&]() -> int& { int &a = b; return a; };
-  (void) [=]() mutable -> int& { int &a = b; return a; };
-}
+// TODO: test case for dynamic_cast.  clang does not yet have
+// support for C++ classes to write such a test case.

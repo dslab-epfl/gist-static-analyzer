@@ -8,7 +8,7 @@
 ##===----------------------------------------------------------------------===##
 
 LEVEL = ../..
-PARALLEL_DIRS = Utils Instrumentation Scalar InstCombine IPO Vectorize Hello ObjCARC DynInstMarker DebugInfoLocator
+PARALLEL_DIRS = Utils Instrumentation Scalar InstCombine IPO Vectorize Hello Giri DebugInfoManager
 
 include $(LEVEL)/Makefile.config
 

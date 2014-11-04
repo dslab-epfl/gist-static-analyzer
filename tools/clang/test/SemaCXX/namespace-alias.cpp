@@ -35,12 +35,12 @@ namespace H {
   namespace A2 { }
 
   // These all point to A1.
-  namespace B = A1;
+  namespace B = A1; // expected-note {{previous definition is here}}
   namespace B = A1;
   namespace C = B;
-  namespace B = C; // expected-note {{previously defined as an alias for 'A1'}}
+  namespace B = C;
 
-  namespace B = A2; // expected-error {{redefinition of 'B' as an alias for a different namespace}}
+  namespace B = A2; // expected-error {{redefinition of 'B' as different kind of symbol}}
 }
 
 namespace I { 

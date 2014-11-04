@@ -23,6 +23,8 @@
 #include "llvm/Config/llvm-config.h"
 
 #ifdef __cplusplus
+#include "llvm/Object/ObjectFile.h"
+
 extern "C" {
 #endif
 
@@ -78,6 +80,7 @@ void LLVMMoveToNextRelocation(LLVMRelocationIteratorRef RI);
 // SymbolRef accessors
 const char *LLVMGetSymbolName(LLVMSymbolIteratorRef SI);
 uint64_t LLVMGetSymbolAddress(LLVMSymbolIteratorRef SI);
+uint64_t LLVMGetSymbolFileOffset(LLVMSymbolIteratorRef SI);
 uint64_t LLVMGetSymbolSize(LLVMSymbolIteratorRef SI);
 
 // RelocationRef accessors
@@ -96,6 +99,51 @@ const char *LLVMGetRelocationValueString(LLVMRelocationIteratorRef RI);
 
 #ifdef __cplusplus
 }
+
+namespace llvm {
+  namespace object {
+    inline ObjectFile *unwrap(LLVMObjectFileRef OF) {
+      return reinterpret_cast<ObjectFile*>(OF);
+    }
+
+    inline LLVMObjectFileRef wrap(const ObjectFile *OF) {
+      return reinterpret_cast<LLVMObjectFileRef>(const_cast<ObjectFile*>(OF));
+    }
+
+    inline section_iterator *unwrap(LLVMSectionIteratorRef SI) {
+      return reinterpret_cast<section_iterator*>(SI);
+    }
+
+    inline LLVMSectionIteratorRef
+    wrap(const section_iterator *SI) {
+      return reinterpret_cast<LLVMSectionIteratorRef>
+        (const_cast<section_iterator*>(SI));
+    }
+
+    inline symbol_iterator *unwrap(LLVMSymbolIteratorRef SI) {
+      return reinterpret_cast<symbol_iterator*>(SI);
+    }
+
+    inline LLVMSymbolIteratorRef
+    wrap(const symbol_iterator *SI) {
+      return reinterpret_cast<LLVMSymbolIteratorRef>
+        (const_cast<symbol_iterator*>(SI));
+    }
+
+    inline relocation_iterator *unwrap(LLVMRelocationIteratorRef SI) {
+      return reinterpret_cast<relocation_iterator*>(SI);
+    }
+
+    inline LLVMRelocationIteratorRef
+    wrap(const relocation_iterator *SI) {
+      return reinterpret_cast<LLVMRelocationIteratorRef>
+        (const_cast<relocation_iterator*>(SI));
+    }
+
+  }
+}
+
 #endif /* defined(__cplusplus) */
 
 #endif
+

@@ -13,35 +13,31 @@
 //
 //===----------------------------------------------------------------------===//
 
-
+#include "llvm/LLVMContext.h"
+#include "llvm/DataLayout.h"
+#include "llvm/Module.h"
+#include "llvm/PassManager.h"
+#include "llvm/Pass.h"
 #include "llvm/ADT/Triple.h"
+#include "llvm/Assembly/PrintModulePass.h"
+#include "llvm/Support/IRReader.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
-#include "llvm/IR/DataLayout.h"
-#include "llvm/IR/IRPrintingPasses.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IRReader/IRReader.h"
 #include "llvm/MC/SubtargetFeature.h"
-#include "llvm/Pass.h"
-#include "llvm/PassManager.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormattedStream.h"
-#include "llvm/Support/Host.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/PluginLoader.h"
 #include "llvm/Support/PrettyStackTrace.h"
+#include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/Host.h"
 #include "llvm/Support/Signals.h"
-#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
-#include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Target/TargetLibraryInfo.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetSubtargetInfo.h"
 #include <memory>
 using namespace llvm;
 
@@ -55,15 +51,6 @@ InputFilename(cl::Positional, cl::desc("<input bitcode>"), cl::init("-"));
 static cl::opt<std::string>
 OutputFilename("o", cl::desc("Output filename"), cl::value_desc("filename"));
 
-static cl::opt<unsigned>
-TimeCompilations("time-compilations", cl::Hidden, cl::init(1u),
-                 cl::value_desc("N"),
-                 cl::desc("Repeat compilation N times for timing"));
-
-static cl::opt<bool>
-NoIntegratedAssembler("no-integrated-as", cl::Hidden,
-                      cl::desc("Disable integrated assembler"));
-
 // Determine optimization level.
 static cl::opt<char>
 OptLevel("O",
@@ -76,24 +63,30 @@ OptLevel("O",
 static cl::opt<std::string>
 TargetTriple("mtriple", cl::desc("Override target triple for module"));
 
-static cl::opt<bool> NoVerify("disable-verify", cl::Hidden,
-                              cl::desc("Do not verify input module"));
+cl::opt<bool> NoVerify("disable-verify", cl::Hidden,
+                       cl::desc("Do not verify input module"));
 
-static cl::opt<bool> DisableSimplifyLibCalls("disable-simplify-libcalls",
-                                             cl::desc("Disable simplify-libcalls"));
+cl::opt<bool>
+DisableSimplifyLibCalls("disable-simplify-libcalls",
+                        cl::desc("Disable simplify-libcalls"),
+                        cl::init(false));
 
-static cl::opt<bool> ShowMCEncoding("show-mc-encoding", cl::Hidden,
-                                    cl::desc("Show encoding in .s output"));
-
-static cl::opt<bool> EnableDwarfDirectory(
-    "enable-dwarf-directory", cl::Hidden,
-    cl::desc("Use .file directives with an explicit directory."));
-
-static cl::opt<bool> AsmVerbose("asm-verbose",
-                                cl::desc("Add comments to directives."),
-                                cl::init(true));
-
-static int compileModule(char **, LLVMContext &);
+// GetFileNameRoot - Helper function to get the basename of a filename.
+static inline std::string
+GetFileNameRoot(const std::string &InputFilename) {
+  std::string IFN = InputFilename;
+  std::string outputFilename;
+  int Len = IFN.length();
+  if ((Len > 2) &&
+      IFN[Len-3] == '.' &&
+      ((IFN[Len-2] == 'b' && IFN[Len-1] == 'c') ||
+       (IFN[Len-2] == 'l' && IFN[Len-1] == 'l'))) {
+    outputFilename = std::string(IFN.begin(), IFN.end()-3); // s/.bc/.s/
+  } else {
+    outputFilename = IFN;
+  }
+  return outputFilename;
+}
 
 static tool_output_file *GetOutputStream(const char *TargetName,
                                          Triple::OSType OS,
@@ -103,12 +96,7 @@ static tool_output_file *GetOutputStream(const char *TargetName,
     if (InputFilename == "-")
       OutputFilename = "-";
     else {
-      // If InputFilename ends in .bc or .ll, remove it.
-      StringRef IFN = InputFilename;
-      if (IFN.endswith(".bc") || IFN.endswith(".ll"))
-        OutputFilename = IFN.drop_back(3);
-      else
-        OutputFilename = IFN;
+      OutputFilename = GetFileNameRoot(InputFilename);
 
       switch (FileType) {
       case TargetMachine::CGFT_AssemblyFile:
@@ -147,15 +135,15 @@ static tool_output_file *GetOutputStream(const char *TargetName,
   }
 
   // Open the file.
-  std::error_code EC;
-  sys::fs::OpenFlags OpenFlags = sys::fs::F_None;
-  if (!Binary)
-    OpenFlags |= sys::fs::F_Text;
-  tool_output_file *FDOut = new tool_output_file(OutputFilename, EC, OpenFlags);
-  if (EC) {
-    errs() << EC.message() << '\n';
+  std::string error;
+  unsigned OpenFlags = 0;
+  if (Binary) OpenFlags |= raw_fd_ostream::F_Binary;
+  tool_output_file *FDOut = new tool_output_file(OutputFilename.c_str(), error,
+                                                 OpenFlags);
+  if (!error.empty()) {
+    errs() << error << '\n';
     delete FDOut;
-    return nullptr;
+    return 0;
   }
 
   return FDOut;
@@ -193,35 +181,20 @@ int main(int argc, char **argv) {
 
   cl::ParseCommandLineOptions(argc, argv, "llvm system compiler\n");
 
-  // Compile the module TimeCompilations times to give better compile time
-  // metrics.
-  for (unsigned I = TimeCompilations; I; --I)
-    if (int RetVal = compileModule(argv, Context))
-      return RetVal;
-  return 0;
-}
-
-static int compileModule(char **argv, LLVMContext &Context) {
   // Load the module to be compiled...
   SMDiagnostic Err;
-  std::unique_ptr<Module> M;
-  Module *mod = nullptr;
+  std::auto_ptr<Module> M;
+  Module *mod = 0;
   Triple TheTriple;
 
   bool SkipModule = MCPU == "help" ||
                     (!MAttrs.empty() && MAttrs.front() == "help");
 
-  // If user asked for the 'native' CPU, autodetect here. If autodection fails,
-  // this will set the CPU to an empty string which tells the target to
-  // pick a basic default.
-  if (MCPU == "native")
-    MCPU = sys::getHostCPUName();
-
   // If user just wants to list available options, skip module loading
   if (!SkipModule) {
-    M = parseIRFile(InputFilename, Err, Context);
+    M.reset(ParseIRFile(InputFilename, Err, Context));
     mod = M.get();
-    if (mod == nullptr) {
+    if (mod == 0) {
       Err.print(argv[0], errs());
       return 1;
     }
@@ -267,32 +240,58 @@ static int compileModule(char **argv, LLVMContext &Context) {
   case '3': OLvl = CodeGenOpt::Aggressive; break;
   }
 
-  TargetOptions Options = InitTargetOptionsFromCodeGenFlags();
-  Options.DisableIntegratedAS = NoIntegratedAssembler;
-  Options.MCOptions.ShowMCEncoding = ShowMCEncoding;
-  Options.MCOptions.MCUseDwarfDirectory = EnableDwarfDirectory;
-  Options.MCOptions.AsmVerbose = AsmVerbose;
+  TargetOptions Options;
+  Options.LessPreciseFPMADOption = EnableFPMAD;
+  Options.NoFramePointerElim = DisableFPElim;
+  Options.NoFramePointerElimNonLeaf = DisableFPElimNonLeaf;
+  Options.AllowFPOpFusion = FuseFPOps;
+  Options.UnsafeFPMath = EnableUnsafeFPMath;
+  Options.NoInfsFPMath = EnableNoInfsFPMath;
+  Options.NoNaNsFPMath = EnableNoNaNsFPMath;
+  Options.HonorSignDependentRoundingFPMathOption =
+      EnableHonorSignDependentRoundingFPMath;
+  Options.UseSoftFloat = GenerateSoftFloatCalls;
+  if (FloatABIForCalls != FloatABI::Default)
+    Options.FloatABIType = FloatABIForCalls;
+  Options.NoZerosInBSS = DontPlaceZerosInBSS;
+  Options.GuaranteedTailCallOpt = EnableGuaranteedTailCallOpt;
+  Options.DisableTailCalls = DisableTailCalls;
+  Options.StackAlignmentOverride = OverrideStackAlignment;
+  Options.RealignStack = EnableRealignStack;
+  Options.TrapFuncName = TrapFuncName;
+  Options.PositionIndependentExecutable = EnablePIE;
+  Options.EnableSegmentedStacks = SegmentedStacks;
+  Options.UseInitArray = UseInitArray;
+  Options.SSPBufferSize = SSPBufferSize;
 
-  std::unique_ptr<TargetMachine> target(
-      TheTarget->createTargetMachine(TheTriple.getTriple(), MCPU, FeaturesStr,
-                                     Options, RelocModel, CMModel, OLvl));
+  std::auto_ptr<TargetMachine>
+    target(TheTarget->createTargetMachine(TheTriple.getTriple(),
+                                          MCPU, FeaturesStr, Options,
+                                          RelocModel, CMModel, OLvl));
   assert(target.get() && "Could not allocate target machine!");
-
-  // If we don't have a module then just exit now. We do this down
-  // here since the CPU/Feature help is underneath the target machine
-  // creation.
-  if (SkipModule)
-    return 0;
-
-  assert(mod && "Should have exited if we didn't have a module!");
+  assert(mod && "Should have exited after outputting help!");
   TargetMachine &Target = *target.get();
+
+  if (DisableDotLoc)
+    Target.setMCUseLoc(false);
+
+  if (DisableCFI)
+    Target.setMCUseCFI(false);
+
+  if (EnableDwarfDirectory)
+    Target.setMCUseDwarfDirectory(true);
 
   if (GenerateSoftFloatCalls)
     FloatABIForCalls = FloatABI::Soft;
 
+  // Disable .loc support for older OS X versions.
+  if (TheTriple.isMacOSX() &&
+      TheTriple.isMacOSXVersionLT(10, 6))
+    Target.setMCUseLoc(false);
+
   // Figure out where we are going to send the output.
-  std::unique_ptr<tool_output_file> Out(
-      GetOutputStream(TheTarget->getName(), TheTriple.getOS(), argv[0]));
+  OwningPtr<tool_output_file> Out
+    (GetOutputStream(TheTarget->getName(), TheTriple.getOS(), argv[0]));
   if (!Out) return 1;
 
   // Build up all of the passes that we want to do to the module.
@@ -304,21 +303,33 @@ static int compileModule(char **argv, LLVMContext &Context) {
     TLI->disableAllFunctions();
   PM.add(TLI);
 
-  // Add the target data from the target machine, if it exists, or the module.
-  if (const DataLayout *DL = Target.getSubtargetImpl()->getDataLayout())
-    mod->setDataLayout(DL);
-  PM.add(new DataLayoutPass());
+  if (target.get()) {
+    PM.add(new TargetTransformInfo(target->getScalarTargetTransformInfo(),
+                                   target->getVectorTargetTransformInfo()));
+  }
 
-  if (RelaxAll.getNumOccurrences() > 0 &&
-      FileType != TargetMachine::CGFT_ObjectFile)
-    errs() << argv[0]
+  // Add the target data from the target machine, if it exists, or the module.
+  if (const DataLayout *TD = Target.getDataLayout())
+    PM.add(new DataLayout(*TD));
+  else
+    PM.add(new DataLayout(mod));
+
+  // Override default to generate verbose assembly.
+  Target.setAsmVerbosityDefault(true);
+
+  if (RelaxAll) {
+    if (FileType != TargetMachine::CGFT_ObjectFile)
+      errs() << argv[0]
              << ": warning: ignoring -mc-relax-all because filetype != obj";
+    else
+      Target.setMCRelaxAll(true);
+  }
 
   {
     formatted_raw_ostream FOS(Out->os());
 
-    AnalysisID StartAfterID = nullptr;
-    AnalysisID StopAfterID = nullptr;
+    AnalysisID StartAfterID = 0;
+    AnalysisID StopAfterID = 0;
     const PassRegistry *PR = PassRegistry::getPassRegistry();
     if (!StartAfter.empty()) {
       const PassInfo *PI = PR->getPassInfo(StartAfter);

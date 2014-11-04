@@ -118,64 +118,64 @@
 ; Duplicate all of the above as function return values rather than
 ; global initializers.
 
-; PLAIN: define i8* @goo8() #0 {
+; PLAIN: define i8* @goo8() nounwind {
 ; PLAIN:   %t = bitcast i8* getelementptr (i8* inttoptr (i32 1 to i8*), i32 -1) to i8*
 ; PLAIN:   ret i8* %t
 ; PLAIN: }
-; PLAIN: define i1* @goo1() #0 {
+; PLAIN: define i1* @goo1() nounwind {
 ; PLAIN:   %t = bitcast i1* getelementptr (i1* inttoptr (i32 1 to i1*), i32 -1) to i1*
 ; PLAIN:   ret i1* %t
 ; PLAIN: }
-; PLAIN: define i8* @foo8() #0 {
+; PLAIN: define i8* @foo8() nounwind {
 ; PLAIN:   %t = bitcast i8* getelementptr (i8* inttoptr (i32 1 to i8*), i32 -2) to i8*
 ; PLAIN:   ret i8* %t
 ; PLAIN: }
-; PLAIN: define i1* @foo1() #0 {
+; PLAIN: define i1* @foo1() nounwind {
 ; PLAIN:   %t = bitcast i1* getelementptr (i1* inttoptr (i32 1 to i1*), i32 -2) to i1*
 ; PLAIN:   ret i1* %t
 ; PLAIN: }
-; PLAIN: define i8* @hoo8() #0 {
+; PLAIN: define i8* @hoo8() nounwind {
 ; PLAIN:   %t = bitcast i8* getelementptr (i8* null, i32 -1) to i8*
 ; PLAIN:   ret i8* %t
 ; PLAIN: }
-; PLAIN: define i1* @hoo1() #0 {
+; PLAIN: define i1* @hoo1() nounwind {
 ; PLAIN:   %t = bitcast i1* getelementptr (i1* null, i32 -1) to i1*
 ; PLAIN:   ret i1* %t
 ; PLAIN: }
-; OPT: define i8* @goo8() #0 {
+; OPT: define i8* @goo8() nounwind {
 ; OPT:   ret i8* getelementptr (i8* inttoptr (i32 1 to i8*), i32 -1)
 ; OPT: }
-; OPT: define i1* @goo1() #0 {
+; OPT: define i1* @goo1() nounwind {
 ; OPT:   ret i1* getelementptr (i1* inttoptr (i32 1 to i1*), i32 -1)
 ; OPT: }
-; OPT: define i8* @foo8() #0 {
+; OPT: define i8* @foo8() nounwind {
 ; OPT:   ret i8* getelementptr (i8* inttoptr (i32 1 to i8*), i32 -2)
 ; OPT: }
-; OPT: define i1* @foo1() #0 {
+; OPT: define i1* @foo1() nounwind {
 ; OPT:   ret i1* getelementptr (i1* inttoptr (i32 1 to i1*), i32 -2)
 ; OPT: }
-; OPT: define i8* @hoo8() #0 {
+; OPT: define i8* @hoo8() nounwind {
 ; OPT:   ret i8* getelementptr (i8* null, i32 -1)
 ; OPT: }
-; OPT: define i1* @hoo1() #0 {
+; OPT: define i1* @hoo1() nounwind {
 ; OPT:   ret i1* getelementptr (i1* null, i32 -1)
 ; OPT: }
-; TO: define i8* @goo8() #0 {
+; TO: define i8* @goo8() nounwind {
 ; TO:   ret i8* null
 ; TO: }
-; TO: define i1* @goo1() #0 {
+; TO: define i1* @goo1() nounwind {
 ; TO:   ret i1* null
 ; TO: }
-; TO: define i8* @foo8() #0 {
+; TO: define i8* @foo8() nounwind {
 ; TO:   ret i8* inttoptr (i64 -1 to i8*)
 ; TO: }
-; TO: define i1* @foo1() #0 {
+; TO: define i1* @foo1() nounwind {
 ; TO:   ret i1* inttoptr (i64 -1 to i1*)
 ; TO: }
-; TO: define i8* @hoo8() #0 {
+; TO: define i8* @hoo8() nounwind {
 ; TO:   ret i8* inttoptr (i64 -1 to i8*)
 ; TO: }
-; TO: define i1* @hoo1() #0 {
+; TO: define i1* @hoo1() nounwind {
 ; TO:   ret i1* inttoptr (i64 -1 to i1*)
 ; TO: }
 ; SCEV: Classifying expressions for: @goo8
@@ -220,94 +220,94 @@ define i1* @hoo1() nounwind {
   ret i1* %t
 }
 
-; PLAIN: define i64 @fa() #0 {
+; PLAIN: define i64 @fa() nounwind {
 ; PLAIN:   %t = bitcast i64 mul (i64 ptrtoint (double* getelementptr (double* null, i32 1) to i64), i64 2310) to i64
 ; PLAIN:   ret i64 %t
 ; PLAIN: }
-; PLAIN: define i64 @fb() #0 {
+; PLAIN: define i64 @fb() nounwind {
 ; PLAIN:   %t = bitcast i64 ptrtoint (double* getelementptr ({ i1, double }* null, i64 0, i32 1) to i64) to i64
 ; PLAIN:   ret i64 %t
 ; PLAIN: }
-; PLAIN: define i64 @fc() #0 {
+; PLAIN: define i64 @fc() nounwind {
 ; PLAIN:   %t = bitcast i64 mul nuw (i64 ptrtoint (double* getelementptr (double* null, i32 1) to i64), i64 2) to i64
 ; PLAIN:   ret i64 %t
 ; PLAIN: }
-; PLAIN: define i64 @fd() #0 {
+; PLAIN: define i64 @fd() nounwind {
 ; PLAIN:   %t = bitcast i64 mul nuw (i64 ptrtoint (double* getelementptr (double* null, i32 1) to i64), i64 11) to i64
 ; PLAIN:   ret i64 %t
 ; PLAIN: }
-; PLAIN: define i64 @fe() #0 {
+; PLAIN: define i64 @fe() nounwind {
 ; PLAIN:   %t = bitcast i64 ptrtoint (double* getelementptr ({ double, float, double, double }* null, i64 0, i32 2) to i64) to i64
 ; PLAIN:   ret i64 %t
 ; PLAIN: }
-; PLAIN: define i64 @ff() #0 {
+; PLAIN: define i64 @ff() nounwind {
 ; PLAIN:   %t = bitcast i64 1 to i64
 ; PLAIN:   ret i64 %t
 ; PLAIN: }
-; PLAIN: define i64 @fg() #0 {
+; PLAIN: define i64 @fg() nounwind {
 ; PLAIN:   %t = bitcast i64 ptrtoint (double* getelementptr ({ i1, double }* null, i64 0, i32 1) to i64) to i64
 ; PLAIN:   ret i64 %t
 ; PLAIN: }
-; PLAIN: define i64 @fh() #0 {
+; PLAIN: define i64 @fh() nounwind {
 ; PLAIN:   %t = bitcast i64 ptrtoint (i1** getelementptr (i1** null, i32 1) to i64) to i64
 ; PLAIN:   ret i64 %t
 ; PLAIN: }
-; PLAIN: define i64 @fi() #0 {
+; PLAIN: define i64 @fi() nounwind {
 ; PLAIN:   %t = bitcast i64 ptrtoint (i1** getelementptr ({ i1, i1* }* null, i64 0, i32 1) to i64) to i64
 ; PLAIN:   ret i64 %t
 ; PLAIN: }
-; OPT: define i64 @fa() #0 {
+; OPT: define i64 @fa() nounwind {
 ; OPT:   ret i64 mul (i64 ptrtoint (double* getelementptr (double* null, i32 1) to i64), i64 2310)
 ; OPT: }
-; OPT: define i64 @fb() #0 {
+; OPT: define i64 @fb() nounwind {
 ; OPT:   ret i64 ptrtoint (double* getelementptr ({ i1, double }* null, i64 0, i32 1) to i64)
 ; OPT: }
-; OPT: define i64 @fc() #0 {
+; OPT: define i64 @fc() nounwind {
 ; OPT:   ret i64 mul (i64 ptrtoint (double* getelementptr (double* null, i32 1) to i64), i64 2)
 ; OPT: }
-; OPT: define i64 @fd() #0 {
+; OPT: define i64 @fd() nounwind {
 ; OPT:   ret i64 mul (i64 ptrtoint (double* getelementptr (double* null, i32 1) to i64), i64 11)
 ; OPT: }
-; OPT: define i64 @fe() #0 {
+; OPT: define i64 @fe() nounwind {
 ; OPT:   ret i64 ptrtoint (double* getelementptr ({ double, float, double, double }* null, i64 0, i32 2) to i64)
 ; OPT: }
-; OPT: define i64 @ff() #0 {
+; OPT: define i64 @ff() nounwind {
 ; OPT:   ret i64 1
 ; OPT: }
-; OPT: define i64 @fg() #0 {
+; OPT: define i64 @fg() nounwind {
 ; OPT:   ret i64 ptrtoint (double* getelementptr ({ i1, double }* null, i64 0, i32 1) to i64)
 ; OPT: }
-; OPT: define i64 @fh() #0 {
+; OPT: define i64 @fh() nounwind {
 ; OPT:   ret i64 ptrtoint (i1** getelementptr (i1** null, i32 1) to i64)
 ; OPT: }
-; OPT: define i64 @fi() #0 {
+; OPT: define i64 @fi() nounwind {
 ; OPT:   ret i64 ptrtoint (i1** getelementptr ({ i1, i1* }* null, i64 0, i32 1) to i64)
 ; OPT: }
-; TO: define i64 @fa() #0 {
+; TO: define i64 @fa() nounwind {
 ; TO:   ret i64 18480
 ; TO: }
-; TO: define i64 @fb() #0 {
+; TO: define i64 @fb() nounwind {
 ; TO:   ret i64 8
 ; TO: }
-; TO: define i64 @fc() #0 {
+; TO: define i64 @fc() nounwind {
 ; TO:   ret i64 16
 ; TO: }
-; TO: define i64 @fd() #0 {
+; TO: define i64 @fd() nounwind {
 ; TO:   ret i64 88
 ; TO: }
-; TO: define i64 @fe() #0 {
+; TO: define i64 @fe() nounwind {
 ; TO:   ret i64 16
 ; TO: }
-; TO: define i64 @ff() #0 {
+; TO: define i64 @ff() nounwind {
 ; TO:   ret i64 1
 ; TO: }
-; TO: define i64 @fg() #0 {
+; TO: define i64 @fg() nounwind {
 ; TO:   ret i64 8
 ; TO: }
-; TO: define i64 @fh() #0 {
+; TO: define i64 @fh() nounwind {
 ; TO:   ret i64 8
 ; TO: }
-; TO: define i64 @fi() #0 {
+; TO: define i64 @fi() nounwind {
 ; TO:   ret i64 8
 ; TO: }
 ; SCEV: Classifying expressions for: @fa
@@ -375,34 +375,34 @@ define i64 @fi() nounwind {
   ret i64 %t
 }
 
-; PLAIN: define i64* @fM() #0 {
+; PLAIN: define i64* @fM() nounwind {
 ; PLAIN:   %t = bitcast i64* getelementptr (i64* null, i32 1) to i64*
 ; PLAIN:   ret i64* %t
 ; PLAIN: }
-; PLAIN: define i64* @fN() #0 {
+; PLAIN: define i64* @fN() nounwind {
 ; PLAIN:   %t = bitcast i64* getelementptr ({ i64, i64 }* null, i32 0, i32 1) to i64*
 ; PLAIN:   ret i64* %t
 ; PLAIN: }
-; PLAIN: define i64* @fO() #0 {
+; PLAIN: define i64* @fO() nounwind {
 ; PLAIN:   %t = bitcast i64* getelementptr ([2 x i64]* null, i32 0, i32 1) to i64*
 ; PLAIN:   ret i64* %t
 ; PLAIN: }
-; OPT: define i64* @fM() #0 {
+; OPT: define i64* @fM() nounwind {
 ; OPT:   ret i64* getelementptr (i64* null, i32 1)
 ; OPT: }
-; OPT: define i64* @fN() #0 {
+; OPT: define i64* @fN() nounwind {
 ; OPT:   ret i64* getelementptr ({ i64, i64 }* null, i32 0, i32 1)
 ; OPT: }
-; OPT: define i64* @fO() #0 {
+; OPT: define i64* @fO() nounwind {
 ; OPT:   ret i64* getelementptr ([2 x i64]* null, i32 0, i32 1)
 ; OPT: }
-; TO: define i64* @fM() #0 {
+; TO: define i64* @fM() nounwind {
 ; TO:   ret i64* inttoptr (i64 8 to i64*)
 ; TO: }
-; TO: define i64* @fN() #0 {
+; TO: define i64* @fN() nounwind {
 ; TO:   ret i64* inttoptr (i64 8 to i64*)
 ; TO: }
-; TO: define i64* @fO() #0 {
+; TO: define i64* @fO() nounwind {
 ; TO:   ret i64* inttoptr (i64 8 to i64*)
 ; TO: }
 ; SCEV: Classifying expressions for: @fM
@@ -428,14 +428,14 @@ define i64* @fO() nounwind {
   ret i64* %t
 }
 
-; PLAIN: define i32* @fZ() #0 {
+; PLAIN: define i32* @fZ() nounwind {
 ; PLAIN:   %t = bitcast i32* getelementptr inbounds (i32* getelementptr inbounds ([3 x { i32, i32 }]* @ext, i64 0, i64 1, i32 0), i64 1) to i32*
 ; PLAIN:   ret i32* %t
 ; PLAIN: }
-; OPT: define i32* @fZ() #0 {
+; OPT: define i32* @fZ() nounwind {
 ; OPT:   ret i32* getelementptr (i32* getelementptr inbounds ([3 x { i32, i32 }]* @ext, i64 0, i64 1, i32 0), i64 1)
 ; OPT: }
-; TO: define i32* @fZ() #0 {
+; TO: define i32* @fZ() nounwind {
 ; TO:   ret i32* getelementptr inbounds ([3 x { i32, i32 }]* @ext, i64 0, i64 1, i32 1)
 ; TO: }
 ; SCEV: Classifying expressions for: @fZ
@@ -446,42 +446,3 @@ define i32* @fZ() nounwind {
   %t = bitcast i32* getelementptr inbounds (i32* getelementptr inbounds ([3 x { i32, i32 }]* @ext, i64 0, i64 1, i32 0), i64 1) to i32*
   ret i32* %t
 }
-
-; PR15262 - Check GEP folding with casts between address spaces.
-
-@p0 = global [4 x i8] zeroinitializer, align 1
-@p12 = addrspace(12) global [4 x i8] zeroinitializer, align 1
-
-define i8* @different_addrspace() nounwind noinline {
-; OPT: different_addrspace
-  %p = getelementptr inbounds i8* addrspacecast ([4 x i8] addrspace(12)* @p12 to i8*),
-                                  i32 2
-  ret i8* %p
-; OPT: ret i8* getelementptr (i8* addrspacecast (i8 addrspace(12)* getelementptr inbounds ([4 x i8] addrspace(12)* @p12, i32 0, i32 0) to i8*), i32 2)
-}
-
-define i8* @same_addrspace() nounwind noinline {
-; OPT: same_addrspace
-  %p = getelementptr inbounds i8* bitcast ([4 x i8] * @p0 to i8*), i32 2
-  ret i8* %p
-; OPT: ret i8* getelementptr inbounds ([4 x i8]* @p0, i32 0, i32 2)
-}
-
-@gv1 = internal global i32 1
-@gv2 = internal global [1 x i32] [ i32 2 ]
-@gv3 = internal global [1 x i32] [ i32 2 ]
-
-; Handled by TI-independent constant folder
-define i1 @gv_gep_vs_gv() {
-  ret i1 icmp eq (i32* getelementptr inbounds ([1 x i32]* @gv2, i32 0, i32 0), i32* @gv1)
-}
-; PLAIN: gv_gep_vs_gv
-; PLAIN: ret i1 false
-
-define i1 @gv_gep_vs_gv_gep() {
-  ret i1 icmp eq (i32* getelementptr inbounds ([1 x i32]* @gv2, i32 0, i32 0), i32* getelementptr inbounds ([1 x i32]* @gv3, i32 0, i32 0))
-}
-; PLAIN: gv_gep_vs_gv_gep
-; PLAIN: ret i1 false
-
-; CHECK: attributes #0 = { nounwind }

@@ -3,7 +3,7 @@
 
 ; LLVM should omit the testl and use the flags result from the orl.
 
-; CHECK-LABEL: or:
+; CHECK: or:
 define void @or(float* %A, i32 %IA, i32 %N) nounwind {
 entry:
   %0 = ptrtoint float* %A to i32                  ; <i32> [#uses=1]
@@ -22,7 +22,7 @@ bb:                                               ; preds = %entry
 return:                                           ; preds = %entry
   ret void
 }
-; CHECK-LABEL: xor:
+; CHECK: xor:
 define void @xor(float* %A, i32 %IA, i32 %N) nounwind {
 entry:
   %0 = ptrtoint float* %A to i32                  ; <i32> [#uses=1]
@@ -41,7 +41,7 @@ bb:                                               ; preds = %entry
 return:                                           ; preds = %entry
   ret void
 }
-; CHECK-LABEL: and:
+; CHECK: and:
 define void @and(float* %A, i32 %IA, i32 %N, i8* %p) nounwind {
 entry:
   store i8 0, i8* %p
@@ -67,7 +67,7 @@ return:                                           ; preds = %entry
 
 ; Just like @and, but without the trunc+store. This should use a testb
 ; instead of an andl.
-; CHECK-LABEL: test:
+; CHECK: test:
 define void @test(float* %A, i32 %IA, i32 %N, i8* %p) nounwind {
 entry:
   store i8 0, i8* %p

@@ -1,7 +1,7 @@
 ; RUN: opt < %s -instsimplify -S | FileCheck %s
 
 define double @fdiv_of_undef(double %X) {
-; CHECK-LABEL: @fdiv_of_undef(
+; CHECK: @fdiv_of_undef
 ; undef / X -> undef
   %r = fdiv double undef, %X
   ret double %r
@@ -9,7 +9,7 @@ define double @fdiv_of_undef(double %X) {
 }
 
 define double @fdiv_by_undef(double %X) {
-; CHECK-LABEL: @fdiv_by_undef(
+; CHECK: @fdiv_by_undef
 ; X / undef -> undef
   %r = fdiv double %X, undef
   ret double %r

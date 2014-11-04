@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fcxx-exceptions -fexceptions -fsyntax-only -verify -std=c++11 -fms-extensions -Wno-delete-incomplete %s
+// RUN: %clang_cc1 -fcxx-exceptions -fexceptions -fsyntax-only -verify -std=c++11 -fms-extensions %s
 // expected-no-diagnostics
 
 #define P(e) static_assert(noexcept(e), "expected nothrow")
@@ -39,9 +39,6 @@ void (*pallspec)() throw(...);
 void (*pintspec)() throw(int);
 void (*pemptyspec)() throw();
 
-typedef void (*funcptr)();
-funcptr returnsptr() throw();
-
 void callptr() {
   N(pnospec());
   N((*pnospec)());
@@ -51,7 +48,6 @@ void callptr() {
   N((*pintspec)());
   P(pemptyspec());
   P((*pemptyspec)());
-  N(returnsptr()());
 }
 
 struct S1 {
@@ -95,8 +91,6 @@ struct S2 {
 
 void *operator new(__typeof__(sizeof(int)) sz, int) throw();
 
-struct IncompleteStruct;
-
 struct Bad1 {
   ~Bad1() throw(int);
 };
@@ -110,7 +104,6 @@ void implicits() {
   N(new int);
   P(new (0) int);
   P(delete (int*)0);
-  P(delete (IncompleteStruct*)0);
   N(delete (Bad1*)0);
   N(delete (Bad2*)0);
   N(S2());

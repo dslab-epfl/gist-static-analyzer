@@ -3,7 +3,7 @@
 from clang.cindex import Cursor
 from clang.cindex import TranslationUnit
 
-def get_tu(source, lang='c', all_warnings=False, flags=[]):
+def get_tu(source, lang='c', all_warnings=False):
     """Obtain a translation unit from source and language.
 
     By default, the translation unit is created from source file "t.<ext>"
@@ -14,8 +14,8 @@ def get_tu(source, lang='c', all_warnings=False, flags=[]):
 
     all_warnings is a convenience argument to enable all compiler warnings.
     """
-    args = list(flags)
     name = 't.c'
+    args = []
     if lang == 'cpp':
         name = 't.cpp'
         args.append('-std=c++11')
@@ -39,34 +39,52 @@ def get_cursor(source, spelling):
 
     If the cursor is not found, None is returned.
     """
-    # Convenience for calling on a TU.
-    root_cursor = source if isinstance(source, Cursor) else source.cursor
+    children = []
+    if isinstance(source, Cursor):
+        children = source.get_children()
+    else:
+        # Assume TU
+        children = source.cursor.get_children()
 
-    for cursor in root_cursor.walk_preorder():
+    for cursor in children:
         if cursor.spelling == spelling:
             return cursor
 
-    return None
+        # Recurse into children.
+        result = get_cursor(cursor, spelling)
+        if result is not None:
+            return result
 
+    return None
+ 
 def get_cursors(source, spelling):
     """Obtain all cursors from a source object with a specific spelling.
 
-    This provides a convenient search mechanism to find all cursors with
-    specific spelling within a source. The first argument can be either a
+    This provides a convenient search mechanism to find all cursors with specific
+    spelling within a source. The first argument can be either a
     TranslationUnit or Cursor instance.
 
     If no cursors are found, an empty list is returned.
     """
-    # Convenience for calling on a TU.
-    root_cursor = source if isinstance(source, Cursor) else source.cursor
-
     cursors = []
-    for cursor in root_cursor.walk_preorder():
+    children = []
+    if isinstance(source, Cursor):
+        children = source.get_children()
+    else:
+        # Assume TU
+        children = source.cursor.get_children()
+
+    for cursor in children:
         if cursor.spelling == spelling:
             cursors.append(cursor)
 
+        # Recurse into children.
+        cursors.extend(get_cursors(cursor, spelling))
+
     return cursors
 
+    
+    
 
 __all__ = [
     'get_cursor',

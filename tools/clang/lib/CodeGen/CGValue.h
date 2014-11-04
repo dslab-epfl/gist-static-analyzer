@@ -12,23 +12,22 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_LIB_CODEGEN_CGVALUE_H
-#define LLVM_CLANG_LIB_CODEGEN_CGVALUE_H
+#ifndef CLANG_CODEGEN_CGVALUE_H
+#define CLANG_CODEGEN_CGVALUE_H
 
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/Type.h"
-#include "llvm/IR/Value.h"
 
 namespace llvm {
   class Constant;
-  class MDNode;
+  class Value;
 }
 
 namespace clang {
 namespace CodeGen {
   class AggValueSlot;
-  struct CGBitFieldInfo;
+  class CGBitFieldInfo;
 
 /// RValue - This trivial value class is used to represent the result of an
 /// expression that is evaluated.  It can be one of three things: either a
@@ -97,10 +96,6 @@ public:
   }
 };
 
-/// Does an ARC strong l-value have precise lifetime?
-enum ARCPreciseLifetime_t {
-  ARCImpreciseLifetime, ARCPreciseLifetime
-};
 
 /// LValue - This represents an lvalue references.  Because C/C++ allow
 /// bitfields, this is not a simple LLVM pointer, it may be a pointer plus a
@@ -110,8 +105,7 @@ class LValue {
     Simple,       // This is a normal l-value, use getAddress().
     VectorElt,    // This is a vector element l-value (V[i]), use getVector*
     BitField,     // This is a bitfield l-value, use getBitfield*.
-    ExtVectorElt, // This is an extended vector subset, use getExtVectorComp
-    GlobalReg     // This is a register l-value, use getGlobalReg()
+    ExtVectorElt  // This is an extended vector subset, use getExtVectorComp
   } LVType;
 
   llvm::Value *V;
@@ -152,16 +146,7 @@ class LValue {
   // Lvalue is a thread local reference
   bool ThreadLocalRef : 1;
 
-  // Lvalue has ARC imprecise lifetime.  We store this inverted to try
-  // to make the default bitfield pattern all-zeroes.
-  bool ImpreciseLifetime : 1;
-
   Expr *BaseIvarExp;
-
-  /// Used by struct-path-aware TBAA.
-  QualType TBAABaseType;
-  /// Offset relative to the base type.
-  uint64_t TBAAOffset;
 
   /// TBAAInfo - TBAA information to attach to dereferences of this LValue.
   llvm::MDNode *TBAAInfo;
@@ -169,7 +154,7 @@ class LValue {
 private:
   void Initialize(QualType Type, Qualifiers Quals,
                   CharUnits Alignment,
-                  llvm::MDNode *TBAAInfo = nullptr) {
+                  llvm::MDNode *TBAAInfo = 0) {
     this->Type = Type;
     this->Quals = Quals;
     this->Alignment = Alignment.getQuantity();
@@ -178,13 +163,8 @@ private:
 
     // Initialize Objective-C flags.
     this->Ivar = this->ObjIsArray = this->NonGC = this->GlobalObjCRef = false;
-    this->ImpreciseLifetime = false;
     this->ThreadLocalRef = false;
-    this->BaseIvarExp = nullptr;
-
-    // Initialize fields for TBAA.
-    this->TBAABaseType = Type;
-    this->TBAAOffset = 0;
+    this->BaseIvarExp = 0;
     this->TBAAInfo = TBAAInfo;
   }
 
@@ -193,7 +173,6 @@ public:
   bool isVectorElt() const { return LVType == VectorElt; }
   bool isBitField() const { return LVType == BitField; }
   bool isExtVectorElt() const { return LVType == ExtVectorElt; }
-  bool isGlobalReg() const { return LVType == GlobalReg; }
 
   bool isVolatileQualified() const { return Quals.hasVolatile(); }
   bool isRestrictQualified() const { return Quals.hasRestrict(); }
@@ -222,13 +201,6 @@ public:
   bool isThreadLocalRef() const { return ThreadLocalRef; }
   void setThreadLocalRef(bool Value) { ThreadLocalRef = Value;}
 
-  ARCPreciseLifetime_t isARCPreciseLifetime() const {
-    return ARCPreciseLifetime_t(!ImpreciseLifetime);
-  }
-  void setARCPreciseLifetime(ARCPreciseLifetime_t value) {
-    ImpreciseLifetime = (value == ARCImpreciseLifetime);
-  }
-
   bool isObjCWeak() const {
     return Quals.getObjCGCAttr() == Qualifiers::Weak;
   }
@@ -242,12 +214,6 @@ public:
   
   Expr *getBaseIvarExp() const { return BaseIvarExp; }
   void setBaseIvarExp(Expr *V) { BaseIvarExp = V; }
-
-  QualType getTBAABaseType() const { return TBAABaseType; }
-  void setTBAABaseType(QualType T) { TBAABaseType = T; }
-
-  uint64_t getTBAAOffset() const { return TBAAOffset; }
-  void setTBAAOffset(uint64_t O) { TBAAOffset = O; }
 
   llvm::MDNode *getTBAAInfo() const { return TBAAInfo; }
   void setTBAAInfo(llvm::MDNode *N) { TBAAInfo = N; }
@@ -279,7 +245,7 @@ public:
   }
 
   // bitfield lvalue
-  llvm::Value *getBitFieldAddr() const {
+  llvm::Value *getBitFieldBaseAddr() const {
     assert(isBitField());
     return V;
   }
@@ -288,12 +254,9 @@ public:
     return *BitFieldInfo;
   }
 
-  // global register lvalue
-  llvm::Value *getGlobalReg() const { assert(isGlobalReg()); return V; }
-
   static LValue MakeAddr(llvm::Value *address, QualType type,
                          CharUnits alignment, ASTContext &Context,
-                         llvm::MDNode *TBAAInfo = nullptr) {
+                         llvm::MDNode *TBAAInfo = 0) {
     Qualifiers qs = type.getQualifiers();
     qs.setObjCGCAttr(Context.getObjCGCAttrKind(type));
 
@@ -326,27 +289,17 @@ public:
 
   /// \brief Create a new object to represent a bit-field access.
   ///
-  /// \param Addr - The base address of the bit-field sequence this
-  /// bit-field refers to.
+  /// \param BaseValue - The base address of the structure containing the
+  /// bit-field.
   /// \param Info - The information describing how to perform the bit-field
   /// access.
-  static LValue MakeBitfield(llvm::Value *Addr,
+  static LValue MakeBitfield(llvm::Value *BaseValue,
                              const CGBitFieldInfo &Info,
                              QualType type, CharUnits Alignment) {
     LValue R;
     R.LVType = BitField;
-    R.V = Addr;
+    R.V = BaseValue;
     R.BitFieldInfo = &Info;
-    R.Initialize(type, type.getQualifiers(), Alignment);
-    return R;
-  }
-
-  static LValue MakeGlobalReg(llvm::Value *Reg,
-                              QualType type,
-                              CharUnits Alignment) {
-    LValue R;
-    R.LVType = GlobalReg;
-    R.V = Reg;
     R.Initialize(type, type.getQualifiers(), Alignment);
     return R;
   }
@@ -405,7 +358,7 @@ public:
   /// ignored - Returns an aggregate value slot indicating that the
   /// aggregate value is being ignored.
   static AggValueSlot ignored() {
-    return forAddr(nullptr, CharUnits(), Qualifiers(), IsNotDestructed,
+    return forAddr(0, CharUnits(), Qualifiers(), IsNotDestructed,
                    DoesNotNeedGCBarriers, IsNotAliased);
   }
 
@@ -458,10 +411,6 @@ public:
     return Quals.hasVolatile();
   }
 
-  void setVolatile(bool flag) {
-    Quals.setVolatile(flag);
-  }
-  
   Qualifiers::ObjCLifetime getObjCLifetime() const {
     return Quals.getObjCLifetime();
   }
@@ -475,7 +424,7 @@ public:
   }
 
   bool isIgnored() const {
-    return Addr == nullptr;
+    return Addr == 0;
   }
 
   CharUnits getAlignment() const {

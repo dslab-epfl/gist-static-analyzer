@@ -8,19 +8,9 @@
 ##===----------------------------------------------------------------------===##
 CLANG_LEVEL := ..
 
-# ARCMigrate and Rewrite are always needed because of libclang.
-PARALLEL_DIRS = Headers Basic Lex Parse AST Sema CodeGen Analysis Frontend \
-                FrontendTool Tooling Driver Format Edit Rewrite Serialization \
-                Index ASTMatchers
-
-include $(CLANG_LEVEL)/../../Makefile.config
-
-ifeq ($(ENABLE_CLANG_STATIC_ANALYZER),1)
-PARALLEL_DIRS += StaticAnalyzer
-endif
-
-ifeq ($(ENABLE_CLANG_ARCMT),1)
-PARALLEL_DIRS += ARCMigrate
-endif
+PARALLEL_DIRS = Headers Basic Lex Parse AST ASTMatchers Sema CodeGen Analysis \
+                StaticAnalyzer Edit Rewrite ARCMigrate Serialization Frontend \
+                FrontendTool Tooling Driver
 
 include $(CLANG_LEVEL)/Makefile
+

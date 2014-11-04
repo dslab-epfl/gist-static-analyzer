@@ -44,7 +44,7 @@ namespace VariableLengthArrays {
 
   void f() {
     int n = 42;
-    goto foo; // expected-error {{cannot jump}}
+    goto foo; // expected-error {{goto into protected scope}}
     using T = int[n]; // expected-note {{bypasses initialization of VLA type alias}}
   foo: ;
   }
@@ -154,5 +154,5 @@ namespace Access {
 namespace VoidArg {
   using V = void;
   V f(int); // ok
-  V g(V); // ok (DR577)
+  V g(V); // expected-error {{empty parameter list defined with a type alias of 'void' not allowed}}
 }

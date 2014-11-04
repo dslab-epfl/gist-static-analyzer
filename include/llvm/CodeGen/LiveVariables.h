@@ -29,19 +29,21 @@
 #ifndef LLVM_CODEGEN_LIVEVARIABLES_H
 #define LLVM_CODEGEN_LIVEVARIABLES_H
 
+#include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/Target/TargetRegisterInfo.h"
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/IndexedMap.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/SparseBitVector.h"
-#include "llvm/CodeGen/MachineFunctionPass.h"
-#include "llvm/CodeGen/MachineInstr.h"
-#include "llvm/Target/TargetRegisterInfo.h"
 
 namespace llvm {
 
-class MachineBasicBlock;
 class MachineRegisterInfo;
+class TargetRegisterInfo;
 
 class LiveVariables : public MachineFunctionPass {
 public:
@@ -134,14 +136,14 @@ private:   // Intermediate data structures
   // PhysRegInfo - Keep track of which instruction was the last def of a
   // physical register. This is a purely local property, because all physical
   // register references are presumed dead across basic blocks.
-  std::vector<MachineInstr *> PhysRegDef;
+  MachineInstr **PhysRegDef;
 
   // PhysRegInfo - Keep track of which instruction was the last use of a
   // physical register. This is a purely local property, because all physical
   // register references are presumed dead across basic blocks.
-  std::vector<MachineInstr *> PhysRegUse;
+  MachineInstr **PhysRegUse;
 
-  std::vector<SmallVector<unsigned, 4>> PHIVarInfo;
+  SmallVector<unsigned, 4> *PHIVarInfo;
 
   // DistanceMap - Keep track the distance of a MI from the start of the
   // current basic block.
@@ -157,8 +159,8 @@ private:   // Intermediate data structures
 
   void HandlePhysRegUse(unsigned Reg, MachineInstr *MI);
   void HandlePhysRegDef(unsigned Reg, MachineInstr *MI,
-                        SmallVectorImpl<unsigned> &Defs);
-  void UpdatePhysRegDefs(MachineInstr *MI, SmallVectorImpl<unsigned> &Defs);
+                        SmallVector<unsigned, 4> &Defs);
+  void UpdatePhysRegDefs(MachineInstr *MI, SmallVector<unsigned, 4> &Defs);
 
   /// FindLastRefOrPartRef - Return the last reference or partial reference of
   /// the specified register.
@@ -175,13 +177,9 @@ private:   // Intermediate data structures
   /// register which is used in a PHI node. We map that to the BB the vreg
   /// is coming from.
   void analyzePHINodes(const MachineFunction& Fn);
-
-  void runOnInstr(MachineInstr *MI, SmallVectorImpl<unsigned> &Defs);
-
-  void runOnBlock(MachineBasicBlock *MBB, unsigned NumRegs);
 public:
 
-  bool runOnMachineFunction(MachineFunction &MF) override;
+  virtual bool runOnMachineFunction(MachineFunction &MF);
 
   /// RegisterDefIsDead - Return true if the specified instruction defines the
   /// specified register, but that definition is dead.
@@ -262,10 +260,10 @@ public:
     (void)Removed;
     return true;
   }
+  
+  void getAnalysisUsage(AnalysisUsage &AU) const;
 
-  void getAnalysisUsage(AnalysisUsage &AU) const override;
-
-  void releaseMemory() override {
+  virtual void releaseMemory() {
     VirtRegInfo.clear();
   }
 

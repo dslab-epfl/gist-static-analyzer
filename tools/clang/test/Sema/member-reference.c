@@ -1,4 +1,5 @@
 // RUN: %clang_cc1 %s -verify -fsyntax-only
+// expected-no-diagnostics
 
 struct simple { int i; };
 
@@ -17,8 +18,4 @@ void g(void) {
   struct S s[1];
   s->x = 1;
   s->z = 2;
-}
-
-int PR17762(struct simple c) {
-  return c->i; // expected-error {{member reference type 'struct simple' is not a pointer; maybe you meant to use '.'?}}
 }

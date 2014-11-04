@@ -9,7 +9,3 @@ void f() {
   goto d;
   return;
 }
-
-void PR8455() {
-  L: __attribute__((unused)) return; // ok, no semicolon required
-}

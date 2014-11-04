@@ -1,6 +1,4 @@
 // RUN: %clang_cc1 -triple=powerpc-apple-darwin8 -faltivec -fsyntax-only -verify %s
-// RUN: %clang_cc1 -triple=powerpc64-unknown-linux-gnu -faltivec -fsyntax-only -verify %s
-// RUN: %clang_cc1 -triple=powerpc64le-unknown-linux-gnu -faltivec -fsyntax-only -verify %s
 
 __vector char vv_c;
 __vector signed char vv_sc;
@@ -78,11 +76,6 @@ vector bool unsigned int v_bsc2;     // expected-error {{cannot use 'unsigned' w
 vector bool long v_bl;               // expected-error {{cannot use 'long' with '__vector bool'}}
 vector bool long long v_bll;         // expected-error {{cannot use 'long long' with '__vector bool'}}
 
-// vector long is deprecated, but vector long long is not.
-vector long long v_ll;
-vector signed long long v_sll;
-vector unsigned long long v_ull;
-
 typedef char i8;
 typedef short i16;
 typedef int i32;
@@ -110,8 +103,8 @@ void f() {
   gccvector unsigned int gv = v;
   gccvector int gvi = (gccvector int)v;
   __attribute__((vector_size(8))) unsigned int gv8;
-  gv8 = gccv;     // expected-error {{assigning to '__attribute__((__vector_size__(2 * sizeof(unsigned int)))) unsigned int' (vector of 2 'unsigned int' values) from incompatible type '__attribute__((__vector_size__(4 * sizeof(unsigned int)))) unsigned int' (vector of 4 'unsigned int' values)}}
-  av = gv8;       // expected-error {{assigning to '__vector unsigned int' (vector of 4 'unsigned int' values) from incompatible type '__attribute__((__vector_size__(2 * sizeof(unsigned int)))) unsigned int' (vector of 2 'unsigned int' values)}}
+  gv8 = gccv;     // expected-error {{assigning to '__attribute__((__vector_size__(2 * sizeof(unsigned int)))) unsigned int' from incompatible type '__attribute__((__vector_size__(4 * sizeof(unsigned int)))) unsigned int'}}
+  av = gv8;       // expected-error {{assigning to '__vector unsigned int' from incompatible type '__attribute__((__vector_size__(2 * sizeof(unsigned int)))) unsigned int'}}
 
   v = gccv;
   __vector unsigned int tv = gccv;

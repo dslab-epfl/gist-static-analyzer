@@ -1,11 +1,11 @@
-; RUN: llc < %s -mtriple=thumb-apple-darwin -disable-cgp-branch-opts -disable-post-ra -verify-machineinstrs | FileCheck %s -check-prefix=CHECK -check-prefix=RA_GREEDY
-; RUN: llc < %s -mtriple=thumb-apple-darwin -disable-cgp-branch-opts -disable-post-ra -regalloc=basic -verify-machineinstrs | FileCheck %s -check-prefix=CHECK -check-prefix=RA_BASIC
+; RUN: llc < %s -mtriple=thumb-apple-darwin -disable-cgp-branch-opts -disable-post-ra | FileCheck %s
+; RUN: llc < %s -mtriple=thumb-apple-darwin -disable-cgp-branch-opts -disable-post-ra -regalloc=basic | FileCheck %s
 
 	%struct.state = type { i32, %struct.info*, float**, i32, i32, i32, i32, i32, i32, i32, i32, i32, i64, i64, i64, i64, i64, i64, i8* }
 	%struct.info = type { i32, i32, i32, i32, i32, i32, i32, i8* }
 
 define void @t1(%struct.state* %v) {
-; CHECK-LABEL: t1:
+; CHECK: t1:
 ; CHECK: push
 ; CHECK: add r7, sp, #12
 ; CHECK: lsls r[[R0:[0-9]+]]
@@ -39,14 +39,13 @@ declare fastcc void @f2(float*, float*, float*, i32)
 @str215 = external global [2 x i8]
 
 define void @t2(%struct.comment* %vc, i8* %tag, i8* %contents) {
-; CHECK-LABEL: t2:
+; CHECK: t2:
 ; CHECK: push
 ; CHECK: add r7, sp, #12
 ; CHECK: sub sp, #
 ; CHECK: mov r[[R0:[0-9]+]], sp
 ; CHECK: str r{{[0-9+]}}, [r[[R0]]
-; RA_GREEDY: str r{{[0-9+]}}, [r[[R0]]
-; RA_BASIC: stm r[[R0]]!
+; CHECK: str r{{[0-9+]}}, [r[[R0]]
 ; CHECK-NOT: ldr r0, [sp
 ; CHECK: mov r[[R1:[0-9]+]], sp
 ; CHECK: subs r[[R2:[0-9]+]], r[[R1]], r{{[0-9]+}}

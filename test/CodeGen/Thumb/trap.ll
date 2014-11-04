@@ -1,9 +1,9 @@
-; RUN: llc -mtriple=thumb-eabi %s -o - | FileCheck %s
+; RUN: llc < %s -march=thumb | FileCheck %s
 ; rdar://7961298
 
 define void @t() nounwind {
 entry:
-; CHECK-LABEL: t:
+; CHECK: t:
 ; CHECK: trap
   call void @llvm.trap()
   unreachable

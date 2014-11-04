@@ -13,7 +13,6 @@
 
 typedef signed char BOOL;
 typedef unsigned int NSUInteger;
-typedef long NSInteger;
 @class NSString, Protocol;
 extern void NSLog(NSString *format, ...);
 extern void NSLogv(NSString *format, va_list args);
@@ -116,9 +115,6 @@ NSString *test_literal_propagation(void) {
   NSLog(ns2); // expected-warning {{more '%' conversions than data arguments}}
   NSString * ns3 = ns1;
   NSLog(ns3); // expected-warning {{format string is not a string literal}}}
-
-  NSString * const ns6 = @"split" " string " @"%s"; // expected-note {{format string is defined here}}
-  NSLog(ns6); // expected-warning {{more '%' conversions than data arguments}}
 }
 
 // Do not emit warnings when using NSLocalizedString
@@ -149,7 +145,7 @@ void test_percent_S() {
   NSLog(@"%S", ptr);  // no-warning
 
   const wchar_t* wchar_ptr = L"ab";
-  NSLog(@"%S", wchar_ptr);  // expected-warning{{format specifies type 'const unichar *' (aka 'const unsigned short *') but the argument has type 'const wchar_t *'}}
+  NSLog(@"%S", wchar_ptr);  // expected-warning{{format specifies type 'const unsigned short *' but the argument has type 'const wchar_t *'}}
 }
 
 void test_percent_ls() {
@@ -158,7 +154,7 @@ void test_percent_ls() {
   NSLog(@"%ls", ptr);  // no-warning
 
   const wchar_t* wchar_ptr = L"ab";
-  NSLog(@"%ls", wchar_ptr);  // expected-warning{{format specifies type 'const unichar *' (aka 'const unsigned short *') but the argument has type 'const wchar_t *'}}
+  NSLog(@"%ls", wchar_ptr);  // expected-warning{{format specifies type 'const unsigned short *' but the argument has type 'const wchar_t *'}}
 }
 
 void test_percent_C() {
@@ -166,7 +162,7 @@ void test_percent_C() {
   NSLog(@"%C", data);  // no-warning
 
   const wchar_t wchar_data = L'a';
-  NSLog(@"%C", wchar_data);  // expected-warning{{format specifies type 'unichar' (aka 'unsigned short') but the argument has type 'wchar_t'}}
+  NSLog(@"%C", wchar_data);  // expected-warning{{format specifies type 'unsigned short' but the argument has type 'wchar_t'}}
 }
 
 // Test that %@ works with toll-free bridging (<rdar://problem/10814120>).
@@ -235,19 +231,7 @@ void testInvalidFormatArgument(NSDictionary *dict) {
 // <rdar://problem/11825593>
 void testByValueObjectInFormat(Foo *obj) {
   printf("%d %d %d", 1L, *obj, 1L); // expected-error {{cannot pass object with interface type 'Foo' by value to variadic function; expected type from format string was 'int'}} expected-warning 2 {{format specifies type 'int' but the argument has type 'long'}}
-  printf("%!", *obj); // expected-error {{cannot pass object with interface type 'Foo' by value through variadic function}} expected-warning {{invalid conversion specifier}}
-  printf(0, *obj); // expected-error {{cannot pass object with interface type 'Foo' by value through variadic function}}
 
   [Bar log2:@"%d", *obj]; // expected-error {{cannot pass object with interface type 'Foo' by value to variadic method; expected type from format string was 'int'}}
-}
-
-// <rdar://problem/13557053>
-void testTypeOf(NSInteger dW, NSInteger dH) {
-  NSLog(@"dW %d  dH %d",({ __typeof__(dW) __a = (dW); __a < 0 ? -__a : __a; }),({ __typeof__(dH) __a = (dH); __a < 0 ? -__a : __a; })); // expected-warning 2 {{values of type 'NSInteger' should not be used as format arguments; add an explicit cast to 'long' instead}}
-}
-
-void testUnicode() {
-  NSLog(@"%C", 0x2022); // no-warning
-  NSLog(@"%C", 0x202200); // expected-warning{{format specifies type 'unichar' (aka 'unsigned short') but the argument has type 'int'}}
 }
 

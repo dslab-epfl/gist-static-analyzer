@@ -44,7 +44,9 @@ S4<int(1)> y; // expected-error{{must be a type}}
 void foo5() 
 { 
   (void)sizeof(int(1)); //expression 
-  (void)sizeof(int()); // expected-error{{function type}}
+  // FIXME: should we make this an error rather than a warning? 
+  // (It affects SFINAE)
+  (void)sizeof(int()); // expected-warning{{function type}}
 }
 
 // [dcl.ambig.res]p6:

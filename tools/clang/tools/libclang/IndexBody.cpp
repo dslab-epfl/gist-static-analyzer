@@ -8,19 +8,20 @@
 //===----------------------------------------------------------------------===//
 
 #include "IndexingContext.h"
-#include "clang/AST/DataRecursiveASTVisitor.h"
+
+#include "RecursiveASTVisitor.h"
 
 using namespace clang;
 using namespace cxindex;
 
 namespace {
 
-class BodyIndexer : public DataRecursiveASTVisitor<BodyIndexer> {
+class BodyIndexer : public cxindex::RecursiveASTVisitor<BodyIndexer> {
   IndexingContext &IndexCtx;
   const NamedDecl *Parent;
   const DeclContext *ParentDC;
 
-  typedef DataRecursiveASTVisitor<BodyIndexer> base;
+  typedef RecursiveASTVisitor<BodyIndexer> base;
 public:
   BodyIndexer(IndexingContext &indexCtx,
               const NamedDecl *Parent, const DeclContext *DC)
@@ -68,6 +69,9 @@ public:
   }
 
   bool VisitObjCMessageExpr(ObjCMessageExpr *E) {
+    if (TypeSourceInfo *Cls = E->getClassReceiverTypeInfo())
+      IndexCtx.indexTypeSourceInfo(Cls, Parent, ParentDC);
+
     if (ObjCMethodDecl *MD = E->getMethodDecl())
       IndexCtx.handleReference(MD, E->getSelectorStartLoc(),
                                Parent, ParentDC, E,
@@ -83,12 +87,6 @@ public:
 
     // No need to do a handleReference for the objc method, because there will
     // be a message expr as part of PseudoObjectExpr.
-    return true;
-  }
-
-  bool VisitMSPropertyRefExpr(MSPropertyRefExpr *E) {
-    IndexCtx.handleReference(E->getPropertyDecl(), E->getMemberLoc(), Parent,
-                             ParentDC, E, CXIdxEntityRef_Direct);
     return true;
   }
 
@@ -109,17 +107,11 @@ public:
     if (ObjCMethodDecl *MD = E->getDictWithObjectsMethod())
       IndexCtx.handleReference(MD, E->getLocStart(),
                                Parent, ParentDC, E, CXIdxEntityRef_Implicit);
-    if (ObjCMethodDecl *MD = E->getDictAllocMethod())
-      IndexCtx.handleReference(MD, E->getLocStart(),
-                               Parent, ParentDC, E, CXIdxEntityRef_Implicit);
     return true;
   }
 
   bool VisitObjCArrayLiteral(ObjCArrayLiteral *E) {
     if (ObjCMethodDecl *MD = E->getArrayWithObjectsMethod())
-      IndexCtx.handleReference(MD, E->getLocStart(),
-                               Parent, ParentDC, E, CXIdxEntityRef_Implicit);
-    if (ObjCMethodDecl *MD = E->getArrayAllocMethod())
       IndexCtx.handleReference(MD, E->getLocStart(),
                                Parent, ParentDC, E, CXIdxEntityRef_Implicit);
     return true;
@@ -155,15 +147,13 @@ public:
     return true;
   }
 
-  bool TraverseLambdaCapture(LambdaExpr *LE, const LambdaCapture *C) {
-    if (C->capturesThis() || C->capturesVLAType())
+  bool TraverseLambdaCapture(LambdaExpr::Capture C) {
+    if (C.capturesThis())
       return true;
 
-    if (C->capturesVariable() && IndexCtx.shouldIndexFunctionLocalSymbols())
-      IndexCtx.handleReference(C->getCapturedVar(), C->getLocation(), Parent,
-                               ParentDC);
-
-    // FIXME: Lambda init-captures.
+    if (IndexCtx.shouldIndexFunctionLocalSymbols())
+      IndexCtx.handleReference(C.getCapturedVar(), C.getLocation(),
+                               Parent, ParentDC);
     return true;
   }
 
@@ -176,7 +166,7 @@ void IndexingContext::indexBody(const Stmt *S, const NamedDecl *Parent,
   if (!S)
     return;
 
-  if (!DC)
+  if (DC == 0)
     DC = Parent->getLexicalDeclContext();
   BodyIndexer(*this, Parent, DC).TraverseStmt(const_cast<Stmt*>(S));
 }

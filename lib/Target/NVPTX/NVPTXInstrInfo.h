@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_NVPTX_NVPTXINSTRINFO_H
-#define LLVM_LIB_TARGET_NVPTX_NVPTXINSTRINFO_H
+#ifndef NVPTXINSTRUCTIONINFO_H
+#define NVPTXINSTRUCTIONINFO_H
 
 #include "NVPTX.h"
 #include "NVPTXRegisterInfo.h"
@@ -23,13 +23,14 @@
 
 namespace llvm {
 
-class NVPTXInstrInfo : public NVPTXGenInstrInfo {
+class NVPTXInstrInfo : public NVPTXGenInstrInfo
+{
+  NVPTXTargetMachine &TM;
   const NVPTXRegisterInfo RegInfo;
-  virtual void anchor();
 public:
-  explicit NVPTXInstrInfo(NVPTXSubtarget &STI);
+  explicit NVPTXInstrInfo(NVPTXTargetMachine &TM);
 
-  const NVPTXRegisterInfo &getRegisterInfo() const { return RegInfo; }
+  virtual const NVPTXRegisterInfo &getRegisterInfo() const { return RegInfo; }
 
   /* The following virtual functions are used in register allocation.
    * They are not implemented because the existing interface and the logic
@@ -49,26 +50,30 @@ public:
    *                               const TargetRegisterClass *RC) const;
    */
 
-  void copyPhysReg(
-      MachineBasicBlock &MBB, MachineBasicBlock::iterator I, DebugLoc DL,
-      unsigned DestReg, unsigned SrcReg, bool KillSrc) const override;
-  virtual bool isMoveInstr(const MachineInstr &MI, unsigned &SrcReg,
+  virtual void copyPhysReg(MachineBasicBlock &MBB,
+                           MachineBasicBlock::iterator I, DebugLoc DL,
+                           unsigned DestReg, unsigned SrcReg,
+                           bool KillSrc) const ;
+  virtual bool isMoveInstr(const MachineInstr &MI,
+                           unsigned &SrcReg,
                            unsigned &DestReg) const;
   bool isLoadInstr(const MachineInstr &MI, unsigned &AddrSpace) const;
   bool isStoreInstr(const MachineInstr &MI, unsigned &AddrSpace) const;
   bool isReadSpecialReg(MachineInstr &MI) const;
 
-  virtual bool CanTailMerge(const MachineInstr *MI) const;
+  virtual bool CanTailMerge(const MachineInstr *MI) const ;
   // Branch analysis.
-  bool AnalyzeBranch(
-      MachineBasicBlock &MBB, MachineBasicBlock *&TBB, MachineBasicBlock *&FBB,
-      SmallVectorImpl<MachineOperand> &Cond, bool AllowModify) const override;
-  unsigned RemoveBranch(MachineBasicBlock &MBB) const override;
-  unsigned InsertBranch(
-      MachineBasicBlock &MBB, MachineBasicBlock *TBB, MachineBasicBlock *FBB,
-      const SmallVectorImpl<MachineOperand> &Cond, DebugLoc DL) const override;
+  virtual bool AnalyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
+                             MachineBasicBlock *&FBB,
+                             SmallVectorImpl<MachineOperand> &Cond,
+                             bool AllowModify) const;
+  virtual unsigned RemoveBranch(MachineBasicBlock &MBB) const;
+  virtual unsigned InsertBranch(MachineBasicBlock &MBB,MachineBasicBlock *TBB,
+                                MachineBasicBlock *FBB,
+                                const SmallVectorImpl<MachineOperand> &Cond,
+                                DebugLoc DL) const;
   unsigned getLdStCodeAddrSpace(const MachineInstr &MI) const {
-    return MI.getOperand(2).getImm();
+    return  MI.getOperand(2).getImm();
   }
 
 };

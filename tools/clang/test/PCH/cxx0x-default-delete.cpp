@@ -20,11 +20,6 @@ class quux {
   ~quux() = default;
 };
 
-struct A {
-  A(const A&) = default;
-  template<typename T> A(T&&);
-};
-
 #else
 
 foo::foo() { } // expected-error{{definition of explicitly defaulted default constructor}}
@@ -35,12 +30,5 @@ void fn() {
 
 baz bz; // expected-error{{deleted function}} expected-note@16{{deleted here}}
 quux qx; // expected-error{{private destructor}} expected-note@20{{private here}}
-
-struct B { A a; };
-struct C { mutable A a; };
-static_assert(__is_trivially_constructible(B, const B&), "");
-static_assert(!__is_trivially_constructible(B, B&&), "");
-static_assert(!__is_trivially_constructible(C, const C&), "");
-static_assert(!__is_trivially_constructible(C, C&&), "");
 
 #endif

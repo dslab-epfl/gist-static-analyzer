@@ -2,7 +2,7 @@
 
 define void @f() nounwind readnone {
 entry:
-; CHECK-LABEL: f:
+; CHECK: f:
 ; CHECK: .set  noat
 ; CHECK: .set  at
 

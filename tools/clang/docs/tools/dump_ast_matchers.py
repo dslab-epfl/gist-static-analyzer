@@ -119,9 +119,9 @@ def add_matcher(result_type, name, args, comment, is_dyncast=False):
   # arguments.
   elif ('Matcher<' not in args or
         name in ['allOf', 'anyOf', 'anything', 'unless']):
-    narrowing_matchers[result_type + name + esc(args)] = matcher_html
+    narrowing_matchers[result_type + name] = matcher_html
   else:
-    traversal_matchers[result_type + name + esc(args)] = matcher_html
+    traversal_matchers[result_type + name] = matcher_html
 
 def act_on_decl(declaration, comment, allowed_types):
   """Parse the matcher out of the given declaration and comment.
@@ -133,108 +133,28 @@ def act_on_decl(declaration, comment, allowed_types):
   if declaration.strip():
     # Node matchers are defined by writing:
     #   VariadicDynCastAllOfMatcher<ResultType, ArgumentType> name;
-    m = re.match(r""".*Variadic(?:DynCast)?AllOfMatcher\s*<
-                       \s*([^\s,]+)\s*(?:,
-                       \s*([^\s>]+)\s*)?>
+    m = re.match(r""".*VariadicDynCastAllOfMatcher\s*<
+                       \s*([^\s,]+)\s*,
+                       \s*([^\s>]+)\s*>
                        \s*([^\s;]+)\s*;\s*$""", declaration, flags=re.X)
     if m:
       result, inner, name = m.groups()
-      if not inner:
-        inner = result
       add_matcher(result, name, 'Matcher<%s>...' % inner,
                   comment, is_dyncast=True)
       return
 
     # Parse the various matcher definition macros.
-    m = re.match(""".*AST_TYPE_MATCHER\(
-                       \s*([^\s,]+\s*),
-                       \s*([^\s,]+\s*)
-                     \)\s*;\s*$""", declaration, flags=re.X)
-    if m:
-      inner, name = m.groups()
-      add_matcher('Type', name, 'Matcher<%s>...' % inner,
-                  comment, is_dyncast=True)
-      # FIXME: re-enable once we have implemented casting on the TypeLoc
-      # hierarchy.
-      # add_matcher('TypeLoc', '%sLoc' % name, 'Matcher<%sLoc>...' % inner,
-      #             comment, is_dyncast=True)
-      return
-
-    m = re.match(""".*AST_TYPE(LOC)?_TRAVERSE_MATCHER\(
-                       \s*([^\s,]+\s*),
-                       \s*(?:[^\s,]+\s*),
-                       \s*AST_POLYMORPHIC_SUPPORTED_TYPES_([^(]*)\(([^)]*)\)
-                     \)\s*;\s*$""", declaration, flags=re.X)
-    if m:
-      loc, name, n_results, results = m.groups()[0:4]
-      result_types = [r.strip() for r in results.split(',')]
-
-      comment_result_types = extract_result_types(comment)
-      if (comment_result_types and
-          sorted(result_types) != sorted(comment_result_types)):
-        raise Exception('Inconsistent documentation for: %s' % name)
-      for result_type in result_types:
-        add_matcher(result_type, name, 'Matcher<Type>', comment)
-        if loc:
-          add_matcher('%sLoc' % result_type, '%sLoc' % name, 'Matcher<TypeLoc>',
-                      comment)
-      return
-
-    m = re.match(r"""^\s*AST_POLYMORPHIC_MATCHER(_P)?(.?)(?:_OVERLOAD)?\(
-                          \s*([^\s,]+)\s*,
-                          \s*AST_POLYMORPHIC_SUPPORTED_TYPES_([^(]*)\(([^)]*)\)
+    m = re.match(r"""^\s*AST_(POLYMORPHIC_)?MATCHER(_P)?(.?)\(
+                       (?:\s*([^\s,]+)\s*,)?
+                          \s*([^\s,]+)\s*
                        (?:,\s*([^\s,]+)\s*
                           ,\s*([^\s,]+)\s*)?
                        (?:,\s*([^\s,]+)\s*
                           ,\s*([^\s,]+)\s*)?
-                       (?:,\s*\d+\s*)?
                       \)\s*{\s*$""", declaration, flags=re.X)
-
     if m:
-      p, n, name, n_results, results = m.groups()[0:5]
+      p, n, result, name = m.groups()[1:5]
       args = m.groups()[5:]
-      result_types = [r.strip() for r in results.split(',')]
-      if allowed_types and allowed_types != result_types:
-        raise Exception('Inconsistent documentation for: %s' % name)
-      if n not in ['', '2']:
-        raise Exception('Cannot parse "%s"' % declaration)
-      args = ', '.join('%s %s' % (args[i], args[i+1])
-                       for i in range(0, len(args), 2) if args[i])
-      for result_type in result_types:
-        add_matcher(result_type, name, args, comment)
-      return
-
-    m = re.match(r"""^\s*AST_MATCHER_FUNCTION(_P)?(.?)(?:_OVERLOAD)?\(
-                       (?:\s*([^\s,]+)\s*,)?
-                          \s*([^\s,]+)\s*
-                       (?:,\s*([^\s,]+)\s*
-                          ,\s*([^\s,]+)\s*)?
-                       (?:,\s*([^\s,]+)\s*
-                          ,\s*([^\s,]+)\s*)?
-                       (?:,\s*\d+\s*)?
-                      \)\s*{\s*$""", declaration, flags=re.X)
-    if m:
-      p, n, result, name = m.groups()[0:4]
-      args = m.groups()[4:]
-      if n not in ['', '2']:
-        raise Exception('Cannot parse "%s"' % declaration)
-      args = ', '.join('%s %s' % (args[i], args[i+1])
-                       for i in range(0, len(args), 2) if args[i])
-      add_matcher(result, name, args, comment)
-      return
-
-    m = re.match(r"""^\s*AST_MATCHER(_P)?(.?)(?:_OVERLOAD)?\(
-                       (?:\s*([^\s,]+)\s*,)?
-                          \s*([^\s,]+)\s*
-                       (?:,\s*([^\s,]+)\s*
-                          ,\s*([^\s,]+)\s*)?
-                       (?:,\s*([^\s,]+)\s*
-                          ,\s*([^\s,]+)\s*)?
-                       (?:,\s*\d+\s*)?
-                      \)\s*{\s*$""", declaration, flags=re.X)
-    if m:
-      p, n, result, name = m.groups()[0:4]
-      args = m.groups()[4:]
       if not result:
         if not allowed_types:
           raise Exception('Did not find allowed result types for: %s' % name)
@@ -249,31 +169,6 @@ def act_on_decl(declaration, comment, allowed_types):
         add_matcher(result_type, name, args, comment)
       return
 
-    # Parse ArgumentAdapting matchers.
-    m = re.match(
-        r"""^.*ArgumentAdaptingMatcherFunc<.*>\s*(?:LLVM_ATTRIBUTE_UNUSED\s*)
-              ([a-zA-Z]*)\s*=\s*{};$""",
-        declaration, flags=re.X)
-    if m:
-      name = m.groups()[0]
-      add_matcher('*', name, 'Matcher<*>', comment)
-      return
-
-    # Parse Variadic operator matchers.
-    m = re.match(
-        r"""^.*VariadicOperatorMatcherFunc\s*<\s*([^,]+),\s*([^\s>]+)\s*>\s*
-              ([a-zA-Z]*)\s*=\s*{.*};$""",
-        declaration, flags=re.X)
-    if m:
-      min_args, max_args, name = m.groups()[:3]
-      if max_args == '1':
-        add_matcher('*', name, 'Matcher<*>', comment)
-        return
-      elif max_args == 'UINT_MAX':
-        add_matcher('*', name, 'Matcher<*>, ..., Matcher<*>', comment)
-        return
-
-
     # Parse free standing matcher functions, like:
     #   Matcher<ResultType> Name(Matcher<ArgumentType> InnerMatcher) {
     m = re.match(r"""^\s*(.*)\s+
@@ -283,9 +178,9 @@ def act_on_decl(declaration, comment, allowed_types):
     if m:
       result, name, args = m.groups()
       args = ', '.join(p.strip() for p in args.split(','))
-      m = re.match(r'.*\s+internal::(Bindable)?Matcher<([^>]+)>$', result)
+      m = re.match(r'.*\s+internal::Matcher<([^>]+)>$', result)
       if m:
-        result_types = [m.group(2)]
+        result_types = [m.group(1)]
       else:
         result_types = extract_result_types(comment)
       if not result_types:
@@ -343,7 +238,7 @@ for line in open(MATCHERS_FILE).read().splitlines():
     declaration += ' ' + line
     if ((not line.strip()) or 
         line.rstrip()[-1] == ';' or
-        (line.rstrip()[-1] == '{' and line.rstrip()[-3:] != '= {')):
+        line.rstrip()[-1] == '{'):
       if line.strip() and line.rstrip()[-1] == '{':
         body = True
       else:

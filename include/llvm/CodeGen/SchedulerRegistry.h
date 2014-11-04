@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CODEGEN_SCHEDULERREGISTRY_H
-#define LLVM_CODEGEN_SCHEDULERREGISTRY_H
+#ifndef LLVM_CODEGENSCHEDULERREGISTRY_H
+#define LLVM_CODEGENSCHEDULERREGISTRY_H
 
 #include "llvm/CodeGen/MachinePassRegistry.h"
 #include "llvm/Target/TargetMachine.h"

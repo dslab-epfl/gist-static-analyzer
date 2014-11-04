@@ -77,7 +77,7 @@ void ExprEngine::VisitObjCForCollectionStmt(const ObjCForCollectionStmt *S,
   
   if (const DeclStmt *DS = dyn_cast<DeclStmt>(elem)) {
     const VarDecl *elemD = cast<VarDecl>(DS->getSingleDecl());
-    assert(elemD->getInit() == nullptr);
+    assert(elemD->getInit() == 0);
     elementV = state->getLValue(elemD, Pred->getLocationContext());
   }
   else {
@@ -85,7 +85,7 @@ void ExprEngine::VisitObjCForCollectionStmt(const ObjCForCollectionStmt *S,
   }
   
   ExplodedNodeSet dstLocation;
-  evalLocation(dstLocation, S, elem, Pred, state, elementV, nullptr, false);
+  evalLocation(dstLocation, S, elem, Pred, state, elementV, NULL, false);
 
   ExplodedNodeSet Tmp;
   StmtNodeBuilder Bldr(Pred, Tmp, *currBldrCtx);
@@ -103,8 +103,8 @@ void ExprEngine::VisitObjCForCollectionStmt(const ObjCForCollectionStmt *S,
     // Handle the case where the container has no elements.
     SVal FalseV = svalBuilder.makeTruthVal(0);
     ProgramStateRef noElems = state->BindExpr(S, LCtx, FalseV);
-
-    if (Optional<loc::MemRegionVal> MV = elementV.getAs<loc::MemRegionVal>())
+    
+    if (loc::MemRegionVal *MV = dyn_cast<loc::MemRegionVal>(&elementV))
       if (const TypedValueRegion *R = 
           dyn_cast<TypedValueRegion>(MV->getRegion())) {
         // FIXME: The proper thing to do is to really iterate over the
@@ -161,11 +161,10 @@ void ExprEngine::VisitObjCMessage(const ObjCMessageExpr *ME,
       SVal recVal = UpdatedMsg->getReceiverSVal();
       if (!recVal.isUndef()) {
         // Bifurcate the state into nil and non-nil ones.
-        DefinedOrUnknownSVal receiverVal =
-            recVal.castAs<DefinedOrUnknownSVal>();
-
+        DefinedOrUnknownSVal receiverVal = cast<DefinedOrUnknownSVal>(recVal);
+        
         ProgramStateRef notNilState, nilState;
-        std::tie(notNilState, nilState) = State->assume(receiverVal);
+        llvm::tie(notNilState, nilState) = State->assume(receiverVal);
         
         // There are three cases: can be nil or non-nil, must be nil, must be
         // non-nil. We ignore must be nil, and merge the rest two into non-nil.
@@ -180,13 +179,13 @@ void ExprEngine::VisitObjCMessage(const ObjCMessageExpr *ME,
         if (ObjCNoRet.isImplicitNoReturn(ME)) {
           // If we raise an exception, for now treat it as a sink.
           // Eventually we will want to handle exceptions properly.
-          Bldr.generateSink(ME, Pred, State);
+          Bldr.generateSink(currStmt, Pred, State);
           continue;
         }
         
         // Generate a transition to non-Nil state.
         if (notNilState != State) {
-          Pred = Bldr.generateNode(ME, Pred, notNilState);
+          Pred = Bldr.generateNode(currStmt, Pred, notNilState);
           assert(Pred && "Should have cached out already!");
         }
       }
@@ -196,7 +195,7 @@ void ExprEngine::VisitObjCMessage(const ObjCMessageExpr *ME,
       if (ObjCNoRet.isImplicitNoReturn(ME)) {
         // If we raise an exception, for now treat it as a sink.
         // Eventually we will want to handle exceptions properly.
-        Bldr.generateSink(ME, Pred, Pred->getState());
+        Bldr.generateSink(currStmt, Pred, Pred->getState());
         continue;
       }
     }

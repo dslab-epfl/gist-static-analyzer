@@ -6,9 +6,10 @@
 // RUN: %clang_cc1 -include-pch %t -fsyntax-only -verify %s 
 
 void m() {
-    D s;
+    D s;   // expected-note {{candidate function}}
     s.f(); // expected-error {{no matching member}}
 }
 
-// expected-note@cxx-using.h:9  {{candidate function}}
-// expected-note@cxx-using.h:15 {{candidate function}}
+
+
+// expected-note {{candidate function}}

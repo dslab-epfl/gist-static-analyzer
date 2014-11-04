@@ -51,19 +51,15 @@ public:
   template<class SubClass>
   void Deallocate(SubClass* E) { return Base.Deallocate(Allocator, E); }
 
-  void PrintStats() {
-    Allocator.PrintStats();
-    Base.PrintStats();
-  }
+  void PrintStats() { Base.PrintStats(); }
 };
 
 }
 
 template<class AllocatorType, class T, size_t Size, size_t Align>
-inline void *operator new(size_t size,
+inline void *operator new(size_t,
                           llvm::RecyclingAllocator<AllocatorType,
                                                    T, Size, Align> &Allocator) {
-  assert(size <= Size && "allocation size exceeded");
   return Allocator.Allocate();
 }
 

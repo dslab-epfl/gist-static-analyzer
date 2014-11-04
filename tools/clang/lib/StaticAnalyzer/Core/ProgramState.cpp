@@ -11,10 +11,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
 #include "clang/Analysis/CFG.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramStateTrait.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SubEngine.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/TaintManager.h"
 #include "llvm/Support/raw_ostream.h"
@@ -75,8 +75,8 @@ ProgramStateManager::ProgramStateManager(ASTContext &Ctx,
   : Eng(SubEng), EnvMgr(alloc), GDMFactory(alloc),
     svalBuilder(createSimpleSValBuilder(alloc, Ctx, *this)),
     CallEventMgr(new CallEventManager(alloc)), Alloc(alloc) {
-  StoreMgr = (*CreateSMgr)(*this);
-  ConstraintMgr = (*CreateCMgr)(*this, SubEng);
+  StoreMgr.reset((*CreateSMgr)(*this));
+  ConstraintMgr.reset((*CreateCMgr)(*this, SubEng));
 }
 
 
@@ -111,6 +111,14 @@ ProgramStateManager::removeDeadBindings(ProgramStateRef state,
   return ConstraintMgr->removeDeadBindings(Result, SymReaper);
 }
 
+ProgramStateRef ProgramState::bindCompoundLiteral(const CompoundLiteralExpr *CL,
+                                            const LocationContext *LC,
+                                            SVal V) const {
+  const StoreRef &newStore = 
+    getStateManager().StoreMgr->bindCompoundLiteral(getStore(), CL, LC, V);
+  return makeWithStore(newStore);
+}
+
 ProgramStateRef ProgramState::bindLoc(Loc LV, SVal V, bool notifyChanges) const {
   ProgramStateManager &Mgr = getStateManager();
   ProgramStateRef newState = makeWithStore(Mgr.StoreMgr->Bind(getStore(), 
@@ -124,7 +132,7 @@ ProgramStateRef ProgramState::bindLoc(Loc LV, SVal V, bool notifyChanges) const 
 
 ProgramStateRef ProgramState::bindDefault(SVal loc, SVal V) const {
   ProgramStateManager &Mgr = getStateManager();
-  const MemRegion *R = loc.castAs<loc::MemRegionVal>().getRegion();
+  const MemRegion *R = cast<loc::MemRegionVal>(loc).getRegion();
   const StoreRef &newStore = Mgr.StoreMgr->BindDefault(getStore(), R, V);
   ProgramStateRef new_state = makeWithStore(newStore);
   return Mgr.getOwningEngine() ? 
@@ -132,87 +140,46 @@ ProgramStateRef ProgramState::bindDefault(SVal loc, SVal V) const {
            new_state;
 }
 
-typedef ArrayRef<const MemRegion *> RegionList;
-typedef ArrayRef<SVal> ValueList;
+ProgramStateRef 
+ProgramState::invalidateRegions(ArrayRef<const MemRegion *> Regions,
+                                const Expr *E, unsigned Count,
+                                const LocationContext *LCtx,
+                                StoreManager::InvalidatedSymbols *IS,
+                                const CallEvent *Call) const {
+  if (!IS) {
+    StoreManager::InvalidatedSymbols invalidated;
+    return invalidateRegionsImpl(Regions, E, Count, LCtx,
+                                 invalidated, Call);
+  }
+  return invalidateRegionsImpl(Regions, E, Count, LCtx, *IS, Call);
+}
 
 ProgramStateRef 
-ProgramState::invalidateRegions(RegionList Regions,
-                             const Expr *E, unsigned Count,
-                             const LocationContext *LCtx,
-                             bool CausedByPointerEscape,
-                             InvalidatedSymbols *IS,
-                             const CallEvent *Call,
-                             RegionAndSymbolInvalidationTraits *ITraits) const {
-  SmallVector<SVal, 8> Values;
-  for (RegionList::const_iterator I = Regions.begin(),
-                                  End = Regions.end(); I != End; ++I)
-    Values.push_back(loc::MemRegionVal(*I));
-
-  return invalidateRegionsImpl(Values, E, Count, LCtx, CausedByPointerEscape,
-                               IS, ITraits, Call);
-}
-
-ProgramStateRef
-ProgramState::invalidateRegions(ValueList Values,
-                             const Expr *E, unsigned Count,
-                             const LocationContext *LCtx,
-                             bool CausedByPointerEscape,
-                             InvalidatedSymbols *IS,
-                             const CallEvent *Call,
-                             RegionAndSymbolInvalidationTraits *ITraits) const {
-
-  return invalidateRegionsImpl(Values, E, Count, LCtx, CausedByPointerEscape,
-                               IS, ITraits, Call);
-}
-
-ProgramStateRef
-ProgramState::invalidateRegionsImpl(ValueList Values,
+ProgramState::invalidateRegionsImpl(ArrayRef<const MemRegion *> Regions,
                                     const Expr *E, unsigned Count,
                                     const LocationContext *LCtx,
-                                    bool CausedByPointerEscape,
-                                    InvalidatedSymbols *IS,
-                                    RegionAndSymbolInvalidationTraits *ITraits,
+                                    StoreManager::InvalidatedSymbols &IS,
                                     const CallEvent *Call) const {
   ProgramStateManager &Mgr = getStateManager();
   SubEngine* Eng = Mgr.getOwningEngine();
-
-  InvalidatedSymbols Invalidated;
-  if (!IS)
-    IS = &Invalidated;
-
-  RegionAndSymbolInvalidationTraits ITraitsLocal;
-  if (!ITraits)
-    ITraits = &ITraitsLocal;
-
-  if (Eng) {
-    StoreManager::InvalidatedRegions TopLevelInvalidated;
+ 
+  if (Eng && Eng->wantsRegionChangeUpdate(this)) {
     StoreManager::InvalidatedRegions Invalidated;
     const StoreRef &newStore
-    = Mgr.StoreMgr->invalidateRegions(getStore(), Values, E, Count, LCtx, Call,
-                                      *IS, *ITraits, &TopLevelInvalidated,
-                                      &Invalidated);
-
+      = Mgr.StoreMgr->invalidateRegions(getStore(), Regions, E, Count, LCtx, IS,
+                                        Call, &Invalidated);
     ProgramStateRef newState = makeWithStore(newStore);
-
-    if (CausedByPointerEscape) {
-      newState = Eng->notifyCheckersOfPointerEscape(newState, IS,
-                                                    TopLevelInvalidated,
-                                                    Invalidated, Call, 
-                                                    *ITraits);
-    }
-
-    return Eng->processRegionChanges(newState, IS, TopLevelInvalidated, 
-                                     Invalidated, Call);
+    return Eng->processRegionChanges(newState, &IS, Regions, Invalidated, Call);
   }
 
   const StoreRef &newStore =
-  Mgr.StoreMgr->invalidateRegions(getStore(), Values, E, Count, LCtx, Call,
-                                  *IS, *ITraits, nullptr, nullptr);
+    Mgr.StoreMgr->invalidateRegions(getStore(), Regions, E, Count, LCtx, IS,
+                                    Call, NULL);
   return makeWithStore(newStore);
 }
 
 ProgramStateRef ProgramState::killBinding(Loc LV) const {
-  assert(!LV.getAs<loc::MemRegionVal>() && "Use invalidateRegion instead.");
+  assert(!isa<loc::MemRegionVal>(LV) && "Use invalidateRegion instead.");
 
   Store OldStore = getStore();
   const StoreRef &newStore =
@@ -241,7 +208,7 @@ SVal ProgramState::getSValAsScalarOrLoc(const MemRegion *R) const {
 
   if (const TypedValueRegion *TR = dyn_cast<TypedValueRegion>(R)) {
     QualType T = TR->getValueType();
-    if (Loc::isLocType(T) || T->isIntegralOrEnumerationType())
+    if (Loc::isLocType(T) || T->isIntegerType())
       return getSVal(R);
   }
 
@@ -276,7 +243,7 @@ SVal ProgramState::getSVal(Loc location, QualType T) const {
         //  not unsigned.
         const llvm::APSInt &NewV = getBasicVals().Convert(T, *Int);
         
-        if (V.getAs<Loc>())
+        if (isa<Loc>(V))
           return loc::ConcreteInt(NewV);
         else
           return nonloc::ConcreteInt(NewV);
@@ -296,6 +263,23 @@ ProgramStateRef ProgramState::BindExpr(const Stmt *S,
   if (NewEnv == Env)
     return this;
 
+  ProgramState NewSt = *this;
+  NewSt.Env = NewEnv;
+  return getStateManager().getPersistentState(NewSt);
+}
+
+ProgramStateRef 
+ProgramState::bindExprAndLocation(const Stmt *S, const LocationContext *LCtx,
+                                  SVal location,
+                                  SVal V) const {
+  Environment NewEnv =
+    getStateManager().EnvMgr.bindExprAndLocation(Env,
+                                                 EnvironmentEntry(S, LCtx),
+                                                 location, V);
+
+  if (NewEnv == Env)
+    return this;
+  
   ProgramState NewSt = *this;
   NewSt.Env = NewEnv;
   return getStateManager().getPersistentState(NewSt);
@@ -324,41 +308,28 @@ ProgramStateRef ProgramState::assumeInBound(DefinedOrUnknownSVal Idx,
 
   // Adjust the index.
   SVal newIdx = svalBuilder.evalBinOpNN(this, BO_Add,
-                                        Idx.castAs<NonLoc>(), Min, indexTy);
+                                        cast<NonLoc>(Idx), Min, indexTy);
   if (newIdx.isUnknownOrUndef())
     return this;
 
   // Adjust the upper bound.
   SVal newBound =
-    svalBuilder.evalBinOpNN(this, BO_Add, UpperBound.castAs<NonLoc>(),
+    svalBuilder.evalBinOpNN(this, BO_Add, cast<NonLoc>(UpperBound),
                             Min, indexTy);
 
   if (newBound.isUnknownOrUndef())
     return this;
 
   // Build the actual comparison.
-  SVal inBound = svalBuilder.evalBinOpNN(this, BO_LT, newIdx.castAs<NonLoc>(),
-                                         newBound.castAs<NonLoc>(), Ctx.IntTy);
+  SVal inBound = svalBuilder.evalBinOpNN(this, BO_LT,
+                                cast<NonLoc>(newIdx), cast<NonLoc>(newBound),
+                                Ctx.IntTy);
   if (inBound.isUnknownOrUndef())
     return this;
 
   // Finally, let the constraint manager take care of it.
   ConstraintManager &CM = SM.getConstraintManager();
-  return CM.assume(this, inBound.castAs<DefinedSVal>(), Assumption);
-}
-
-ConditionTruthVal ProgramState::isNull(SVal V) const {
-  if (V.isZeroConstant())
-    return true;
-
-  if (V.isConstant())
-    return false;
-  
-  SymbolRef Sym = V.getAsSymbol(/* IncludeBaseRegion */ true);
-  if (!Sym)
-    return ConditionTruthVal();
-  
-  return getStateManager().ConstraintMgr->isNull(this, Sym);
+  return CM.assume(this, cast<DefinedSVal>(inBound), Assumption);
 }
 
 ProgramStateRef ProgramStateManager::getInitialState(const LocationContext *InitLoc) {
@@ -387,7 +358,7 @@ ProgramStateRef ProgramStateManager::getPersistentState(ProgramState &State) {
   if (ProgramState *I = StateSet.FindNodeOrInsertPos(ID, InsertPos))
     return I;
 
-  ProgramState *newState = nullptr;
+  ProgramState *newState = 0;
   if (!freeStates.empty()) {
     newState = freeStates.back();
     freeStates.pop_back();    
@@ -505,19 +476,6 @@ ProgramStateRef ProgramStateManager::removeGDM(ProgramStateRef state, void *Key)
   return getPersistentState(NewState);
 }
 
-bool ScanReachableSymbols::scan(nonloc::LazyCompoundVal val) {
-  bool wasVisited = !visited.insert(val.getCVData()).second;
-  if (wasVisited)
-    return true;
-
-  StoreManager &StoreMgr = state->getStateManager().getStoreManager();
-  // FIXME: We don't really want to use getBaseRegion() here because pointer
-  // arithmetic doesn't apply, but scanReachableSymbols only accepts base
-  // regions right now.
-  const MemRegion *R = val.getRegion()->getBaseRegion();
-  return StoreMgr.scanReachableSymbols(val.getStore(), R, *this);
-}
-
 bool ScanReachableSymbols::scan(nonloc::CompoundVal val) {
   for (nonloc::CompoundVal::iterator I=val.begin(), E=val.end(); I!=E; ++I)
     if (!scan(*I))
@@ -527,9 +485,10 @@ bool ScanReachableSymbols::scan(nonloc::CompoundVal val) {
 }
 
 bool ScanReachableSymbols::scan(const SymExpr *sym) {
-  bool wasVisited = !visited.insert(sym).second;
-  if (wasVisited)
+  unsigned &isVisited = visited[sym];
+  if (isVisited)
     return true;
+  isVisited = 1;
   
   if (!visitor.VisitSymbol(sym))
     return false;
@@ -557,14 +516,13 @@ bool ScanReachableSymbols::scan(const SymExpr *sym) {
 }
 
 bool ScanReachableSymbols::scan(SVal val) {
-  if (Optional<loc::MemRegionVal> X = val.getAs<loc::MemRegionVal>())
+  if (loc::MemRegionVal *X = dyn_cast<loc::MemRegionVal>(&val))
     return scan(X->getRegion());
 
-  if (Optional<nonloc::LazyCompoundVal> X =
-          val.getAs<nonloc::LazyCompoundVal>())
-    return scan(*X);
+  if (nonloc::LazyCompoundVal *X = dyn_cast<nonloc::LazyCompoundVal>(&val))
+    return scan(X->getRegion());
 
-  if (Optional<nonloc::LocAsInteger> X = val.getAs<nonloc::LocAsInteger>())
+  if (nonloc::LocAsInteger *X = dyn_cast<nonloc::LocAsInteger>(&val))
     return scan(X->getLoc());
 
   if (SymbolRef Sym = val.getAsSymbol())
@@ -573,7 +531,7 @@ bool ScanReachableSymbols::scan(SVal val) {
   if (const SymExpr *Sym = val.getAsSymbolicExpression())
     return scan(Sym);
 
-  if (Optional<nonloc::CompoundVal> X = val.getAs<nonloc::CompoundVal>())
+  if (nonloc::CompoundVal *X = dyn_cast<nonloc::CompoundVal>(&val))
     return scan(*X);
 
   return true;
@@ -583,9 +541,11 @@ bool ScanReachableSymbols::scan(const MemRegion *R) {
   if (isa<MemSpaceRegion>(R))
     return true;
   
-  bool wasVisited = !visited.insert(R).second;
-  if (wasVisited)
+  unsigned &isVisited = visited[R];
+  if (isVisited)
     return true;
+  isVisited = 1;
+  
   
   if (!visitor.VisitMemRegion(R))
     return false;

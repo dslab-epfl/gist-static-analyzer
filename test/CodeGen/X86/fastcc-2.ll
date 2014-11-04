@@ -1,6 +1,5 @@
-; RUN: llc < %s -mtriple=i686-apple-darwin -mattr=+sse2 | FileCheck %s
-; CHECK: movsd
-; CHECK-NOT: mov
+; RUN: llc < %s -mtriple=i686-apple-darwin -mattr=+sse2 | grep movsd
+; RUN: llc < %s -mtriple=i686-apple-darwin -mattr=+sse2 | grep mov | count 1
 
 define i32 @foo() nounwind {
 entry:

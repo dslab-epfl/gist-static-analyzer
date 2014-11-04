@@ -1,4 +1,4 @@
-; RUN:  %lli -O0 %s
+; RUN:  %lli -mtriple=%mcjit_triple -use-mcjit -O0 %s
 
 ; Check that a variable is always aligned as specified.
 

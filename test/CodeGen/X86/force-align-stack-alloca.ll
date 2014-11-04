@@ -16,7 +16,7 @@ entry:
 }
 
 define i64 @g(i32 %i) nounwind {
-; CHECK-LABEL: g:
+; CHECK: g:
 ; CHECK:      pushl  %ebp
 ; CHECK-NEXT: movl   %esp, %ebp
 ; CHECK-NEXT: pushl

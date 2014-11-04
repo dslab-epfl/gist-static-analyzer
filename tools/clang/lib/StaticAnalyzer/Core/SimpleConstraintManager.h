@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_LIB_STATICANALYZER_CORE_SIMPLECONSTRAINTMANAGER_H
-#define LLVM_CLANG_LIB_STATICANALYZER_CORE_SIMPLECONSTRAINTMANAGER_H
+#ifndef LLVM_CLANG_GR_SIMPLE_CONSTRAINT_MANAGER_H
+#define LLVM_CLANG_GR_SIMPLE_CONSTRAINT_MANAGER_H
 
 #include "clang/StaticAnalyzer/Core/PathSensitive/ConstraintManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
@@ -23,10 +23,10 @@ namespace ento {
 
 class SimpleConstraintManager : public ConstraintManager {
   SubEngine *SU;
-  SValBuilder &SVB;
+  BasicValueFactory &BVF;
 public:
-  SimpleConstraintManager(SubEngine *subengine, SValBuilder &SB)
-    : SU(subengine), SVB(SB) {}
+  SimpleConstraintManager(SubEngine *subengine, BasicValueFactory &BV)
+    : SU(subengine), BVF(BV) {}
   virtual ~SimpleConstraintManager();
 
   //===------------------------------------------------------------------===//
@@ -34,7 +34,9 @@ public:
   //===------------------------------------------------------------------===//
 
   ProgramStateRef assume(ProgramStateRef state, DefinedSVal Cond,
-                        bool Assumption) override;
+                        bool Assumption);
+
+  ProgramStateRef assume(ProgramStateRef state, Loc Cond, bool Assumption);
 
   ProgramStateRef assume(ProgramStateRef state, NonLoc Cond, bool Assumption);
 
@@ -79,10 +81,13 @@ protected:
   // Internal implementation.
   //===------------------------------------------------------------------===//
 
-  BasicValueFactory &getBasicVals() const { return SVB.getBasicValueFactory(); }
-  SymbolManager &getSymbolManager() const { return SVB.getSymbolManager(); }
+  BasicValueFactory &getBasicVals() const { return BVF; }
 
-  bool canReasonAbout(SVal X) const override;
+  bool canReasonAbout(SVal X) const;
+
+  ProgramStateRef assumeAux(ProgramStateRef state,
+                                Loc Cond,
+                                bool Assumption);
 
   ProgramStateRef assumeAux(ProgramStateRef state,
                                 NonLoc Cond,

@@ -9,7 +9,7 @@ define i8 @test1() {
 ; the same as test12 in basictest.ll, but here we assert big-endian byte
 ; ordering.
 ;
-; CHECK-LABEL: @test1(
+; CHECK: @test1
 
 entry:
   %a = alloca [3 x i8]
@@ -24,8 +24,8 @@ entry:
   store i8 0, i8* %a2ptr
   %aiptr = bitcast [3 x i8]* %a to i24*
   %ai = load i24* %aiptr
-; CHECK-NOT: store
-; CHECK-NOT: load
+; CHCEK-NOT: store
+; CHCEK-NOT: load
 ; CHECK:      %[[ext2:.*]] = zext i8 0 to i24
 ; CHECK-NEXT: %[[mask2:.*]] = and i24 undef, -256
 ; CHECK-NEXT: %[[insert2:.*]] = or i24 %[[mask2]], %[[ext2]]
@@ -46,8 +46,8 @@ entry:
   %b1 = load i8* %b1ptr
   %b2ptr = getelementptr [3 x i8]* %b, i64 0, i32 2
   %b2 = load i8* %b2ptr
-; CHECK-NOT: store
-; CHECK-NOT: load
+; CHCEK-NOT: store
+; CHCEK-NOT: load
 ; CHECK:      %[[shift0:.*]] = lshr i24 %[[insert0]], 16
 ; CHECK-NEXT: %[[trunc0:.*]] = trunc i24 %[[shift0]] to i8
 ; CHECK-NEXT: %[[shift1:.*]] = lshr i24 %[[insert0]], 8
@@ -66,7 +66,7 @@ define i64 @test2() {
 ; Test for various mixed sizes of integer loads and stores all getting
 ; promoted.
 ;
-; CHECK-LABEL: @test2(
+; CHECK: @test2
 
 entry:
   %a = alloca [7 x i8]
@@ -77,8 +77,8 @@ entry:
   %a2ptr = getelementptr [7 x i8]* %a, i64 0, i32 2
   %a3ptr = getelementptr [7 x i8]* %a, i64 0, i32 3
 
-; CHECK-NOT: store
-; CHECK-NOT: load
+; CHCEK-NOT: store
+; CHCEK-NOT: load
 
   %a0i16ptr = bitcast i8* %a0ptr to i16*
   store i16 1, i16* %a0i16ptr
@@ -98,8 +98,8 @@ entry:
 ; CHECK-NEXT: %[[mask3:.*]] = and i56 undef, -1099511627776
 ; CHECK-NEXT: %[[insert3:.*]] = or i56 %[[mask3]], %[[ext3]]
 
-; CHECK-NOT: store
-; CHECK-NOT: load
+; CHCEK-NOT: store
+; CHCEK-NOT: load
 
   %aiptr = bitcast [7 x i8]* %a to i56*
   %ai = load i56* %aiptr

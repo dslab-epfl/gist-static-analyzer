@@ -1,5 +1,4 @@
-; RUN: llvm-as < %s | llvm-dis -disable-output
-; RUN: verify-uselistorder < %s
+; RUN: llvm-as < %s | llvm-dis
 
 ; <rdar://problem/8622574>
 ; tests the bitcodereader can handle the case where the reader will initially

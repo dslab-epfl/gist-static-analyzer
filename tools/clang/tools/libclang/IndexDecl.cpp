@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "IndexingContext.h"
+
 #include "clang/AST/DeclVisitor.h"
 
 using namespace clang;
@@ -15,48 +16,40 @@ using namespace cxindex;
 
 namespace {
 
-class IndexingDeclVisitor : public ConstDeclVisitor<IndexingDeclVisitor, bool> {
+class IndexingDeclVisitor : public DeclVisitor<IndexingDeclVisitor, bool> {
   IndexingContext &IndexCtx;
 
 public:
   explicit IndexingDeclVisitor(IndexingContext &indexCtx)
     : IndexCtx(indexCtx) { }
 
-  /// \brief Returns true if the given method has been defined explicitly by the
-  /// user.
-  static bool hasUserDefined(const ObjCMethodDecl *D,
-                             const ObjCImplDecl *Container) {
-    const ObjCMethodDecl *MD = Container->getMethod(D->getSelector(),
-                                                    D->isInstanceMethod());
-    return MD && !MD->isImplicit() && MD->isThisDeclarationADefinition();
-  }
-
-  void handleDeclarator(const DeclaratorDecl *D,
-                        const NamedDecl *Parent = nullptr) {
+  void handleDeclarator(DeclaratorDecl *D, const NamedDecl *Parent = 0) {
     if (!Parent) Parent = D;
 
     if (!IndexCtx.shouldIndexFunctionLocalSymbols()) {
       IndexCtx.indexTypeSourceInfo(D->getTypeSourceInfo(), Parent);
       IndexCtx.indexNestedNameSpecifierLoc(D->getQualifierLoc(), Parent);
     } else {
-      if (const ParmVarDecl *Parm = dyn_cast<ParmVarDecl>(D)) {
+      if (ParmVarDecl *Parm = dyn_cast<ParmVarDecl>(D)) {
         IndexCtx.handleVar(Parm);
-      } else if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D)) {
-        for (auto PI : FD->params()) {
-          IndexCtx.handleVar(PI);
+      } else if (FunctionDecl *FD = dyn_cast<FunctionDecl>(D)) {
+        for (FunctionDecl::param_iterator
+               PI = FD->param_begin(), PE = FD->param_end(); PI != PE; ++PI) {
+          IndexCtx.handleVar(*PI);
         }
       }
     }
   }
 
-  void handleObjCMethod(const ObjCMethodDecl *D) {
+  void handleObjCMethod(ObjCMethodDecl *D) {
     IndexCtx.handleObjCMethod(D);
     if (D->isImplicit())
       return;
 
-    IndexCtx.indexTypeSourceInfo(D->getReturnTypeSourceInfo(), D);
-    for (const auto *I : D->params())
-      handleDeclarator(I, D);
+    IndexCtx.indexTypeSourceInfo(D->getResultTypeSourceInfo(), D);
+    for (ObjCMethodDecl::param_iterator
+           I = D->param_begin(), E = D->param_end(); I != E; ++I)
+      handleDeclarator(*I, D);
 
     if (D->isThisDeclarationADefinition()) {
       const Stmt *Body = D->getBody();
@@ -66,13 +59,16 @@ public:
     }
   }
 
-  bool VisitFunctionDecl(const FunctionDecl *D) {
+  bool VisitFunctionDecl(FunctionDecl *D) {
     IndexCtx.handleFunction(D);
     handleDeclarator(D);
 
-    if (const CXXConstructorDecl *Ctor = dyn_cast<CXXConstructorDecl>(D)) {
+    if (CXXConstructorDecl *Ctor = dyn_cast<CXXConstructorDecl>(D)) {
       // Constructor initializers.
-      for (const auto *Init : Ctor->inits()) {
+      for (CXXConstructorDecl::init_iterator I = Ctor->init_begin(),
+                                             E = Ctor->init_end();
+           I != E; ++I) {
+        CXXCtorInitializer *Init = *I;
         if (Init->isWritten()) {
           IndexCtx.indexTypeSourceInfo(Init->getTypeSourceInfo(), D);
           if (const FieldDecl *Member = Init->getAnyMember())
@@ -91,14 +87,14 @@ public:
     return true;
   }
 
-  bool VisitVarDecl(const VarDecl *D) {
+  bool VisitVarDecl(VarDecl *D) {
     IndexCtx.handleVar(D);
     handleDeclarator(D);
     IndexCtx.indexBody(D->getInit(), D);
     return true;
   }
 
-  bool VisitFieldDecl(const FieldDecl *D) {
+  bool VisitFieldDecl(FieldDecl *D) {
     IndexCtx.handleField(D);
     handleDeclarator(D);
     if (D->isBitField())
@@ -107,32 +103,27 @@ public:
       IndexCtx.indexBody(D->getInClassInitializer(), D);
     return true;
   }
-
-  bool VisitMSPropertyDecl(const MSPropertyDecl *D) {
-    handleDeclarator(D);
-    return true;
-  }
-
-  bool VisitEnumConstantDecl(const EnumConstantDecl *D) {
+  
+  bool VisitEnumConstantDecl(EnumConstantDecl *D) {
     IndexCtx.handleEnumerator(D);
     IndexCtx.indexBody(D->getInitExpr(), D);
     return true;
   }
 
-  bool VisitTypedefNameDecl(const TypedefNameDecl *D) {
+  bool VisitTypedefNameDecl(TypedefNameDecl *D) {
     IndexCtx.handleTypedefName(D);
     IndexCtx.indexTypeSourceInfo(D->getTypeSourceInfo(), D);
     return true;
   }
 
-  bool VisitTagDecl(const TagDecl *D) {
+  bool VisitTagDecl(TagDecl *D) {
     // Non-free standing tags are handled in indexTypeSourceInfo.
     if (D->isFreeStanding())
       IndexCtx.indexTagDecl(D);
     return true;
   }
 
-  bool VisitObjCInterfaceDecl(const ObjCInterfaceDecl *D) {
+  bool VisitObjCInterfaceDecl(ObjCInterfaceDecl *D) {
     IndexCtx.handleObjCInterface(D);
 
     if (D->isThisDeclarationADefinition()) {
@@ -142,7 +133,7 @@ public:
     return true;
   }
 
-  bool VisitObjCProtocolDecl(const ObjCProtocolDecl *D) {
+  bool VisitObjCProtocolDecl(ObjCProtocolDecl *D) {
     IndexCtx.handleObjCProtocol(D);
 
     if (D->isThisDeclarationADefinition()) {
@@ -152,7 +143,7 @@ public:
     return true;
   }
 
-  bool VisitObjCImplementationDecl(const ObjCImplementationDecl *D) {
+  bool VisitObjCImplementationDecl(ObjCImplementationDecl *D) {
     const ObjCInterfaceDecl *Class = D->getClassInterface();
     if (!Class)
       return true;
@@ -166,17 +157,21 @@ public:
 
     // Index the ivars first to make sure the synthesized ivars are indexed
     // before indexing the methods that can reference them.
-    for (const auto *IvarI : D->ivars())
-      IndexCtx.indexDecl(IvarI);
-    for (const auto *I : D->decls()) {
-      if (!isa<ObjCIvarDecl>(I))
-        IndexCtx.indexDecl(I);
+    for (ObjCImplementationDecl::ivar_iterator
+           IvarI = D->ivar_begin(),
+           IvarE = D->ivar_end(); IvarI != IvarE; ++IvarI) {
+      IndexCtx.indexDecl(*IvarI);
+    }
+    for (DeclContext::decl_iterator
+           I = D->decls_begin(), E = D->decls_end(); I != E; ++I) {
+      if (!isa<ObjCIvarDecl>(*I))
+        IndexCtx.indexDecl(*I);
     }
 
     return true;
   }
 
-  bool VisitObjCCategoryDecl(const ObjCCategoryDecl *D) {
+  bool VisitObjCCategoryDecl(ObjCCategoryDecl *D) {
     IndexCtx.handleObjCCategory(D);
 
     IndexCtx.indexTUDeclsInObjCContainer();
@@ -184,7 +179,7 @@ public:
     return true;
   }
 
-  bool VisitObjCCategoryImplDecl(const ObjCCategoryImplDecl *D) {
+  bool VisitObjCCategoryImplDecl(ObjCCategoryImplDecl *D) {
     const ObjCCategoryDecl *Cat = D->getCategoryDecl();
     if (!Cat)
       return true;
@@ -196,7 +191,7 @@ public:
     return true;
   }
 
-  bool VisitObjCMethodDecl(const ObjCMethodDecl *D) {
+  bool VisitObjCMethodDecl(ObjCMethodDecl *D) {
     // Methods associated with a property, even user-declared ones, are
     // handled when we handle the property.
     if (D->isPropertyAccessor())
@@ -206,7 +201,7 @@ public:
     return true;
   }
 
-  bool VisitObjCPropertyDecl(const ObjCPropertyDecl *D) {
+  bool VisitObjCPropertyDecl(ObjCPropertyDecl *D) {
     if (ObjCMethodDecl *MD = D->getGetterMethodDecl())
       if (MD->getLexicalDeclContext() == D->getLexicalDeclContext())
         handleObjCMethod(MD);
@@ -218,7 +213,7 @@ public:
     return true;
   }
 
-  bool VisitObjCPropertyImplDecl(const ObjCPropertyImplDecl *D) {
+  bool VisitObjCPropertyImplDecl(ObjCPropertyImplDecl *D) {
     ObjCPropertyDecl *PD = D->getPropertyDecl();
     IndexCtx.handleSynthesizedObjCProperty(D);
 
@@ -228,43 +223,43 @@ public:
     
     if (ObjCIvarDecl *IvarD = D->getPropertyIvarDecl()) {
       if (!IvarD->getSynthesize())
-        IndexCtx.handleReference(IvarD, D->getPropertyIvarDeclLoc(), nullptr,
+        IndexCtx.handleReference(IvarD, D->getPropertyIvarDeclLoc(), 0,
                                  D->getDeclContext());
     }
 
     if (ObjCMethodDecl *MD = PD->getGetterMethodDecl()) {
-      if (MD->isPropertyAccessor() &&
-          !hasUserDefined(MD, cast<ObjCImplDecl>(D->getDeclContext())))
+      if (MD->isPropertyAccessor())
         IndexCtx.handleSynthesizedObjCMethod(MD, D->getLocation(),
                                              D->getLexicalDeclContext());
     }
     if (ObjCMethodDecl *MD = PD->getSetterMethodDecl()) {
-      if (MD->isPropertyAccessor() &&
-          !hasUserDefined(MD, cast<ObjCImplDecl>(D->getDeclContext())))
+      if (MD->isPropertyAccessor())
         IndexCtx.handleSynthesizedObjCMethod(MD, D->getLocation(),
                                              D->getLexicalDeclContext());
     }
     return true;
   }
 
-  bool VisitNamespaceDecl(const NamespaceDecl *D) {
+  bool VisitNamespaceDecl(NamespaceDecl *D) {
     IndexCtx.handleNamespace(D);
     IndexCtx.indexDeclContext(D);
     return true;
   }
 
-  bool VisitUsingDecl(const UsingDecl *D) {
+  bool VisitUsingDecl(UsingDecl *D) {
     // FIXME: Parent for the following is CXIdxEntity_Unexposed with no USR,
     // we should do better.
 
     IndexCtx.indexNestedNameSpecifierLoc(D->getQualifierLoc(), D);
-    for (const auto *I : D->shadows())
-      IndexCtx.handleReference(I->getUnderlyingDecl(), D->getLocation(), D,
-                               D->getLexicalDeclContext());
+    for (UsingDecl::shadow_iterator
+           I = D->shadow_begin(), E = D->shadow_end(); I != E; ++I) {
+      IndexCtx.handleReference((*I)->getUnderlyingDecl(), D->getLocation(),
+                               D, D->getLexicalDeclContext());
+    }
     return true;
   }
 
-  bool VisitUsingDirectiveDecl(const UsingDirectiveDecl *D) {
+  bool VisitUsingDirectiveDecl(UsingDirectiveDecl *D) {
     // FIXME: Parent for the following is CXIdxEntity_Unexposed with no USR,
     // we should do better.
 
@@ -274,14 +269,14 @@ public:
     return true;
   }
 
-  bool VisitClassTemplateDecl(const ClassTemplateDecl *D) {
+  bool VisitClassTemplateDecl(ClassTemplateDecl *D) {
     IndexCtx.handleClassTemplate(D);
     if (D->isThisDeclarationADefinition())
       IndexCtx.indexDeclContext(D->getTemplatedDecl());
     return true;
   }
 
-  bool VisitClassTemplateSpecializationDecl(const
+  bool VisitClassTemplateSpecializationDecl(
                                            ClassTemplateSpecializationDecl *D) {
     // FIXME: Notify subsequent callbacks if info comes from implicit
     // instantiation.
@@ -292,7 +287,7 @@ public:
     return true;
   }
 
-  bool VisitFunctionTemplateDecl(const FunctionTemplateDecl *D) {
+  bool VisitFunctionTemplateDecl(FunctionTemplateDecl *D) {
     IndexCtx.handleFunctionTemplate(D);
     FunctionDecl *FD = D->getTemplatedDecl();
     handleDeclarator(FD, D);
@@ -305,13 +300,13 @@ public:
     return true;
   }
 
-  bool VisitTypeAliasTemplateDecl(const TypeAliasTemplateDecl *D) {
+  bool VisitTypeAliasTemplateDecl(TypeAliasTemplateDecl *D) {
     IndexCtx.handleTypeAliasTemplate(D);
     IndexCtx.indexTypeSourceInfo(D->getTemplatedDecl()->getTypeSourceInfo(), D);
     return true;
   }
 
-  bool VisitImportDecl(const ImportDecl *D) {
+  bool VisitImportDecl(ImportDecl *D) {
     IndexCtx.importedModule(D);
     return true;
   }
@@ -323,14 +318,16 @@ void IndexingContext::indexDecl(const Decl *D) {
   if (D->isImplicit() && shouldIgnoreIfImplicit(D))
     return;
 
-  bool Handled = IndexingDeclVisitor(*this).Visit(D);
+  bool Handled = IndexingDeclVisitor(*this).Visit(const_cast<Decl*>(D));
   if (!Handled && isa<DeclContext>(D))
     indexDeclContext(cast<DeclContext>(D));
 }
 
 void IndexingContext::indexDeclContext(const DeclContext *DC) {
-  for (const auto *I : DC->decls())
-    indexDecl(I);
+  for (DeclContext::decl_iterator
+         I = DC->decls_begin(), E = DC->decls_end(); I != E; ++I) {
+    indexDecl(*I);
+  }
 }
 
 void IndexingContext::indexTopLevelDecl(const Decl *D) {

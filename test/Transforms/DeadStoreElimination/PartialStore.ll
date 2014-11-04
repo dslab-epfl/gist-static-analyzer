@@ -8,13 +8,13 @@ define void @test1(i32 *%V) {
         store i8 0, i8* %V2
         store i32 1234567, i32* %V
         ret void
-; CHECK-LABEL: @test1(
+; CHECK: @test1
 ; CHECK-NEXT: store i32 1234567
 }
 
 ; Note that we could do better by merging the two stores into one.
 define void @test2(i32* %P) {
-; CHECK-LABEL: @test2(
+; CHECK: @test2
   store i32 0, i32* %P
 ; CHECK: store i32
   %Q = bitcast i32* %P to i16*
@@ -25,7 +25,7 @@ define void @test2(i32* %P) {
 
 
 define i32 @test3(double %__x) {
-; CHECK-LABEL: @test3(
+; CHECK: @test3
 ; CHECK: store double
   %__u = alloca { [3 x i32] }
   %tmp.1 = bitcast { [3 x i32] }* %__u to double*
@@ -39,15 +39,15 @@ define i32 @test3(double %__x) {
 
 ; PR6043
 define void @test4(i8* %P) {
-; CHECK-LABEL: @test4(
+; CHECK: @test4
 ; CHECK-NEXT: bitcast
 ; CHECK-NEXT: store double
 
   store i8 19, i8* %P  ;; dead
   %A = getelementptr i8* %P, i32 3
-
+  
   store i8 42, i8* %A  ;; dead
-
+  
   %Q = bitcast i8* %P to double*
   store double 0.0, double* %Q
   ret void
@@ -61,26 +61,10 @@ define void @test5(i32 %i) nounwind ssp {
   %C = getelementptr i8* %B, i32 %i
   store i8 10, i8* %C        ;; Dead store to variable index.
   store i32 20, i32* %A
-
+  
   call void @test5a(i32* %A)
   ret void
-; CHECK-LABEL: @test5(
-; CHECK-NEXT: alloca
-; CHECK-NEXT: store i32 20
-; CHECK-NEXT: call void @test5a
-}
-
-declare void @test5a_as1(i32*)
-define void @test5_addrspacecast(i32 %i) nounwind ssp {
-  %A = alloca i32
-  %B = addrspacecast i32* %A to i8 addrspace(1)*
-  %C = getelementptr i8 addrspace(1)* %B, i32 %i
-  store i8 10, i8 addrspace(1)* %C        ;; Dead store to variable index.
-  store i32 20, i32* %A
-
-  call void @test5a(i32* %A)
-  ret void
-; CHECK-LABEL: @test5_addrspacecast(
+; CHECK: @test5(
 ; CHECK-NEXT: alloca
 ; CHECK-NEXT: store i32 20
 ; CHECK-NEXT: call void @test5a

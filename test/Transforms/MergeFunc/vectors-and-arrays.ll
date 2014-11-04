@@ -1,4 +1,3 @@
-; REQUIRES: asserts
 ; RUN: opt -mergefunc < %s -disable-output -stats | not grep merged
 ; This used to crash with an assert.
 

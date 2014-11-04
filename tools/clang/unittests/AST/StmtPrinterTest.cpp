@@ -32,9 +32,8 @@ using namespace tooling;
 namespace {
 
 void PrintStmt(raw_ostream &Out, const ASTContext *Context, const Stmt *S) {
-  assert(S != nullptr && "Expected non-null Stmt");
   PrintingPolicy Policy = Context->getPrintingPolicy();
-  S->printPretty(Out, /*Helper*/ nullptr, Policy);
+  S->printPretty(Out, /*Helper*/ 0, Policy);
 }
 
 class PrintMatch : public MatchFinder::MatchCallback {
@@ -65,20 +64,19 @@ public:
   }
 };
 
-template <typename T>
-::testing::AssertionResult
-PrintedStmtMatches(StringRef Code, const std::vector<std::string> &Args,
-                   const T &NodeMatch, StringRef ExpectedPrinted) {
+::testing::AssertionResult PrintedStmtMatches(
+                                        StringRef Code,
+                                        const std::vector<std::string> &Args,
+                                        const DeclarationMatcher &NodeMatch,
+                                        StringRef ExpectedPrinted) {
 
   PrintMatch Printer;
   MatchFinder Finder;
   Finder.addMatcher(NodeMatch, &Printer);
-  std::unique_ptr<FrontendActionFactory> Factory(
-      newFrontendActionFactory(&Finder));
+  OwningPtr<FrontendActionFactory> Factory(newFrontendActionFactory(&Finder));
 
   if (!runToolOnCodeWithArgs(Factory->create(), Code, Args))
-    return testing::AssertionFailure()
-      << "Parsing error in \"" << Code.str() << "\"";
+    return testing::AssertionFailure() << "Parsing error in \"" << Code << "\"";
 
   if (Printer.getNumFoundStmts() == 0)
     return testing::AssertionFailure()
@@ -91,19 +89,10 @@ PrintedStmtMatches(StringRef Code, const std::vector<std::string> &Args,
 
   if (Printer.getPrinted() != ExpectedPrinted)
     return ::testing::AssertionFailure()
-      << "Expected \"" << ExpectedPrinted.str() << "\", "
-         "got \"" << Printer.getPrinted().str() << "\"";
+      << "Expected \"" << ExpectedPrinted << "\", "
+         "got \"" << Printer.getPrinted() << "\"";
 
   return ::testing::AssertionSuccess();
-}
-
-::testing::AssertionResult
-PrintedStmtCXX98Matches(StringRef Code, const StatementMatcher &NodeMatch,
-                        StringRef ExpectedPrinted) {
-  std::vector<std::string> Args;
-  Args.push_back("-std=c++98");
-  Args.push_back("-Wno-unused-value");
-  return PrintedStmtMatches(Code, Args, NodeMatch, ExpectedPrinted);
 }
 
 ::testing::AssertionResult PrintedStmtCXX98Matches(
@@ -120,22 +109,11 @@ PrintedStmtCXX98Matches(StringRef Code, const StatementMatcher &NodeMatch,
                             ExpectedPrinted);
 }
 
-::testing::AssertionResult
-PrintedStmtCXX11Matches(StringRef Code, const StatementMatcher &NodeMatch,
-                        StringRef ExpectedPrinted) {
-  std::vector<std::string> Args;
-  Args.push_back("-std=c++11");
-  Args.push_back("-Wno-unused-value");
-  return PrintedStmtMatches(Code, Args, NodeMatch, ExpectedPrinted);
-}
-
 ::testing::AssertionResult PrintedStmtMSMatches(
                                               StringRef Code,
                                               StringRef ContainingFunction,
                                               StringRef ExpectedPrinted) {
   std::vector<std::string> Args;
-  Args.push_back("-target");
-  Args.push_back("i686-pc-win32");
   Args.push_back("-std=c++98");
   Args.push_back("-fms-extensions");
   Args.push_back("-Wno-unused-value");
@@ -168,14 +146,20 @@ TEST(StmtPrinter, TestMSIntegerLiteral) {
     "  1i8, -1i8, 1ui8, "
     "  1i16, -1i16, 1ui16, "
     "  1i32, -1i32, 1ui32, "
-    "  1i64, -1i64, 1ui64;"
+    "  1i64, -1i64, 1ui64, "
+    "  1i128, -1i128, 1ui128, 1Ui128,"
+    "  0x10000000000000000i128;"
     "}",
     "A",
-    "1i8 , -1i8 , 1Ui8 , "
-    "1i16 , -1i16 , 1Ui16 , "
     "1 , -1 , 1U , "
-    "1LL , -1LL , 1ULL"));
+    "1 , -1 , 1U , "
+    "1L , -1L , 1UL , "
+    "1LL , -1LL , 1ULL , "
+    "1 , -1 , 1U , 1U , "
+    "18446744073709551616i128"));
     // Should be: with semicolon
+    // WRONG; all 128-bit literals should be printed as 128-bit.
+    // (This is because currently we do semantic analysis incorrectly.)
 }
 
 TEST(StmtPrinter, TestFloatingPointLiteral) {
@@ -186,31 +170,3 @@ TEST(StmtPrinter, TestFloatingPointLiteral) {
     // Should be: with semicolon
 }
 
-TEST(StmtPrinter, TestCXXConversionDeclImplicit) {
-  ASSERT_TRUE(PrintedStmtCXX98Matches(
-    "struct A {"
-      "operator void *();"
-      "A operator&(A);"
-    "};"
-    "void bar(void *);"
-    "void foo(A a, A b) {"
-    "  bar(a & b);"
-    "}",
-    memberCallExpr(anything()).bind("id"),
-    "a & b"));
-}
-
-TEST(StmtPrinter, TestCXXConversionDeclExplicit) {
-  ASSERT_TRUE(PrintedStmtCXX11Matches(
-    "struct A {"
-      "operator void *();"
-      "A operator&(A);"
-    "};"
-    "void bar(void *);"
-    "void foo(A a, A b) {"
-    "  auto x = (a & b).operator void *();"
-    "}",
-    memberCallExpr(anything()).bind("id"),
-    "(a & b)"));
-    // WRONG; Should be: (a & b).operator void *()
-}

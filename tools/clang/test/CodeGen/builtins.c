@@ -131,7 +131,7 @@ void foo() {
  __builtin_strcat(0, 0);
 }
 
-// CHECK-LABEL: define void @bar(
+// CHECK: define void @bar(
 void bar() {
   float f;
   double d;
@@ -167,53 +167,37 @@ void bar() {
 // CHECK: }
 
 
-// CHECK-LABEL: define void @test_float_builtins
+// CHECK: define void @test_float_builtins
 void test_float_builtins(float F, double D, long double LD) {
   volatile int res;
   res = __builtin_isinf(F);
-  // CHECK:  call float @llvm.fabs.f32(float
+  // CHECK:  call float @fabsf(float
   // CHECK:  fcmp oeq float {{.*}}, 0x7FF0000000000000
 
   res = __builtin_isinf(D);
-  // CHECK:  call double @llvm.fabs.f64(double
+  // CHECK:  call double @fabs(double
   // CHECK:  fcmp oeq double {{.*}}, 0x7FF0000000000000
   
   res = __builtin_isinf(LD);
-  // CHECK:  call x86_fp80 @llvm.fabs.f80(x86_fp80
+  // CHECK:  call x86_fp80 @fabsl(x86_fp80
   // CHECK:  fcmp oeq x86_fp80 {{.*}}, 0xK7FFF8000000000000000
   
   res = __builtin_isfinite(F);
   // CHECK: fcmp oeq float 
-  // CHECK: call float @llvm.fabs.f32(float
+  // CHECK: call float @fabsf
   // CHECK: fcmp une float {{.*}}, 0x7FF0000000000000
   // CHECK: and i1 
 
   res = __builtin_isnormal(F);
   // CHECK: fcmp oeq float
-  // CHECK: call float @llvm.fabs.f32(float
+  // CHECK: call float @fabsf
   // CHECK: fcmp ult float {{.*}}, 0x7FF0000000000000
   // CHECK: fcmp uge float {{.*}}, 0x3810000000000000
   // CHECK: and i1
   // CHECK: and i1
 }
 
-// CHECK-LABEL: define void @test_float_builtin_ops
-void test_float_builtin_ops(float F, double D, long double LD) {
-  volatile float resf;
-  volatile double resd;
-  volatile long double resld;
-
-  resf = __builtin_fmodf(F,F);
-  // CHECK: frem float
-
-  resd = __builtin_fmod(D,D);
-  // CHECK: frem double
-
-  resld = __builtin_fmodl(LD,LD);
-  // CHECK: frem x86_fp80
-}
-
-// CHECK-LABEL: define void @test_builtin_longjmp
+// CHECK: define void @test_builtin_longjmp
 void test_builtin_longjmp(void **buffer) {
   // CHECK: [[BITCAST:%.*]] = bitcast
   // CHECK-NEXT: call void @llvm.eh.sjlj.longjmp(i8* [[BITCAST]])
@@ -221,7 +205,7 @@ void test_builtin_longjmp(void **buffer) {
   // CHECK-NEXT: unreachable
 }
 
-// CHECK-LABEL: define i64 @test_builtin_readcyclecounter
+// CHECK: define i64 @test_builtin_readcyclecounter
 long long test_builtin_readcyclecounter() {
   // CHECK: call i64 @llvm.readcyclecounter()
   return __builtin_readcyclecounter();

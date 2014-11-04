@@ -14,12 +14,11 @@
 
 #include "ClangSACheckers.h"
 #include "clang/AST/ExprObjC.h"
-#include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "llvm/ADT/SmallString.h"
-#include "llvm/Support/raw_ostream.h"
 
 using namespace clang;
 using namespace ento;
@@ -29,8 +28,8 @@ class DereferenceChecker
     : public Checker< check::Location,
                       check::Bind,
                       EventDispatcher<ImplicitNullDerefEvent> > {
-  mutable std::unique_ptr<BuiltinBug> BT_null;
-  mutable std::unique_ptr<BuiltinBug> BT_undef;
+  mutable OwningPtr<BuiltinBug> BT_null;
+  mutable OwningPtr<BuiltinBug> BT_undef;
 
   void reportBug(ProgramStateRef State, const Stmt *S, CheckerContext &C,
                  bool IsBind = false) const;
@@ -76,14 +75,6 @@ DereferenceChecker::AddDerefSource(raw_ostream &os,
       Ranges.push_back(SourceRange(L, L));
       break;
     }
-    case Stmt::ObjCIvarRefExprClass: {
-      const ObjCIvarRefExpr *IV = cast<ObjCIvarRefExpr>(Ex);
-      os << " (" << (loadedFrom ? "loaded from" : "via")
-         << " ivar '" << IV->getDecl()->getName() << "')";
-      SourceLocation L = IV->getLocation();
-      Ranges.push_back(SourceRange(L, L));
-      break;
-    }    
   }
 }
 
@@ -97,7 +88,7 @@ void DereferenceChecker::reportBug(ProgramStateRef State, const Stmt *S,
   // We know that 'location' cannot be non-null.  This is what
   // we call an "explicit" null dereference.
   if (!BT_null)
-    BT_null.reset(new BuiltinBug(this, "Dereference of null pointer"));
+    BT_null.reset(new BuiltinBug("Dereference of null pointer"));
 
   SmallString<100> buf;
   llvm::raw_svector_ostream os(buf);
@@ -126,7 +117,7 @@ void DereferenceChecker::reportBug(ProgramStateRef State, const Stmt *S,
     os << "Array access";
     const ArraySubscriptExpr *AE = cast<ArraySubscriptExpr>(S);
     AddDerefSource(os, Ranges, AE->getBase()->IgnoreParenCasts(),
-                   State.get(), N->getLocationContext());
+                   State.getPtr(), N->getLocationContext());
     os << " results in a null pointer dereference";
     break;
   }
@@ -134,7 +125,7 @@ void DereferenceChecker::reportBug(ProgramStateRef State, const Stmt *S,
     os << "Dereference of null pointer";
     const UnaryOperator *U = cast<UnaryOperator>(S);
     AddDerefSource(os, Ranges, U->getSubExpr()->IgnoreParens(),
-                   State.get(), N->getLocationContext(), true);
+                   State.getPtr(), N->getLocationContext(), true);
     break;
   }
   case Stmt::MemberExprClass: {
@@ -143,7 +134,7 @@ void DereferenceChecker::reportBug(ProgramStateRef State, const Stmt *S,
       os << "Access to field '" << M->getMemberNameInfo()
          << "' results in a dereference of a null pointer";
       AddDerefSource(os, Ranges, M->getBase()->IgnoreParenCasts(),
-                     State.get(), N->getLocationContext(), true);
+                     State.getPtr(), N->getLocationContext(), true);
     }
     break;
   }
@@ -152,7 +143,7 @@ void DereferenceChecker::reportBug(ProgramStateRef State, const Stmt *S,
     os << "Access to instance variable '" << *IV->getDecl()
        << "' results in a dereference of a null pointer";
     AddDerefSource(os, Ranges, IV->getBase()->IgnoreParenCasts(),
-                   State.get(), N->getLocationContext(), true);
+                   State.getPtr(), N->getLocationContext(), true);
     break;
   }
   default:
@@ -165,7 +156,7 @@ void DereferenceChecker::reportBug(ProgramStateRef State, const Stmt *S,
                   buf.empty() ? BT_null->getDescription() : buf.str(),
                   N);
 
-  bugreporter::trackNullOrUndefValue(N, bugreporter::getDerefExpr(S), *report);
+  bugreporter::trackNullOrUndefValue(N, bugreporter::GetDerefExpr(N), *report);
 
   for (SmallVectorImpl<SourceRange>::iterator
        I = Ranges.begin(), E = Ranges.end(); I!=E; ++I)
@@ -180,28 +171,27 @@ void DereferenceChecker::checkLocation(SVal l, bool isLoad, const Stmt* S,
   if (l.isUndef()) {
     if (ExplodedNode *N = C.generateSink()) {
       if (!BT_undef)
-        BT_undef.reset(
-            new BuiltinBug(this, "Dereference of undefined pointer value"));
+        BT_undef.reset(new BuiltinBug("Dereference of undefined pointer value"));
 
       BugReport *report =
         new BugReport(*BT_undef, BT_undef->getDescription(), N);
-      bugreporter::trackNullOrUndefValue(N, bugreporter::getDerefExpr(S),
+      bugreporter::trackNullOrUndefValue(N, bugreporter::GetDerefExpr(N),
                                          *report);
       C.emitReport(report);
     }
     return;
   }
 
-  DefinedOrUnknownSVal location = l.castAs<DefinedOrUnknownSVal>();
+  DefinedOrUnknownSVal location = cast<DefinedOrUnknownSVal>(l);
 
   // Check for null dereferences.
-  if (!location.getAs<Loc>())
+  if (!isa<Loc>(location))
     return;
 
   ProgramStateRef state = C.getState();
 
   ProgramStateRef notNullState, nullState;
-  std::tie(notNullState, nullState) = state->assume(location);
+  llvm::tie(notNullState, nullState) = state->assume(location);
 
   // The explicit NULL case.
   if (nullState) {
@@ -240,7 +230,7 @@ void DereferenceChecker::checkBind(SVal L, SVal V, const Stmt *S,
   ProgramStateRef State = C.getState();
 
   ProgramStateRef StNonNull, StNull;
-  std::tie(StNonNull, StNull) = State->assume(V.castAs<DefinedOrUnknownSVal>());
+  llvm::tie(StNonNull, StNull) = State->assume(cast<DefinedOrUnknownSVal>(V));
 
   if (StNull) {
     if (!StNonNull) {

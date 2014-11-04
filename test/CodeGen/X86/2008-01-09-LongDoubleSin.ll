@@ -1,6 +1,4 @@
-; RUN: llc < %s -o - | FileCheck %s
-
-; CHECK: sinl
+; RUN: llc < %s -o - | grep sinl
 
 target triple = "i686-pc-linux-gnu"
 

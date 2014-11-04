@@ -8,11 +8,11 @@ PrintRes() {
 
 PrintRes
 
-wmops="write1 \
+mops="write1 \
       write2 \
       write4 \
-      write8"
-rmops="read1 \
+      write8 \
+      read1 \
       read2 \
       read4 \
       read8"
@@ -27,16 +27,10 @@ check() {
   fi
 }
 
-for f in $wmops; do
-  check $f rsp 3
-  check $f push 1
-  check $f pop 5
-done
-
-for f in $rmops; do
-  check $f rsp 3
-  check $f push 1
-  check $f pop 4
+for f in $mops; do
+  check $f rsp 1   # To read caller pc.
+  check $f push 0
+  check $f pop 0
 done
 
 for f in $func; do

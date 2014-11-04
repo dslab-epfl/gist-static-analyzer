@@ -45,7 +45,6 @@ struct SparseBitVectorElement
   : public ilist_node<SparseBitVectorElement<ElementSize> > {
 public:
   typedef unsigned long BitWord;
-  typedef unsigned size_type;
   enum {
     BITWORD_SIZE = sizeof(BitWord) * CHAR_BIT,
     BITWORDS_PER_ELEMENT = (ElementSize + BITWORD_SIZE - 1) / BITWORD_SIZE,
@@ -121,7 +120,7 @@ public:
     return Bits[Idx / BITWORD_SIZE] & (1L << (Idx % BITWORD_SIZE));
   }
 
-  size_type count() const {
+  unsigned count() const {
     unsigned NumBits = 0;
     for (unsigned i = 0; i < BITWORDS_PER_ELEMENT; ++i)
       if (sizeof(BitWord) == 4)
@@ -138,9 +137,9 @@ public:
     for (unsigned i = 0; i < BITWORDS_PER_ELEMENT; ++i)
       if (Bits[i] != 0) {
         if (sizeof(BitWord) == 4)
-          return i * BITWORD_SIZE + countTrailingZeros(Bits[i]);
+          return i * BITWORD_SIZE + CountTrailingZeros_32(Bits[i]);
         if (sizeof(BitWord) == 8)
-          return i * BITWORD_SIZE + countTrailingZeros(Bits[i]);
+          return i * BITWORD_SIZE + CountTrailingZeros_64(Bits[i]);
         llvm_unreachable("Unsupported!");
       }
     llvm_unreachable("Illegal empty element");
@@ -163,9 +162,9 @@ public:
 
     if (Copy != 0) {
       if (sizeof(BitWord) == 4)
-        return WordPos * BITWORD_SIZE + countTrailingZeros(Copy);
+        return WordPos * BITWORD_SIZE + CountTrailingZeros_32(Copy);
       if (sizeof(BitWord) == 8)
-        return WordPos * BITWORD_SIZE + countTrailingZeros(Copy);
+        return WordPos * BITWORD_SIZE + CountTrailingZeros_64(Copy);
       llvm_unreachable("Unsupported!");
     }
 
@@ -173,9 +172,9 @@ public:
     for (unsigned i = WordPos+1; i < BITWORDS_PER_ELEMENT; ++i)
       if (Bits[i] != 0) {
         if (sizeof(BitWord) == 4)
-          return i * BITWORD_SIZE + countTrailingZeros(Bits[i]);
+          return i * BITWORD_SIZE + CountTrailingZeros_32(Bits[i]);
         if (sizeof(BitWord) == 8)
-          return i * BITWORD_SIZE + countTrailingZeros(Bits[i]);
+          return i * BITWORD_SIZE + CountTrailingZeros_64(Bits[i]);
         llvm_unreachable("Unsupported!");
       }
     return -1;
@@ -383,7 +382,7 @@ class SparseBitVector {
             AtEnd = true;
             return;
           }
-          // Set up for next non-zero word in bitmap.
+          // Set up for next non zero word in bitmap.
           BitNumber = Iter->index() * ElementSize;
           NextSetBitNumber = Iter->find_first();
           BitNumber += NextSetBitNumber;

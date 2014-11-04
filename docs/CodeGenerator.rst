@@ -1,3 +1,5 @@
+.. _code_generator:
+
 ==========================================
 The LLVM Target-Independent Code Generator
 ==========================================
@@ -15,8 +17,6 @@ The LLVM Target-Independent Code Generator
     .partial { background-color: #F88017 }
     .yes { background-color: #0F0; }
     .yes:before { content: "Y" }
-    .na { background-color: #6666FF; }
-    .na:before { content: "N/A" }
   </style>
 
 .. contents::
@@ -70,7 +70,7 @@ different pieces of this will be useful to you.  In any case, you should be
 familiar with the `target description`_ and `machine code representation`_
 classes.  If you want to add a backend for a new target, you will need to
 `implement the target description`_ classes for your new target and understand
-the :doc:`LLVM code representation <LangRef>`.  If you are interested in
+the `LLVM code representation <LangRef.html>`_.  If you are interested in
 implementing a new `code generation algorithm`_, it should only depend on the
 target-description and machine code representation classes, ensuring that it is
 portable.
@@ -172,7 +172,7 @@ architecture.  These target descriptions often have a large amount of common
 information (e.g., an ``add`` instruction is almost identical to a ``sub``
 instruction).  In order to allow the maximum amount of commonality to be
 factored out, the LLVM code generator uses the
-:doc:`TableGen/index` tool to describe big chunks of the
+`TableGen <TableGenFundamentals.html>`_ tool to describe big chunks of the
 target machine, which allows the use of domain-specific and target-specific
 abstractions to reduce the amount of repetition.
 
@@ -230,7 +230,7 @@ for structures, the alignment requirements for various data types, the size of
 pointers in the target, and whether the target is little-endian or
 big-endian.
 
-.. _TargetLowering:
+.. _targetlowering:
 
 The ``TargetLowering`` class
 ----------------------------
@@ -249,8 +249,6 @@ operations.  Among other things, this class indicates:
 
 * various high-level characteristics, like whether it is profitable to turn
   division by a constant into a multiplication sequence.
-
-.. _TargetRegisterInfo:
 
 The ``TargetRegisterInfo`` class
 --------------------------------
@@ -277,7 +275,7 @@ an associated register class.  When the register allocator runs, it replaces
 virtual registers with a physical register in the set.
 
 The target-specific implementations of these classes is auto-generated from a
-:doc:`TableGen/index` description of the register file.
+`TableGen <TableGenFundamentals.html>`_ description of the register file.
 
 .. _TargetInstrInfo:
 
@@ -285,15 +283,17 @@ The ``TargetInstrInfo`` class
 -----------------------------
 
 The ``TargetInstrInfo`` class is used to describe the machine instructions
-supported by the target.  Descriptions define things like the mnemonic for
-the opcode, the number of operands, the list of implicit register uses and defs,
-whether the instruction has certain target-independent properties (accesses
-memory, is commutable, etc), and holds any target-specific flags.
+supported by the target. It is essentially an array of ``TargetInstrDescriptor``
+objects, each of which describes one instruction the target
+supports. Descriptors define things like the mnemonic for the opcode, the number
+of operands, the list of implicit register uses and defs, whether the
+instruction has certain target-independent properties (accesses memory, is
+commutable, etc), and holds any target-specific flags.
 
-The ``TargetFrameLowering`` class
----------------------------------
+The ``TargetFrameInfo`` class
+-----------------------------
 
-The ``TargetFrameLowering`` class is used to provide information about the stack
+The ``TargetFrameInfo`` class is used to provide information about the stack
 frame layout of the target. It holds the direction of stack growth, the known
 stack alignment on entry to each function, and the offset to the local area.
 The offset to the local area is the offset from the stack pointer on function
@@ -434,12 +434,12 @@ For example, consider this simple LLVM example:
 .. code-block:: llvm
 
   define i32 @test(i32 %X, i32 %Y) {
-    %Z = sdiv i32 %X, %Y
+    %Z = udiv i32 %X, %Y
     ret i32 %Z
   }
 
-The X86 instruction selector might produce this machine code for the ``div`` and
-``ret``:
+The X86 instruction selector produces this machine code for the ``div`` and
+``ret`` (use "``llc X.bc -march=x86 -print-machineinstrs``" to get this):
 
 .. code-block:: llvm
 
@@ -454,8 +454,8 @@ The X86 instruction selector might produce this machine code for the ``div`` and
   %EAX = mov %reg1026           ;; 32-bit return value goes in EAX
   ret
 
-By the end of code generation, the register allocator would coalesce the
-registers and delete the resultant identity moves producing the following
+By the end of code generation, the register allocator has coalesced the
+registers and deleted the resultant identity moves producing the following
 code:
 
 .. code-block:: llvm
@@ -636,18 +636,6 @@ file (MCObjectStreamer).  MCAsmStreamer is a straight-forward implementation
 that prints out a directive for each method (e.g. ``EmitValue -> .byte``), but
 MCObjectStreamer implements a full assembler.
 
-For target specific directives, the MCStreamer has a MCTargetStreamer instance.
-Each target that needs it defines a class that inherits from it and is a lot
-like MCStreamer itself: It has one method per directive and two classes that
-inherit from it, a target object streamer and a target asm streamer. The target
-asm streamer just prints it (``emitFnStart -> .fnstrart``), and the object
-streamer implement the assembler logic for it.
-
-To make llvm use these classes, the target initialization must call
-TargetRegistry::RegisterAsmStreamer and TargetRegistry::RegisterMCObjectStreamer
-passing callbacks that allocate the corresponding target streamer and pass it
-to createAsmStreamer or to the appropriate object streamer constructor.
-
 The ``MCContext`` class
 -----------------------
 
@@ -769,9 +757,7 @@ provide an ordering between nodes that have side effects (such as loads, stores,
 calls, returns, etc).  All nodes that have side effects should take a token
 chain as input and produce a new one as output.  By convention, token chain
 inputs are always operand #0, and chain results are always the last value
-produced by an operation. However, after instruction selection, the
-machine nodes have their chain after the instruction's operands, and
-may be followed by glue nodes.
+produced by an operation.
 
 A SelectionDAG has designated "Entry" and "Root" nodes.  The Entry node is
 always a marker node with an Opcode of ``ISD::EntryToken``.  The Root node is
@@ -784,8 +770,6 @@ operations and supported types.  On a 32-bit PowerPC, for example, a DAG with a
 value of type i1, i8, i16, or i64 would be illegal, as would a DAG that uses a
 SREM or UREM operation.  The `legalize types`_ and `legalize operations`_ phases
 are responsible for turning an illegal DAG into a legal DAG.
-
-.. _SelectionDAG-Process:
 
 SelectionDAG Instruction Selection Process
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -890,7 +874,7 @@ found, the elements are converted to scalars ("scalarizing").
 
 A target implementation tells the legalizer which types are supported (and which
 register class to use for them) by calling the ``addRegisterClass`` method in
-its ``TargetLowering`` constructor.
+its TargetLowering constructor.
 
 .. _legalize operations:
 .. _Legalizer:
@@ -984,8 +968,7 @@ The ``FADDS`` instruction is a simple binary single-precision add instruction.
 To perform this pattern match, the PowerPC backend includes the following
 instruction definitions:
 
-.. code-block:: text
-  :emphasize-lines: 4-5,9
+::
 
   def FMADDS : AForm_1<59, 29,
                       (ops F4RC:$FRT, F4RC:$FRA, F4RC:$FRC, F4RC:$FRB),
@@ -997,10 +980,10 @@ instruction definitions:
                       "fadds $FRT, $FRA, $FRB",
                       [(set F4RC:$FRT, (fadd F4RC:$FRA, F4RC:$FRB))]>;
 
-The highlighted portion of the instruction definitions indicates the pattern
-used to match the instructions. The DAG operators (like ``fmul``/``fadd``)
-are defined in the ``include/llvm/Target/TargetSelectionDAG.td`` file.
-"``F4RC``" is the register class of the input and result values.
+The portion of the instruction definition in bold indicates the pattern used to
+match the instruction.  The DAG operators (like ``fmul``/``fadd``) are defined
+in the ``include/llvm/Target/TargetSelectionDAG.td`` file.  " ``F4RC``" is the
+register class of the input and result values.
 
 The TableGen DAG instruction selector generator reads the instruction patterns
 in the ``.td`` file and automatically builds parts of the pattern matching code
@@ -1051,24 +1034,6 @@ for your target.  It has the following strengths:
   instruction".  To make this work, the ``LO16``/``HI16`` node transformations
   are used to manipulate the input immediate (in this case, take the high or low
   16-bits of the immediate).
-
-* When using the 'Pat' class to map a pattern to an instruction that has one
-  or more complex operands (like e.g. `X86 addressing mode`_), the pattern may
-  either specify the operand as a whole using a ``ComplexPattern``, or else it
-  may specify the components of the complex operand separately.  The latter is
-  done e.g. for pre-increment instructions by the PowerPC back end:
-
-  ::
-
-    def STWU  : DForm_1<37, (outs ptr_rc:$ea_res), (ins GPRC:$rS, memri:$dst),
-                    "stwu $rS, $dst", LdStStoreUpd, []>,
-                    RegConstraint<"$dst.reg = $ea_res">, NoEncode<"$ea_res">;
-
-    def : Pat<(pre_store GPRC:$rS, ptr_rc:$ptrreg, iaddroff:$ptroff),
-              (STWU GPRC:$rS, iaddroff:$ptroff, ptr_rc:$ptrreg)>;
-
-  Here, the pair of ``ptroff`` and ``ptrreg`` operands is matched onto the
-  complex operand ``dst`` of class ``memri`` in the ``STWU`` instruction.
 
 * While the system does automate a lot, it still allows you to write custom C++
   code to match special cases if there is something that is hard to
@@ -1230,7 +1195,7 @@ used. Each virtual register can only be mapped to physical registers of a
 particular class. For instance, in the X86 architecture, some virtuals can only
 be allocated to 8 bit registers.  A register class is described by
 ``TargetRegisterClass`` objects.  To discover if a virtual register is
-compatible with a given physical, this code can be used:
+compatible with a given physical, this code can be used:</p>
 
 .. code-block:: c++
 
@@ -1628,7 +1593,7 @@ Implementing a Native Assembler
 ===============================
 
 Though you're probably reading this because you want to write or maintain a
-compiler backend, LLVM also fully supports building a native assembler.
+compiler backend, LLVM also fully supports building a native assemblers too.
 We've tried hard to automate the generation of the assembler from the .td files
 (in particular the instruction syntax and encodings), which means that a large
 part of the manual and repetitive data entry can be factored and shared with the
@@ -1685,7 +1650,7 @@ ones supported by the matcher), through a Requires clause:
   def : MnemonicAlias<"pushf", "pushfq">, Requires<[In64BitMode]>;
   def : MnemonicAlias<"pushf", "pushfl">, Requires<[In32BitMode]>;
 
-In this example, the mnemonic gets mapped into a different one depending on
+In this example, the mnemonic gets mapped into different a new one depending on
 the current instruction set.
 
 Instruction Aliases
@@ -1762,8 +1727,6 @@ This section of the document explains features or design decisions that are
 specific to the code generator for a particular target.  First we start with a
 table that summarizes what features are supported by each target.
 
-.. _target-feature-matrix:
-
 Target Feature Matrix
 ---------------------
 
@@ -1778,14 +1741,12 @@ the key:
 :raw-html:`<table border="1" cellspacing="0">`
 :raw-html:`<tr>`
 :raw-html:`<th>Unknown</th>`
-:raw-html:`<th>Not Applicable</th>`
 :raw-html:`<th>No support</th>`
 :raw-html:`<th>Partial Support</th>`
 :raw-html:`<th>Complete Support</th>`
 :raw-html:`</tr>`
 :raw-html:`<tr>`
 :raw-html:`<td class="unknown"></td>`
-:raw-html:`<td class="na"></td>`
 :raw-html:`<td class="no"></td>`
 :raw-html:`<td class="partial"></td>`
 :raw-html:`<td class="yes"></td>`
@@ -1801,13 +1762,14 @@ Here is the table:
 :raw-html:`<tr>`
 :raw-html:`<th>Feature</th>`
 :raw-html:`<th>ARM</th>`
+:raw-html:`<th>CellSPU</th>`
 :raw-html:`<th>Hexagon</th>`
+:raw-html:`<th>MBlaze</th>`
 :raw-html:`<th>MSP430</th>`
 :raw-html:`<th>Mips</th>`
-:raw-html:`<th>NVPTX</th>`
+:raw-html:`<th>PTX</th>`
 :raw-html:`<th>PowerPC</th>`
 :raw-html:`<th>Sparc</th>`
-:raw-html:`<th>SystemZ</th>`
 :raw-html:`<th>X86</th>`
 :raw-html:`<th>XCore</th>`
 :raw-html:`</tr>`
@@ -1815,27 +1777,29 @@ Here is the table:
 :raw-html:`<tr>`
 :raw-html:`<td><a href="#feat_reliable">is generally reliable</a></td>`
 :raw-html:`<td class="yes"></td> <!-- ARM -->`
+:raw-html:`<td class="no"></td> <!-- CellSPU -->`
 :raw-html:`<td class="yes"></td> <!-- Hexagon -->`
+:raw-html:`<td class="no"></td> <!-- MBlaze -->`
 :raw-html:`<td class="unknown"></td> <!-- MSP430 -->`
 :raw-html:`<td class="yes"></td> <!-- Mips -->`
-:raw-html:`<td class="yes"></td> <!-- NVPTX -->`
+:raw-html:`<td class="no"></td> <!-- PTX -->`
 :raw-html:`<td class="yes"></td> <!-- PowerPC -->`
 :raw-html:`<td class="yes"></td> <!-- Sparc -->`
-:raw-html:`<td class="yes"></td> <!-- SystemZ -->`
 :raw-html:`<td class="yes"></td> <!-- X86 -->`
-:raw-html:`<td class="yes"></td> <!-- XCore -->`
+:raw-html:`<td class="unknown"></td> <!-- XCore -->`
 :raw-html:`</tr>`
 
 :raw-html:`<tr>`
 :raw-html:`<td><a href="#feat_asmparser">assembly parser</a></td>`
 :raw-html:`<td class="no"></td> <!-- ARM -->`
+:raw-html:`<td class="no"></td> <!-- CellSPU -->`
 :raw-html:`<td class="no"></td> <!-- Hexagon -->`
+:raw-html:`<td class="yes"></td> <!-- MBlaze -->`
 :raw-html:`<td class="no"></td> <!-- MSP430 -->`
 :raw-html:`<td class="no"></td> <!-- Mips -->`
-:raw-html:`<td class="no"></td> <!-- NVPTX -->`
+:raw-html:`<td class="no"></td> <!-- PTX -->`
 :raw-html:`<td class="no"></td> <!-- PowerPC -->`
 :raw-html:`<td class="no"></td> <!-- Sparc -->`
-:raw-html:`<td class="yes"></td> <!-- SystemZ -->`
 :raw-html:`<td class="yes"></td> <!-- X86 -->`
 :raw-html:`<td class="no"></td> <!-- XCore -->`
 :raw-html:`</tr>`
@@ -1843,55 +1807,59 @@ Here is the table:
 :raw-html:`<tr>`
 :raw-html:`<td><a href="#feat_disassembler">disassembler</a></td>`
 :raw-html:`<td class="yes"></td> <!-- ARM -->`
+:raw-html:`<td class="no"></td> <!-- CellSPU -->`
 :raw-html:`<td class="no"></td> <!-- Hexagon -->`
+:raw-html:`<td class="yes"></td> <!-- MBlaze -->`
 :raw-html:`<td class="no"></td> <!-- MSP430 -->`
 :raw-html:`<td class="no"></td> <!-- Mips -->`
-:raw-html:`<td class="na"></td> <!-- NVPTX -->`
+:raw-html:`<td class="no"></td> <!-- PTX -->`
 :raw-html:`<td class="no"></td> <!-- PowerPC -->`
-:raw-html:`<td class="yes"></td> <!-- SystemZ -->`
 :raw-html:`<td class="no"></td> <!-- Sparc -->`
-:raw-html:`<td class="yes"></td> <!-- X86 -->`
-:raw-html:`<td class="yes"></td> <!-- XCore -->`
-:raw-html:`</tr>`
-
-:raw-html:`<tr>`
-:raw-html:`<td><a href="#feat_inlineasm">inline asm</a></td>`
-:raw-html:`<td class="yes"></td> <!-- ARM -->`
-:raw-html:`<td class="yes"></td> <!-- Hexagon -->`
-:raw-html:`<td class="unknown"></td> <!-- MSP430 -->`
-:raw-html:`<td class="no"></td> <!-- Mips -->`
-:raw-html:`<td class="yes"></td> <!-- NVPTX -->`
-:raw-html:`<td class="yes"></td> <!-- PowerPC -->`
-:raw-html:`<td class="unknown"></td> <!-- Sparc -->`
-:raw-html:`<td class="yes"></td> <!-- SystemZ -->`
-:raw-html:`<td class="yes"></td> <!-- X86 -->`
-:raw-html:`<td class="yes"></td> <!-- XCore -->`
-:raw-html:`</tr>`
-
-:raw-html:`<tr>`
-:raw-html:`<td><a href="#feat_jit">jit</a></td>`
-:raw-html:`<td class="partial"><a href="#feat_jit_arm">*</a></td> <!-- ARM -->`
-:raw-html:`<td class="no"></td> <!-- Hexagon -->`
-:raw-html:`<td class="unknown"></td> <!-- MSP430 -->`
-:raw-html:`<td class="yes"></td> <!-- Mips -->`
-:raw-html:`<td class="na"></td> <!-- NVPTX -->`
-:raw-html:`<td class="yes"></td> <!-- PowerPC -->`
-:raw-html:`<td class="unknown"></td> <!-- Sparc -->`
-:raw-html:`<td class="yes"></td> <!-- SystemZ -->`
 :raw-html:`<td class="yes"></td> <!-- X86 -->`
 :raw-html:`<td class="no"></td> <!-- XCore -->`
 :raw-html:`</tr>`
 
 :raw-html:`<tr>`
+:raw-html:`<td><a href="#feat_inlineasm">inline asm</a></td>`
+:raw-html:`<td class="yes"></td> <!-- ARM -->`
+:raw-html:`<td class="no"></td> <!-- CellSPU -->`
+:raw-html:`<td class="yes"></td> <!-- Hexagon -->`
+:raw-html:`<td class="yes"></td> <!-- MBlaze -->`
+:raw-html:`<td class="unknown"></td> <!-- MSP430 -->`
+:raw-html:`<td class="no"></td> <!-- Mips -->`
+:raw-html:`<td class="unknown"></td> <!-- PTX -->`
+:raw-html:`<td class="yes"></td> <!-- PowerPC -->`
+:raw-html:`<td class="unknown"></td> <!-- Sparc -->`
+:raw-html:`<td class="yes"></td> <!-- X86 -->`
+:raw-html:`<td class="unknown"></td> <!-- XCore -->`
+:raw-html:`</tr>`
+
+:raw-html:`<tr>`
+:raw-html:`<td><a href="#feat_jit">jit</a></td>`
+:raw-html:`<td class="partial"><a href="#feat_jit_arm">*</a></td> <!-- ARM -->`
+:raw-html:`<td class="no"></td> <!-- CellSPU -->`
+:raw-html:`<td class="no"></td> <!-- Hexagon -->`
+:raw-html:`<td class="no"></td> <!-- MBlaze -->`
+:raw-html:`<td class="unknown"></td> <!-- MSP430 -->`
+:raw-html:`<td class="yes"></td> <!-- Mips -->`
+:raw-html:`<td class="unknown"></td> <!-- PTX -->`
+:raw-html:`<td class="yes"></td> <!-- PowerPC -->`
+:raw-html:`<td class="unknown"></td> <!-- Sparc -->`
+:raw-html:`<td class="yes"></td> <!-- X86 -->`
+:raw-html:`<td class="unknown"></td> <!-- XCore -->`
+:raw-html:`</tr>`
+
+:raw-html:`<tr>`
 :raw-html:`<td><a href="#feat_objectwrite">.o&nbsp;file writing</a></td>`
 :raw-html:`<td class="no"></td> <!-- ARM -->`
+:raw-html:`<td class="no"></td> <!-- CellSPU -->`
 :raw-html:`<td class="no"></td> <!-- Hexagon -->`
+:raw-html:`<td class="yes"></td> <!-- MBlaze -->`
 :raw-html:`<td class="no"></td> <!-- MSP430 -->`
 :raw-html:`<td class="no"></td> <!-- Mips -->`
-:raw-html:`<td class="na"></td> <!-- NVPTX -->`
+:raw-html:`<td class="no"></td> <!-- PTX -->`
 :raw-html:`<td class="no"></td> <!-- PowerPC -->`
 :raw-html:`<td class="no"></td> <!-- Sparc -->`
-:raw-html:`<td class="yes"></td> <!-- SystemZ -->`
 :raw-html:`<td class="yes"></td> <!-- X86 -->`
 :raw-html:`<td class="no"></td> <!-- XCore -->`
 :raw-html:`</tr>`
@@ -1899,27 +1867,29 @@ Here is the table:
 :raw-html:`<tr>`
 :raw-html:`<td><a hr:raw-html:`ef="#feat_tailcall">tail calls</a></td>`
 :raw-html:`<td class="yes"></td> <!-- ARM -->`
+:raw-html:`<td class="no"></td> <!-- CellSPU -->`
 :raw-html:`<td class="yes"></td> <!-- Hexagon -->`
+:raw-html:`<td class="no"></td> <!-- MBlaze -->`
 :raw-html:`<td class="unknown"></td> <!-- MSP430 -->`
 :raw-html:`<td class="no"></td> <!-- Mips -->`
-:raw-html:`<td class="no"></td> <!-- NVPTX -->`
+:raw-html:`<td class="unknown"></td> <!-- PTX -->`
 :raw-html:`<td class="yes"></td> <!-- PowerPC -->`
 :raw-html:`<td class="unknown"></td> <!-- Sparc -->`
-:raw-html:`<td class="no"></td> <!-- SystemZ -->`
 :raw-html:`<td class="yes"></td> <!-- X86 -->`
-:raw-html:`<td class="no"></td> <!-- XCore -->`
+:raw-html:`<td class="unknown"></td> <!-- XCore -->`
 :raw-html:`</tr>`
 
 :raw-html:`<tr>`
 :raw-html:`<td><a href="#feat_segstacks">segmented stacks</a></td>`
 :raw-html:`<td class="no"></td> <!-- ARM -->`
+:raw-html:`<td class="no"></td> <!-- CellSPU -->`
 :raw-html:`<td class="no"></td> <!-- Hexagon -->`
+:raw-html:`<td class="no"></td> <!-- MBlaze -->`
 :raw-html:`<td class="no"></td> <!-- MSP430 -->`
 :raw-html:`<td class="no"></td> <!-- Mips -->`
-:raw-html:`<td class="no"></td> <!-- NVPTX -->`
+:raw-html:`<td class="no"></td> <!-- PTX -->`
 :raw-html:`<td class="no"></td> <!-- PowerPC -->`
 :raw-html:`<td class="no"></td> <!-- Sparc -->`
-:raw-html:`<td class="no"></td> <!-- SystemZ -->`
 :raw-html:`<td class="partial"><a href="#feat_segstacks_x86">*</a></td> <!-- X86 -->`
 :raw-html:`<td class="no"></td> <!-- XCore -->`
 :raw-html:`</tr>`
@@ -1995,7 +1965,7 @@ Tail Calls
 
 This box indicates whether the target supports guaranteed tail calls.  These are
 calls marked "`tail <LangRef.html#i_call>`_" and use the fastcc calling
-convention.  Please see the `tail call section`_ for more details.
+convention.  Please see the `tail call section more more details`_.
 
 .. _feat_segstacks:
 
@@ -2013,7 +1983,7 @@ Basic support exists on the X86 backend. Currently vararg doesn't work and the
 object files are not marked the way the gold linker expects, but simple Go
 programs can be built by dragonegg.
 
-.. _tail call section:
+.. _tail call section more more details:
 
 Tail call optimization
 ----------------------
@@ -2021,15 +1991,15 @@ Tail call optimization
 Tail call optimization, callee reusing the stack of the caller, is currently
 supported on x86/x86-64 and PowerPC. It is performed if:
 
-* Caller and callee have the calling convention ``fastcc``, ``cc 10`` (GHC
-  calling convention) or ``cc 11`` (HiPE calling convention).
+* Caller and callee have the calling convention ``fastcc`` or ``cc 10`` (GHC
+  call convention).
 
 * The call is a tail call - in tail position (ret immediately follows call and
   ret uses value of call or is void).
 
 * Option ``-tailcallopt`` is enabled.
 
-* Platform-specific constraints are met.
+* Platform specific constraints are met.
 
 x86/x86-64 constraints:
 
@@ -2399,17 +2369,17 @@ Dynamic Allocation
 
   TODO - More to come.
 
-The NVPTX backend
------------------
+The PTX backend
+---------------
 
-The NVPTX code generator under lib/Target/NVPTX is an open-source version of
-the NVIDIA NVPTX code generator for LLVM.  It is contributed by NVIDIA and is
-a port of the code generator used in the CUDA compiler (nvcc).  It targets the
-PTX 3.0/3.1 ISA and can target any compute capability greater than or equal to
-2.0 (Fermi).
+The PTX code generator lives in the lib/Target/PTX directory. It is currently a
+work-in-progress, but already supports most of the code generation functionality
+needed to generate correct PTX kernels for CUDA devices.
 
-This target is of production quality and should be completely compatible with
-the official NVIDIA toolchain.
+The code generator can target PTX 2.0+, and shader model 1.0+.  The PTX ISA
+Reference Manual is used as the primary source of ISA information, though an
+effort is made to make the output of the code generator match the output of the
+NVidia nvcc compiler, whenever possible.
 
 Code Generator Options:
 
@@ -2419,28 +2389,39 @@ Code Generator Options:
 :raw-html:`<th>Description</th>`
 :raw-html:`</tr>`
 :raw-html:`<tr>`
-:raw-html:`<td>sm_20</td>`
-:raw-html:`<td align="left">Set shader model/compute capability to 2.0</td>`
+:raw-html:`<td>``double``</td>`
+:raw-html:`<td align="left">If enabled, the map_f64_to_f32 directive is disabled in the PTX output, allowing native double-precision arithmetic</td>`
 :raw-html:`</tr>`
 :raw-html:`<tr>`
-:raw-html:`<td>sm_21</td>`
-:raw-html:`<td align="left">Set shader model/compute capability to 2.1</td>`
+:raw-html:`<td>``no-fma``</td>`
+:raw-html:`<td align="left">Disable generation of Fused-Multiply Add instructions, which may be beneficial for some devices</td>`
 :raw-html:`</tr>`
 :raw-html:`<tr>`
-:raw-html:`<td>sm_30</td>`
-:raw-html:`<td align="left">Set shader model/compute capability to 3.0</td>`
-:raw-html:`</tr>`
-:raw-html:`<tr>`
-:raw-html:`<td>sm_35</td>`
-:raw-html:`<td align="left">Set shader model/compute capability to 3.5</td>`
-:raw-html:`</tr>`
-:raw-html:`<tr>`
-:raw-html:`<td>ptx30</td>`
-:raw-html:`<td align="left">Target PTX 3.0</td>`
-:raw-html:`</tr>`
-:raw-html:`<tr>`
-:raw-html:`<td>ptx31</td>`
-:raw-html:`<td align="left">Target PTX 3.1</td>`
+:raw-html:`<td>``smxy / computexy``</td>`
+:raw-html:`<td align="left">Set shader model/compute capability to x.y, e.g. sm20 or compute13</td>`
 :raw-html:`</tr>`
 :raw-html:`</table>`
 
+Working:
+
+* Arithmetic instruction selection (including combo FMA)
+
+* Bitwise instruction selection
+
+* Control-flow instruction selection
+
+* Function calls (only on SM 2.0+ and no return arguments)
+
+* Addresses spaces (0 = global, 1 = constant, 2 = local, 4 = shared)
+
+* Thread synchronization (bar.sync)
+
+* Special register reads ([N]TID, [N]CTAID, PMx, CLOCK, etc.)
+
+In Progress:
+
+* Robust call instruction selection
+
+* Stack frame allocation
+
+* Device-specific instruction scheduling optimizations

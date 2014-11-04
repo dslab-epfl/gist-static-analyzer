@@ -21,15 +21,15 @@ extern __attribute__((visibility("default"))) struct dispatch_queue_s _dispatch_
     case 0:
         dispatch_async((&_dispatch_main_q), ^{ [self pageLeft]; }); // expected-note 3 {{jump enters lifetime of block which strongly captures a variable}}
         break;
-    case 2:  // expected-error {{cannot jump}}
+    case 2:  // expected-error {{switch case is in protected scope}}
         dispatch_async((&_dispatch_main_q), ^{ [self pageRight]; }); // expected-note 2 {{jump enters lifetime of block which strongly captures a variable}}
         break;
-    case 3: // expected-error {{cannot jump}}
+    case 3: // expected-error {{switch case is in protected scope}}
         {
           dispatch_async((&_dispatch_main_q), ^{ [self pageRight]; });
           break;
         }
-    case 4: // expected-error {{cannot jump}}
+    case 4: // expected-error {{switch case is in protected scope}}
         break;
     }
 
@@ -84,13 +84,13 @@ extern __attribute__((visibility("default"))) struct dispatch_queue_s _dispatch_
 @end
 
 // Test 2.  rdar://problem/11150919
-int test2(id obj, int state) { // expected-note {{jump enters lifetime of block}} FIXME: weird location
+int test2(id obj, int state) { // expected-note {{jump enters lifetime of block}} FIXME: wierd location
   switch (state) {
   case 0:
     (void) ^{ (void) obj; };
     return 0;
 
-  default: // expected-error {{cannot jump}}
+  default: // expected-error {{switch case is in protected scope}}
     return 1;
   }
 }

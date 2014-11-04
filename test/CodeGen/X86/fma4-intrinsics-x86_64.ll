@@ -1,4 +1,4 @@
-; RUN: llc < %s -mtriple=x86_64-unknown-unknown -march=x86-64 -mcpu=corei7-avx -mattr=+fma4 | FileCheck %s
+; RUN: llc < %s -mtriple=x86_64-unknown-unknown -march=x86-64 -mattr=+avx,+fma4 | FileCheck %s
 ; RUN: llc < %s -mtriple=x86_64-unknown-unknown -mcpu=bdver2 -mattr=+avx,-fma | FileCheck %s
 
 ; VFMADD
@@ -63,16 +63,6 @@ define < 4 x float > @test_x86_fma_vfmadd_ps_load2(< 4 x float > %a0, < 4 x floa
 }
 declare < 4 x float > @llvm.x86.fma.vfmadd.ps(< 4 x float >, < 4 x float >, < 4 x float >) nounwind readnone
 
-; To test execution dependency
-define < 4 x float > @test_x86_fma_vfmadd_ps_load3(< 4 x float >* %a0, < 4 x float >* %a1, < 4 x float > %a2) {
-  ; CHECK: vmovaps
-  ; CHECK: vfmaddps %{{.*}}, (%{{.*}})
-  %x = load <4 x float>* %a0
-  %y = load <4 x float>* %a1
-  %res = call < 4 x float > @llvm.x86.fma.vfmadd.ps(< 4 x float > %x, < 4 x float > %y, < 4 x float > %a2) ; <i64> [#uses=1]
-  ret < 4 x float > %res
-}
-
 define < 2 x double > @test_x86_fma_vfmadd_pd(< 2 x double > %a0, < 2 x double > %a1, < 2 x double > %a2) {
   ; CHECK: vfmaddpd
   %res = call < 2 x double > @llvm.x86.fma.vfmadd.pd(< 2 x double > %a0, < 2 x double > %a1, < 2 x double > %a2) ; <i64> [#uses=1]
@@ -91,16 +81,6 @@ define < 2 x double > @test_x86_fma_vfmadd_pd_load2(< 2 x double > %a0, < 2 x do
   ret < 2 x double > %res
 }
 declare < 2 x double > @llvm.x86.fma.vfmadd.pd(< 2 x double >, < 2 x double >, < 2 x double >) nounwind readnone
-
-; To test execution dependency
-define < 2 x double > @test_x86_fma_vfmadd_pd_load3(< 2 x double >* %a0, < 2 x double >* %a1, < 2 x double > %a2) {
-  ; CHECK: vmovapd
-  ; CHECK: vfmaddpd %{{.*}}, (%{{.*}})
-  %x = load <2 x double>* %a0
-  %y = load <2 x double>* %a1
-  %res = call < 2 x double > @llvm.x86.fma.vfmadd.pd(< 2 x double > %x, < 2 x double > %y, < 2 x double > %a2) ; <i64> [#uses=1]
-  ret < 2 x double > %res
-}
 
 define < 8 x float > @test_x86_fma_vfmadd_ps_256(< 8 x float > %a0, < 8 x float > %a1, < 8 x float > %a2) {
   ; CHECK: vfmaddps

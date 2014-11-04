@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_TOOLS_LLVM_DIFF_DIFFLOG_H
-#define LLVM_TOOLS_LLVM_DIFF_DIFFLOG_H
+#ifndef _LLVM_DIFFLOG_H_
+#define _LLVM_DIFFLOG_H_
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"

@@ -1,6 +1,10 @@
 // RUN: %clang_cc1 -Wno-int-to-pointer-cast -analyze -analyzer-checker=alpha.security.taint,debug.TaintTest %s -verify
 
-#include "Inputs/system-header-simulator.h"
+#include <stdarg.h>
+
+int scanf(const char *restrict format, ...);
+int getchar(void);
+typedef __typeof(sizeof(int)) size_t;
 
 #define BUFSIZE 10
 int Buffer[BUFSIZE];
@@ -82,6 +86,15 @@ void getenvTest(char *home) {
       char d = home[0]; // expected-warning + {{tainted}}
     }
 }
+
+typedef struct _FILE FILE;
+extern FILE *stdin;
+extern FILE *stdout;
+extern FILE *stderr;
+int fscanf(FILE *restrict stream, const char *restrict format, ...);
+int fprintf(FILE *stream, const char *format, ...);
+int fclose(FILE *stream);
+FILE *fopen(const char *path, const char *mode);
 
 int fscanfTest(void) {
   FILE *fp;

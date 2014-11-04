@@ -18,7 +18,7 @@ addl $0, 0(%rax)
 
 movl 0(%rax), 0(%edx)  // error: invalid operand for instruction
 
-// 32: error: instruction requires: 64-bit mode
+// 32: error: instruction requires a CPU feature not currently enabled
 sysexitq
 
 // rdar://10710167
@@ -26,27 +26,5 @@ sysexitq
 lea (%rsp, %rbp, $4), %rax
 
 // rdar://10423777
-// 64: error: base register is 64-bit, but index register is not
+// 64: error: index register is 32-bit, but base register is 64-bit
 movq (%rsi,%ecx),%xmm0
-
-// 64: error: invalid 16-bit base register
-movl %eax,(%bp,%si)
-
-// 32: error: scale factor in 16-bit address must be 1
-movl %eax,(%bp,%si,2)
-
-// 32: error: invalid 16-bit base register
-movl %eax,(%cx)
-
-// 32: error: invalid 16-bit base/index register combination
-movl %eax,(%bp,%bx)
-
-// 32: error: 16-bit memory operand may not include only index register
-movl %eax,(,%bx)
-
-// 32: error: invalid operand for instruction
-outb al, 4
-
-// 32: error: invalid segment register
-// 64: error: invalid segment register
-movl %eax:0x00, %ebx

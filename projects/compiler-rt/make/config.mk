@@ -21,7 +21,6 @@ MKDIR := mkdir -p
 DATE := date
 LIPO := lipo
 CP := cp
-DSYMUTIL := dsymutil
 
 VERBOSE := 0
 DEBUGMAKE :=
@@ -43,7 +42,5 @@ endif
 
 ###
 # Common compiler options
-COMMON_INCLUDES=-I${ProjSrcRoot}/lib -I${ProjSrcRoot}/include
-COMMON_CXXFLAGS=-std=c++11 -fno-exceptions -fPIC -funwind-tables $(COMMON_INCLUDES)
-COMMON_CFLAGS=-fPIC $(COMMON_INCLUDES)
-COMMON_ASMFLAGS=$(COMMON_INCLUDES)
+COMMON_CXXFLAGS=-fno-exceptions -fPIC -funwind-tables -I${ProjSrcRoot}/lib -I${ProjSrcRoot}/include
+COMMON_CFLAGS=-fPIC

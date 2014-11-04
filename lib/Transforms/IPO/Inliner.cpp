@@ -13,28 +13,24 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Transforms/IPO/InlinerPass.h"
-#include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/ADT/Statistic.h"
-#include "llvm/Analysis/AliasAnalysis.h"
-#include "llvm/Analysis/AssumptionTracker.h"
+#define DEBUG_TYPE "inline"
+#include "llvm/Module.h"
+#include "llvm/Instructions.h"
+#include "llvm/IntrinsicInst.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/InlineCost.h"
-#include "llvm/IR/CallSite.h"
-#include "llvm/IR/DataLayout.h"
-#include "llvm/IR/DiagnosticInfo.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/IntrinsicInst.h"
-#include "llvm/IR/Module.h"
+#include "llvm/DataLayout.h"
+#include "llvm/Target/TargetLibraryInfo.h"
+#include "llvm/Transforms/IPO/InlinerPass.h"
+#include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Transforms/Utils/Local.h"
+#include "llvm/Support/CallSite.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/TargetLibraryInfo.h"
-#include "llvm/Transforms/Utils/Cloning.h"
-#include "llvm/Transforms/Utils/Local.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/Statistic.h"
 using namespace llvm;
-
-#define DEBUG_TYPE "inline"
 
 STATISTIC(NumInlined, "Number of functions inlined");
 STATISTIC(NumCallsDeleted, "Number of call sites deleted, not inlined");
@@ -54,13 +50,6 @@ static cl::opt<int>
 HintThreshold("inlinehint-threshold", cl::Hidden, cl::init(325),
               cl::desc("Threshold for inlining functions with inline hint"));
 
-// We instroduce this threshold to help performance of instrumentation based
-// PGO before we actually hook up inliner with analysis passes such as BPI and
-// BFI.
-static cl::opt<int>
-ColdThreshold("inlinecold-threshold", cl::Hidden, cl::init(225),
-              cl::desc("Threshold for inlining functions with cold attribute"));
-
 // Threshold to use when optsize is specified (and there is no -inline-limit).
 const int OptSizeThreshold = 75;
 
@@ -75,49 +64,13 @@ Inliner::Inliner(char &ID, int Threshold, bool InsertLifetime)
 /// getAnalysisUsage - For this class, we declare that we require and preserve
 /// the call graph.  If the derived class implements this method, it should
 /// always explicitly call the implementation here.
-void Inliner::getAnalysisUsage(AnalysisUsage &AU) const {
-  AU.addRequired<AliasAnalysis>();
-  AU.addRequired<AssumptionTracker>();
-  CallGraphSCCPass::getAnalysisUsage(AU);
+void Inliner::getAnalysisUsage(AnalysisUsage &Info) const {
+  CallGraphSCCPass::getAnalysisUsage(Info);
 }
 
 
 typedef DenseMap<ArrayType*, std::vector<AllocaInst*> >
 InlinedArrayAllocasTy;
-
-/// \brief If the inlined function had a higher stack protection level than the
-/// calling function, then bump up the caller's stack protection level.
-static void AdjustCallerSSPLevel(Function *Caller, Function *Callee) {
-  // If upgrading the SSP attribute, clear out the old SSP Attributes first.
-  // Having multiple SSP attributes doesn't actually hurt, but it adds useless
-  // clutter to the IR.
-  AttrBuilder B;
-  B.addAttribute(Attribute::StackProtect)
-    .addAttribute(Attribute::StackProtectStrong);
-  AttributeSet OldSSPAttr = AttributeSet::get(Caller->getContext(),
-                                              AttributeSet::FunctionIndex,
-                                              B);
-  AttributeSet CallerAttr = Caller->getAttributes(),
-               CalleeAttr = Callee->getAttributes();
-
-  if (CalleeAttr.hasAttribute(AttributeSet::FunctionIndex,
-                              Attribute::StackProtectReq)) {
-    Caller->removeAttributes(AttributeSet::FunctionIndex, OldSSPAttr);
-    Caller->addFnAttr(Attribute::StackProtectReq);
-  } else if (CalleeAttr.hasAttribute(AttributeSet::FunctionIndex,
-                                     Attribute::StackProtectStrong) &&
-             !CallerAttr.hasAttribute(AttributeSet::FunctionIndex,
-                                      Attribute::StackProtectReq)) {
-    Caller->removeAttributes(AttributeSet::FunctionIndex, OldSSPAttr);
-    Caller->addFnAttr(Attribute::StackProtectStrong);
-  } else if (CalleeAttr.hasAttribute(AttributeSet::FunctionIndex,
-                                     Attribute::StackProtect) &&
-           !CallerAttr.hasAttribute(AttributeSet::FunctionIndex,
-                                    Attribute::StackProtectReq) &&
-           !CallerAttr.hasAttribute(AttributeSet::FunctionIndex,
-                                    Attribute::StackProtectStrong))
-    Caller->addFnAttr(Attribute::StackProtect);
-}
 
 /// InlineCallIfPossible - If it is possible to inline the specified call site,
 /// do so and update the CallGraph for this operation.
@@ -129,8 +82,7 @@ static void AdjustCallerSSPLevel(Function *Caller, Function *Callee) {
 /// any new allocas to the set if not possible.
 static bool InlineCallIfPossible(CallSite CS, InlineFunctionInfo &IFI,
                                  InlinedArrayAllocasTy &InlinedArrayAllocas,
-                                 int InlineHistory, bool InsertLifetime,
-                                 const DataLayout *DL) {
+                                 int InlineHistory, bool InsertLifetime) {
   Function *Callee = CS.getCalledFunction();
   Function *Caller = CS.getCaller();
 
@@ -139,7 +91,13 @@ static bool InlineCallIfPossible(CallSite CS, InlineFunctionInfo &IFI,
   if (!InlineFunction(CS, IFI, InsertLifetime))
     return false;
 
-  AdjustCallerSSPLevel(Caller, Callee);
+  // If the inlined function had a higher stack protection level than the
+  // calling function, then bump up the caller's stack protection level.
+  if (Callee->getFnAttributes().hasAttribute(Attributes::StackProtectReq))
+    Caller->addFnAttr(Attributes::StackProtectReq);
+  else if (Callee->getFnAttributes().hasAttribute(Attributes::StackProtect) &&
+           !Caller->getFnAttributes().hasAttribute(Attributes::StackProtectReq))
+    Caller->addFnAttr(Attributes::StackProtect);
 
   // Look at all of the allocas that we inlined through this call site.  If we
   // have already inlined other allocas through other calls into this function,
@@ -189,7 +147,7 @@ static bool InlineCallIfPossible(CallSite CS, InlineFunctionInfo &IFI,
     // canonicalized to be an allocation *of* an array), or allocations whose
     // type is not itself an array (because we're afraid of pessimizing SRoA).
     ArrayType *ATy = dyn_cast<ArrayType>(AI->getAllocatedType());
-    if (!ATy || AI->isArrayAllocation())
+    if (ATy == 0 || AI->isArrayAllocation())
       continue;
     
     // Get the list of all available allocas for this array type.
@@ -203,14 +161,6 @@ static bool InlineCallIfPossible(CallSite CS, InlineFunctionInfo &IFI,
     bool MergedAwayAlloca = false;
     for (unsigned i = 0, e = AllocasForType.size(); i != e; ++i) {
       AllocaInst *AvailableAlloca = AllocasForType[i];
-
-      unsigned Align1 = AI->getAlignment(),
-               Align2 = AvailableAlloca->getAlignment();
-      // If we don't have data layout information, and only one alloca is using
-      // the target default, then we can't safely merge them because we can't
-      // pick the greater alignment.
-      if (!DL && (!Align1 || !Align2) && Align1 != Align2)
-        continue;
       
       // The available alloca has to be in the right function, not in some other
       // function in this SCC.
@@ -228,24 +178,10 @@ static bool InlineCallIfPossible(CallSite CS, InlineFunctionInfo &IFI,
                    << *AvailableAlloca << '\n');
       
       AI->replaceAllUsesWith(AvailableAlloca);
-
-      if (Align1 != Align2) {
-        if (!Align1 || !Align2) {
-          assert(DL && "DataLayout required to compare default alignments");
-          unsigned TypeAlign = DL->getABITypeAlignment(AI->getAllocatedType());
-
-          Align1 = Align1 ? Align1 : TypeAlign;
-          Align2 = Align2 ? Align2 : TypeAlign;
-        }
-
-        if (Align1 > Align2)
-          AvailableAlloca->setAlignment(AI->getAlignment());
-      }
-
       AI->eraseFromParent();
       MergedAwayAlloca = true;
       ++NumMergedAllocas;
-      IFI.StaticAllocas[AllocaNo] = nullptr;
+      IFI.StaticAllocas[AllocaNo] = 0;
       break;
     }
 
@@ -273,43 +209,19 @@ unsigned Inliner::getInlineThreshold(CallSite CS) const {
   // would decrease the threshold.
   Function *Caller = CS.getCaller();
   bool OptSize = Caller && !Caller->isDeclaration() &&
-    Caller->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
-                                         Attribute::OptimizeForSize);
+    Caller->getFnAttributes().hasAttribute(Attributes::OptimizeForSize);
   if (!(InlineLimit.getNumOccurrences() > 0) && OptSize &&
       OptSizeThreshold < thres)
     thres = OptSizeThreshold;
 
-  // Listen to the inlinehint attribute when it would increase the threshold
-  // and the caller does not need to minimize its size.
+  // Listen to the inlinehint attribute when it would increase the threshold.
   Function *Callee = CS.getCalledFunction();
   bool InlineHint = Callee && !Callee->isDeclaration() &&
-    Callee->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
-                                         Attribute::InlineHint);
-  if (InlineHint && HintThreshold > thres
-      && !Caller->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
-                                               Attribute::MinSize))
+    Callee->getFnAttributes().hasAttribute(Attributes::InlineHint);
+  if (InlineHint && HintThreshold > thres)
     thres = HintThreshold;
 
-  // Listen to the cold attribute when it would decrease the threshold.
-  bool ColdCallee = Callee && !Callee->isDeclaration() &&
-    Callee->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
-                                         Attribute::Cold);
-  // Command line argument for InlineLimit will override the default
-  // ColdThreshold. If we have -inline-threshold but no -inlinecold-threshold,
-  // do not use the default cold threshold even if it is smaller.
-  if ((InlineLimit.getNumOccurrences() == 0 ||
-       ColdThreshold.getNumOccurrences() > 0) && ColdCallee &&
-      ColdThreshold < thres)
-    thres = ColdThreshold;
-
   return thres;
-}
-
-static void emitAnalysis(CallSite CS, const Twine &Msg) {
-  Function *Caller = CS.getCaller();
-  LLVMContext &Ctx = Caller->getContext();
-  DebugLoc DLoc = CS.getInstruction()->getDebugLoc();
-  emitOptimizationRemarkAnalysis(Ctx, DEBUG_TYPE, *Caller, DLoc, Msg);
 }
 
 /// shouldInline - Return true if the inliner should attempt to inline
@@ -320,16 +232,12 @@ bool Inliner::shouldInline(CallSite CS) {
   if (IC.isAlways()) {
     DEBUG(dbgs() << "    Inlining: cost=always"
           << ", Call: " << *CS.getInstruction() << "\n");
-    emitAnalysis(CS, Twine(CS.getCalledFunction()->getName()) +
-                         " should always be inlined (cost=always)");
     return true;
   }
   
   if (IC.isNever()) {
     DEBUG(dbgs() << "    NOT Inlining: cost=never"
           << ", Call: " << *CS.getInstruction() << "\n");
-    emitAnalysis(CS, Twine(CS.getCalledFunction()->getName() +
-                           " should never be inlined (cost=never)"));
     return false;
   }
   
@@ -338,10 +246,6 @@ bool Inliner::shouldInline(CallSite CS) {
     DEBUG(dbgs() << "    NOT Inlining: cost=" << IC.getCost()
           << ", thres=" << (IC.getCostDelta() + IC.getCost())
           << ", Call: " << *CS.getInstruction() << "\n");
-    emitAnalysis(CS, Twine(CS.getCalledFunction()->getName() +
-                           " too costly to inline (cost=") +
-                         Twine(IC.getCost()) + ", threshold=" +
-                         Twine(IC.getCostDelta() + IC.getCost()) + ")");
     return false;
   }
   
@@ -361,7 +265,8 @@ bool Inliner::shouldInline(CallSite CS) {
   // FIXME: All of this logic should be sunk into getInlineCost. It relies on
   // the internal implementation of the inline cost metrics rather than
   // treating them as truly abstract units etc.
-  if (Caller->hasLocalLinkage() || Caller->hasLinkOnceODRLinkage()) {
+  if (Caller->hasLocalLinkage() ||
+      Caller->getLinkage() == GlobalValue::LinkOnceODRLinkage) {
     int TotalSecondaryCost = 0;
     // The candidate cost to be imposed upon the current function.
     int CandidateCost = IC.getCost() - (InlineConstants::CallPenalty + 1);
@@ -369,8 +274,9 @@ bool Inliner::shouldInline(CallSite CS) {
     bool callerWillBeRemoved = Caller->hasLocalLinkage();
     // This bool tracks what happens if we DO inline C into B.
     bool inliningPreventsSomeOuterInline = false;
-    for (User *U : Caller->users()) {
-      CallSite CS2(U);
+    for (Value::use_iterator I = Caller->use_begin(), E =Caller->use_end(); 
+         I != E; ++I) {
+      CallSite CS2(*I);
 
       // If this isn't a call to Caller (it could be some other sort
       // of reference) skip it.  Such references will prevent the caller
@@ -401,18 +307,13 @@ bool Inliner::shouldInline(CallSite CS) {
     // one is set very low by getInlineCost, in anticipation that Caller will
     // be removed entirely.  We did not account for this above unless there
     // is only one caller of Caller.
-    if (callerWillBeRemoved && !Caller->use_empty())
+    if (callerWillBeRemoved && Caller->use_begin() != Caller->use_end())
       TotalSecondaryCost += InlineConstants::LastCallToStaticBonus;
 
     if (inliningPreventsSomeOuterInline && TotalSecondaryCost < IC.getCost()) {
       DEBUG(dbgs() << "    NOT Inlining: " << *CS.getInstruction() <<
            " Cost = " << IC.getCost() <<
            ", outer Cost = " << TotalSecondaryCost << '\n');
-      emitAnalysis(
-          CS, Twine("Not inlining. Cost of inlining " +
-                    CS.getCalledFunction()->getName() +
-                    " increases the cost of inlining " +
-                    CS.getCaller()->getName() + " in other contexts"));
       return false;
     }
   }
@@ -420,10 +321,6 @@ bool Inliner::shouldInline(CallSite CS) {
   DEBUG(dbgs() << "    Inlining: cost=" << IC.getCost()
         << ", thres=" << (IC.getCostDelta() + IC.getCost())
         << ", Call: " << *CS.getInstruction() << '\n');
-  emitAnalysis(
-      CS, CS.getCalledFunction()->getName() + Twine(" can be inlined into ") +
-              CS.getCaller()->getName() + " with cost=" + Twine(IC.getCost()) +
-              " (threshold=" + Twine(IC.getCostDelta() + IC.getCost()) + ")");
   return true;
 }
 
@@ -442,12 +339,9 @@ static bool InlineHistoryIncludes(Function *F, int InlineHistoryID,
 }
 
 bool Inliner::runOnSCC(CallGraphSCC &SCC) {
-  CallGraph &CG = getAnalysis<CallGraphWrapperPass>().getCallGraph();
-  AssumptionTracker *AT = &getAnalysis<AssumptionTracker>();
-  DataLayoutPass *DLP = getAnalysisIfAvailable<DataLayoutPass>();
-  const DataLayout *DL = DLP ? &DLP->getDataLayout() : nullptr;
+  CallGraph &CG = getAnalysis<CallGraph>();
+  const DataLayout *TD = getAnalysisIfAvailable<DataLayout>();
   const TargetLibraryInfo *TLI = getAnalysisIfAvailable<TargetLibraryInfo>();
-  AliasAnalysis *AA = &getAnalysis<AliasAnalysis>();
 
   SmallPtrSet<Function*, 8> SCCFunctions;
   DEBUG(dbgs() << "Inliner visiting SCC:");
@@ -506,7 +400,7 @@ bool Inliner::runOnSCC(CallGraphSCC &SCC) {
 
   
   InlinedArrayAllocasTy InlinedArrayAllocas;
-  InlineFunctionInfo InlineInfo(&CG, DL, AA, AT);
+  InlineFunctionInfo InlineInfo(&CG, TD);
   
   // Now that we have all of the call sites, loop over them and inline them if
   // it looks profitable to do so.
@@ -535,7 +429,7 @@ bool Inliner::runOnSCC(CallGraphSCC &SCC) {
         ++NumCallsDeleted;
       } else {
         // We can only inline direct calls to non-declarations.
-        if (!Callee || Callee->isDeclaration()) continue;
+        if (Callee == 0 || Callee->isDeclaration()) continue;
       
         // If this call site was obtained by inlining another function, verify
         // that the include path for the function did not include the callee
@@ -547,37 +441,18 @@ bool Inliner::runOnSCC(CallGraphSCC &SCC) {
             InlineHistoryIncludes(Callee, InlineHistoryID, InlineHistory))
           continue;
         
-        LLVMContext &CallerCtx = Caller->getContext();
-
-        // Get DebugLoc to report. CS will be invalid after Inliner.
-        DebugLoc DLoc = CS.getInstruction()->getDebugLoc();
-
+        
         // If the policy determines that we should inline this function,
         // try to do so.
-        if (!shouldInline(CS)) {
-          emitOptimizationRemarkMissed(CallerCtx, DEBUG_TYPE, *Caller, DLoc,
-                                       Twine(Callee->getName() +
-                                             " will not be inlined into " +
-                                             Caller->getName()));
+        if (!shouldInline(CS))
           continue;
-        }
 
         // Attempt to inline the function.
         if (!InlineCallIfPossible(CS, InlineInfo, InlinedArrayAllocas,
-                                  InlineHistoryID, InsertLifetime, DL)) {
-          emitOptimizationRemarkMissed(CallerCtx, DEBUG_TYPE, *Caller, DLoc,
-                                       Twine(Callee->getName() +
-                                             " will not be inlined into " +
-                                             Caller->getName()));
+                                  InlineHistoryID, InsertLifetime))
           continue;
-        }
         ++NumInlined;
-
-        // Report the inline decision.
-        emitOptimizationRemark(
-            CallerCtx, DEBUG_TYPE, *Caller, DLoc,
-            Twine(Callee->getName() + " inlined into " + Caller->getName()));
-
+        
         // If inlining this function gave us any new call sites, throw them
         // onto our worklist to process.  They are useful inline candidates.
         if (!InlineInfo.InlinedCalls.empty()) {
@@ -659,8 +534,7 @@ bool Inliner::removeDeadFunctions(CallGraph &CG, bool AlwaysInlineOnly) {
     // about always-inline functions. This is a bit of a hack to share code
     // between here and the InlineAlways pass.
     if (AlwaysInlineOnly &&
-        !F->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
-                                         Attribute::AlwaysInline))
+        !F->getFnAttributes().hasAttribute(Attributes::AlwaysInline))
       continue;
 
     // If the only remaining users of the function are dead constants, remove
@@ -668,13 +542,6 @@ bool Inliner::removeDeadFunctions(CallGraph &CG, bool AlwaysInlineOnly) {
     F->removeDeadConstantUsers();
 
     if (!F->isDefTriviallyDead())
-      continue;
-
-    // It is unsafe to drop a function with discardable linkage from a COMDAT
-    // without also dropping the other members of the COMDAT.
-    // The inliner doesn't visit non-function entities which are in COMDAT
-    // groups so it is unsafe to do so *unless* the linkage is local.
-    if (!F->hasLocalLinkage() && F->hasComdat())
       continue;
     
     // Remove any call graph edges from the function to its callees.

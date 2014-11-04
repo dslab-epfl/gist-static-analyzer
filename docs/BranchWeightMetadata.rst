@@ -1,3 +1,5 @@
+.. _branch_weight:
+
 ===========================
 LLVM Branch Weight Metadata
 ===========================
@@ -8,11 +10,10 @@ LLVM Branch Weight Metadata
 Introduction
 ============
 
-Branch Weight Metadata represents branch weights as its likeliness to be taken
-(see :doc:`BlockFrequencyTerminology`). Metadata is assigned to the
-``TerminatorInst`` as a ``MDNode`` of the ``MD_prof`` kind. The first operator
-is always a ``MDString`` node with the string "branch_weights".  Number of
-operators depends on the terminator type.
+Branch Weight Metadata represents branch weights as its likeliness to be
+taken. Metadata is assigned to the ``TerminatorInst`` as a ``MDNode`` of the
+``MD_prof`` kind. The first operator is always a ``MDString`` node with the
+string "branch_weights". Number of operators depends on the terminator type.
 
 Branch weights might be fetch from the profiling file, or generated based on
 `__builtin_expect`_ instruction.
@@ -26,8 +27,8 @@ Supported Instructions
 ``BranchInst``
 ^^^^^^^^^^^^^^
 
-Metadata is only assigned to the conditional branches. There are two extra
-operarands for the true and the false branch.
+Metadata is only assign to the conditional branches. There are two extra
+operarands, for the true and the false branch.
 
 .. code-block:: llvm
 
@@ -40,8 +41,8 @@ operarands for the true and the false branch.
 ``SwitchInst``
 ^^^^^^^^^^^^^^
 
-Branch weights are assigned to every case (including the ``default`` case which
-is always case #0).
+Branch weights are assign to every case (including ``default`` case which is
+always case #0).
 
 .. code-block:: llvm
 
@@ -54,7 +55,7 @@ is always case #0).
 ``IndirectBrInst``
 ^^^^^^^^^^^^^^^^^^
 
-Branch weights are assigned to every destination.
+Branch weights are assign to every destination.
 
 .. code-block:: llvm
 

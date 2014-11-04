@@ -6,8 +6,8 @@ target triple = "powerpc-apple-darwin9.8"
 define i32 @main() nounwind {
 entry:
 ; Make sure we're generating references using the red zone
-; CHECK-LABEL: main:
-; CHECK: stw r2, -12(r1)
+; CHECK: main:
+; CHECK: stw r3, -12(r1)
   %retval = alloca i32
   %0 = alloca i32
   %"alloca point" = bitcast i32 0 to i32

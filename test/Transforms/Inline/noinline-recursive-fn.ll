@@ -2,7 +2,7 @@
 ; This effectively is just peeling off the first iteration of a loop, and the
 ; inliner heuristics are not set up for this.
 
-; RUN: opt -inline -S < %s | FileCheck %s
+; RUN: opt -inline %s -S | FileCheck %s
 
 target datalayout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v64:64:64-v128:128:128-a0:0:64-s0:64:64-f80:128:128-n8:16:32:64"
 target triple = "x86_64-apple-darwin10.3"
@@ -25,7 +25,7 @@ return:                                           ; preds = %entry
 }
 
 
-;; CHECK-LABEL: @bonk(
+;; CHECK: @bonk
 ;; CHECK: call void @foo(i32 42)
 define void @bonk() nounwind ssp {
 entry:
@@ -62,7 +62,7 @@ return:                                           ; preds = %entry
 }
 
 
-; CHECK-LABEL: @top_level(
+; CHECK: @top_level
 ; CHECK: call void @f2(i32 122
 ; Here we inline one instance of the cycle, but we don't want to completely
 ; unroll it.
@@ -100,7 +100,7 @@ one.else:
 }
 
 define i32 @fib_caller() {
-; CHECK-LABEL: @fib_caller(
+; CHECK: @fib_caller
 ; CHECK-NOT: call
 ; CHECK: ret
   %f1 = call i32 @fib(i32 0)

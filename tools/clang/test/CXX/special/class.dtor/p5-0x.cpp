@@ -88,10 +88,9 @@ struct C4 : virtual InaccessibleDtor { C4(); } c4; // expected-error {{deleted f
 class D1 {
   void operator delete(void*);
 public:
-  virtual ~D1() = default; // expected-note {{here}}
+  virtual ~D1() = default;
 } d1; // ok
-struct D2 : D1 { // expected-note {{virtual destructor requires an unambiguous, accessible 'operator delete'}} \
-                 // expected-error {{deleted function '~D2' cannot override a non-deleted}}
+struct D2 : D1 { // expected-note {{virtual destructor requires an unambiguous, accessible 'operator delete'}}
   // implicitly-virtual destructor
 } d2; // expected-error {{deleted function}}
 struct D3 { // expected-note {{virtual destructor requires an unambiguous, accessible 'operator delete'}}

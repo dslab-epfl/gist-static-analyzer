@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -E %s | FileCheck %s
+// RUN: %clang_cc1 -E %s | grep 'a: "and"'
 
 #define X(A) #A
 
@@ -8,5 +8,4 @@
 //
 // This should be spelled as 'and', not '&&'
 a: X(and)
-// CHECK: a: "and"
 

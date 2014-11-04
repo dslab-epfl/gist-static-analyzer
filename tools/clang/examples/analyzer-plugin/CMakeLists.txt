@@ -1,10 +1,23 @@
-add_llvm_loadable_module(SampleAnalyzerPlugin MainCallChecker.cpp)
+set(MODULE TRUE)
 
-if(LLVM_ENABLE_PLUGINS AND (WIN32 OR CYGWIN))
-  target_link_libraries(SampleAnalyzerPlugin ${cmake_2_8_12_PRIVATE}
-    clangAnalysis
-    clangAST
-    clangStaticAnalyzerCore
-    LLVMSupport
-    )
-endif()
+set( LLVM_LINK_COMPONENTS support mc)
+
+add_clang_library(SampleAnalyzerPlugin MainCallChecker.cpp)
+
+add_dependencies(SampleAnalyzerPlugin
+  ClangAttrClasses
+  ClangAttrList
+  ClangCommentNodes
+  ClangDeclNodes
+  ClangDiagnosticCommon
+  ClangStmtNodes
+  )
+
+target_link_libraries(SampleAnalyzerPlugin
+  clangStaticAnalyzerCore
+  )
+
+set_target_properties(SampleAnalyzerPlugin
+  PROPERTIES
+  LINKER_LANGUAGE CXX
+  PREFIX "")

@@ -20,8 +20,6 @@ MCSectionCOFF::~MCSectionCOFF() {} // anchor.
 // should be printed before the section name
 bool MCSectionCOFF::ShouldOmitSectionDirective(StringRef Name,
                                                const MCAsmInfo &MAI) const {
-  if (COMDATSymbol)
-    return false;
 
   // FIXME: Does .section .bss/.data/.text work everywhere??
   if (Name == ".text" || Name == ".data" || Name == ".bss")
@@ -30,15 +28,8 @@ bool MCSectionCOFF::ShouldOmitSectionDirective(StringRef Name,
   return false;
 }
 
-void MCSectionCOFF::setSelection(int Selection) const {
-  assert(Selection != 0 && "invalid COMDAT selection type");
-  this->Selection = Selection;
-  Characteristics |= COFF::IMAGE_SCN_LNK_COMDAT;
-}
-
 void MCSectionCOFF::PrintSwitchToSection(const MCAsmInfo &MAI,
-                                         raw_ostream &OS,
-                                         const MCExpr *Subsection) const {
+                                         raw_ostream &OS) const {
 
   // standard sections don't require the '.section'
   if (ShouldOmitSectionDirective(SectionName, MAI)) {
@@ -47,56 +38,41 @@ void MCSectionCOFF::PrintSwitchToSection(const MCAsmInfo &MAI,
   }
 
   OS << "\t.section\t" << getSectionName() << ",\"";
-  if (getCharacteristics() & COFF::IMAGE_SCN_MEM_EXECUTE)
+  if (getKind().isText())
     OS << 'x';
-  if (getCharacteristics() & COFF::IMAGE_SCN_MEM_WRITE)
+  if (getKind().isWriteable())
     OS << 'w';
-  else if (getCharacteristics() & COFF::IMAGE_SCN_MEM_READ)
-    OS << 'r';
   else
-    OS << 'y';
-  if (getCharacteristics() & COFF::IMAGE_SCN_CNT_INITIALIZED_DATA)
-    OS << 'd';
-  if (getCharacteristics() & COFF::IMAGE_SCN_CNT_UNINITIALIZED_DATA)
-    OS << 'b';
-  if (getCharacteristics() & COFF::IMAGE_SCN_LNK_REMOVE)
+    OS << 'r';
+  if (getCharacteristics() & COFF::IMAGE_SCN_MEM_DISCARDABLE)
     OS << 'n';
-  if (getCharacteristics() & COFF::IMAGE_SCN_MEM_SHARED)
-    OS << 's';
-  OS << '"';
+  OS << "\"\n";
 
   if (getCharacteristics() & COFF::IMAGE_SCN_LNK_COMDAT) {
-    OS << ",";
     switch (Selection) {
       case COFF::IMAGE_COMDAT_SELECT_NODUPLICATES:
-        OS << "one_only,";
+        OS << "\t.linkonce one_only\n";
         break;
       case COFF::IMAGE_COMDAT_SELECT_ANY:
-        OS << "discard,";
+        OS << "\t.linkonce discard\n";
         break;
       case COFF::IMAGE_COMDAT_SELECT_SAME_SIZE:
-        OS << "same_size,";
+        OS << "\t.linkonce same_size\n";
         break;
       case COFF::IMAGE_COMDAT_SELECT_EXACT_MATCH:
-        OS << "same_contents,";
+        OS << "\t.linkonce same_contents\n";
         break;
-      case COFF::IMAGE_COMDAT_SELECT_ASSOCIATIVE:
-        OS << "associative,";
-        break;
+    //NOTE: as of binutils 2.20, there is no way to specifiy select largest
+    //      with the .linkonce directive. For now, we treat it as an invalid
+    //      comdat selection value.
       case COFF::IMAGE_COMDAT_SELECT_LARGEST:
-        OS << "largest,";
-        break;
-      case COFF::IMAGE_COMDAT_SELECT_NEWEST:
-        OS << "newest,";
-        break;
+    //  OS << "\t.linkonce largest\n";
+    //  break;
       default:
         assert (0 && "unsupported COFF selection type");
         break;
     }
-    assert(COMDATSymbol);
-    OS << *COMDATSymbol;
   }
-  OS << '\n';
 }
 
 bool MCSectionCOFF::UseCodeAlign() const {

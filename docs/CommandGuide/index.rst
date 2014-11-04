@@ -1,3 +1,5 @@
+.. _commands:
+
 LLVM Command Guide
 ------------------
 
@@ -21,14 +23,13 @@ Basic Commands
    lli
    llvm-link
    llvm-ar
+   llvm-ranlib
    llvm-nm
+   llvm-prof
    llvm-config
    llvm-diff
    llvm-cov
-   llvm-profdata
    llvm-stress
-   llvm-symbolizer
-   llvm-dwarfdump
 
 Debugging Tools
 ~~~~~~~~~~~~~~~
@@ -50,4 +51,3 @@ Developer Tools
    tblgen
    lit
    llvm-build
-   llvm-readobj

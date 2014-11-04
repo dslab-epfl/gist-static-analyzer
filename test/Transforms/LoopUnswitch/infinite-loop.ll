@@ -1,4 +1,3 @@
-; REQUIRES: asserts
 ; RUN: opt -loop-unswitch -disable-output -stats -info-output-file - < %s | FileCheck --check-prefix=STATS %s
 ; RUN: opt -loop-unswitch -simplifycfg -S < %s | FileCheck %s
 ; PR5373
@@ -11,7 +10,7 @@
 ; STATS: 2 loop-unswitch - Number of branches unswitched
 ; STATS: 1 loop-unswitch - Number of unswitches that are trivial
 
-; CHECK-LABEL: @func_16(
+; CHECK: @func_16
 ; CHECK-NEXT: entry:
 ; CHECK-NEXT: br i1 %a, label %entry.split, label %abort0.split
 
@@ -22,11 +21,11 @@
 ; CHECK-NEXT: br label %cond.end.us
 
 ; CHECK: abort0.split:
-; CHECK-NEXT: call void @end0() [[NOR_NUW:#[0-9]+]]
+; CHECK-NEXT: call void @end0() noreturn nounwind
 ; CHECK-NEXT: unreachable
 
 ; CHECK: abort1:
-; CHECK-NEXT: call void @end1() [[NOR_NUW]]
+; CHECK-NEXT: call void @end1() noreturn nounwind
 ; CHECK-NEXT: unreachable
 
 ; CHECK: }
@@ -52,7 +51,3 @@ abort1:
 
 declare void @end0() noreturn
 declare void @end1() noreturn
-
-; CHECK: attributes #0 = { nounwind }
-; CHECK: attributes #1 = { noreturn }
-; CHECK: attributes [[NOR_NUW]] = { noreturn nounwind }

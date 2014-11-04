@@ -35,43 +35,40 @@ class MCSymbol;
 
 /// MachineOperand class - Representation of each machine instruction operand.
 ///
-/// This class isn't a POD type because it has a private constructor, but its
-/// destructor must be trivial. Functions like MachineInstr::addOperand(),
-/// MachineRegisterInfo::moveOperands(), and MF::DeleteMachineInstr() depend on
-/// not having to call the MachineOperand destructor.
-///
 class MachineOperand {
 public:
-  enum MachineOperandType : unsigned char {
-    MO_Register,          ///< Register operand.
-    MO_Immediate,         ///< Immediate operand
-    MO_CImmediate,        ///< Immediate >64bit operand
-    MO_FPImmediate,       ///< Floating-point immediate operand
-    MO_MachineBasicBlock, ///< MachineBasicBlock reference
-    MO_FrameIndex,        ///< Abstract Stack Frame Index
-    MO_ConstantPoolIndex, ///< Address of indexed Constant in Constant Pool
-    MO_TargetIndex,       ///< Target-dependent index+offset operand.
-    MO_JumpTableIndex,    ///< Address of indexed Jump Table for switch
-    MO_ExternalSymbol,    ///< Name of external global symbol
-    MO_GlobalAddress,     ///< Address of a global value
-    MO_BlockAddress,      ///< Address of a basic block
-    MO_RegisterMask,      ///< Mask of preserved registers.
-    MO_RegisterLiveOut,   ///< Mask of live-out registers.
-    MO_Metadata,          ///< Metadata reference (for debug info)
-    MO_MCSymbol,          ///< MCSymbol reference (for debug/eh info)
-    MO_CFIIndex           ///< MCCFIInstruction index.
+  enum MachineOperandType {
+    MO_Register,               ///< Register operand.
+    MO_Immediate,              ///< Immediate operand
+    MO_CImmediate,             ///< Immediate >64bit operand
+    MO_FPImmediate,            ///< Floating-point immediate operand
+    MO_MachineBasicBlock,      ///< MachineBasicBlock reference
+    MO_FrameIndex,             ///< Abstract Stack Frame Index
+    MO_ConstantPoolIndex,      ///< Address of indexed Constant in Constant Pool
+    MO_TargetIndex,            ///< Target-dependent index+offset operand.
+    MO_JumpTableIndex,         ///< Address of indexed Jump Table for switch
+    MO_ExternalSymbol,         ///< Name of external global symbol
+    MO_GlobalAddress,          ///< Address of a global value
+    MO_BlockAddress,           ///< Address of a basic block
+    MO_RegisterMask,           ///< Mask of preserved registers.
+    MO_Metadata,               ///< Metadata reference (for debug info)
+    MO_MCSymbol                ///< MCSymbol reference (for debug/eh info)
   };
 
 private:
   /// OpKind - Specify what kind of operand this is.  This discriminates the
   /// union.
-  MachineOperandType OpKind;
+  unsigned char OpKind; // MachineOperandType
 
-  /// Subregister number for MO_Register.  A value of 0 indicates the
-  /// MO_Register has no subReg.
-  ///
-  /// For all other kinds of operands, this field holds target-specific flags.
-  unsigned SubReg_TargetFlags : 12;
+  // This union is discriminated by OpKind.
+  union {
+    /// SubReg - Subregister number, only valid for MO_Register.  A value of 0
+    /// indicates the MO_Register has no subReg.
+    unsigned char SubReg;
+
+    /// TargetFlags - This is a set of target-specific operand flags.
+    unsigned char TargetFlags;
+  };
 
   /// TiedTo - Non-zero when this register operand is tied to another register
   /// operand. The encoding of this field is described in the block comment
@@ -151,14 +148,13 @@ private:
 
   /// Contents union - This contains the payload for the various operand types.
   union {
-    MachineBasicBlock *MBB;  // For MO_MachineBasicBlock.
-    const ConstantFP *CFP;   // For MO_FPImmediate.
-    const ConstantInt *CI;   // For MO_CImmediate. Integers > 64bit.
-    int64_t ImmVal;          // For MO_Immediate.
-    const uint32_t *RegMask; // For MO_RegisterMask and MO_RegisterLiveOut.
-    const MDNode *MD;        // For MO_Metadata.
-    MCSymbol *Sym;           // For MO_MCSymbol.
-    unsigned CFIIndex;       // For MO_CFI.
+    MachineBasicBlock *MBB;   // For MO_MachineBasicBlock.
+    const ConstantFP *CFP;    // For MO_FPImmediate.
+    const ConstantInt *CI;    // For MO_CImmediate. Integers > 64bit.
+    int64_t ImmVal;           // For MO_Immediate.
+    const uint32_t *RegMask;  // For MO_RegisterMask.
+    const MDNode *MD;         // For MO_Metadata.
+    MCSymbol *Sym;            // For MO_MCSymbol
 
     struct {                  // For MO_Register.
       // Register number is in SmallContents.RegNo.
@@ -180,25 +176,24 @@ private:
     } OffsetedInfo;
   } Contents;
 
-  explicit MachineOperand(MachineOperandType K)
-    : OpKind(K), SubReg_TargetFlags(0), ParentMI(nullptr) {}
+  explicit MachineOperand(MachineOperandType K) : OpKind(K), ParentMI(0) {
+    TargetFlags = 0;
+  }
 public:
   /// getType - Returns the MachineOperandType for this operand.
   ///
   MachineOperandType getType() const { return (MachineOperandType)OpKind; }
 
-  unsigned getTargetFlags() const {
-    return isReg() ? 0 : SubReg_TargetFlags;
+  unsigned char getTargetFlags() const {
+    return isReg() ? 0 : TargetFlags;
   }
-  void setTargetFlags(unsigned F) {
+  void setTargetFlags(unsigned char F) {
     assert(!isReg() && "Register operands can't have target flags");
-    SubReg_TargetFlags = F;
-    assert(SubReg_TargetFlags == F && "Target flags out of range");
+    TargetFlags = F;
   }
-  void addTargetFlag(unsigned F) {
+  void addTargetFlag(unsigned char F) {
     assert(!isReg() && "Register operands can't have target flags");
-    SubReg_TargetFlags |= F;
-    assert((SubReg_TargetFlags & F) && "Target flags out of range");
+    TargetFlags |= F;
   }
 
 
@@ -215,9 +210,9 @@ public:
   ///
   /// Never call clearParent() on an operand in a MachineInstr.
   ///
-  void clearParent() { ParentMI = nullptr; }
+  void clearParent() { ParentMI = 0; }
 
-  void print(raw_ostream &os, const TargetMachine *TM = nullptr) const;
+  void print(raw_ostream &os, const TargetMachine *TM = 0) const;
 
   //===--------------------------------------------------------------------===//
   // Accessors that tell you what kind of MachineOperand you're looking at.
@@ -227,7 +222,7 @@ public:
   bool isReg() const { return OpKind == MO_Register; }
   /// isImm - Tests if this is a MO_Immediate operand.
   bool isImm() const { return OpKind == MO_Immediate; }
-  /// isCImm - Test if this is a MO_CImmediate operand.
+  /// isCImm - Test if t his is a MO_CImmediate operand.
   bool isCImm() const { return OpKind == MO_CImmediate; }
   /// isFPImm - Tests if this is a MO_FPImmediate operand.
   bool isFPImm() const { return OpKind == MO_FPImmediate; }
@@ -249,12 +244,10 @@ public:
   bool isBlockAddress() const { return OpKind == MO_BlockAddress; }
   /// isRegMask - Tests if this is a MO_RegisterMask operand.
   bool isRegMask() const { return OpKind == MO_RegisterMask; }
-  /// isRegLiveOut - Tests if this is a MO_RegisterLiveOut operand.
-  bool isRegLiveOut() const { return OpKind == MO_RegisterLiveOut; }
   /// isMetadata - Tests if this is a MO_Metadata operand.
   bool isMetadata() const { return OpKind == MO_Metadata; }
   bool isMCSymbol() const { return OpKind == MO_MCSymbol; }
-  bool isCFIIndex() const { return OpKind == MO_CFIIndex; }
+
 
   //===--------------------------------------------------------------------===//
   // Accessors for Register Operands
@@ -268,7 +261,7 @@ public:
 
   unsigned getSubReg() const {
     assert(isReg() && "Wrong MachineOperand accessor");
-    return SubReg_TargetFlags;
+    return (unsigned)SubReg;
   }
 
   bool isUse() const {
@@ -343,8 +336,7 @@ public:
 
   void setSubReg(unsigned subReg) {
     assert(isReg() && "Wrong MachineOperand accessor");
-    SubReg_TargetFlags = subReg;
-    assert(SubReg_TargetFlags == subReg && "SubReg out of range");
+    SubReg = (unsigned char)subReg;
   }
 
   /// substVirtReg - Substitute the current register with the virtual
@@ -396,7 +388,7 @@ public:
   }
 
   void setIsDebug(bool Val = true) {
-    assert(isReg() && !IsDef && "Wrong MachineOperand accessor");
+    assert(isReg() && IsDef && "Wrong MachineOperand accessor");
     IsDebug = Val;
   }
 
@@ -445,11 +437,6 @@ public:
     return Contents.Sym;
   }
 
-  unsigned getCFIIndex() const {
-    assert(isCFIIndex() && "Wrong MachineOperand accessor");
-    return Contents.CFIIndex;
-  }
-
   /// getOffset - Return the offset from the symbol in this operand. This always
   /// returns 0 for ExternalSymbol operands.
   int64_t getOffset() const {
@@ -486,12 +473,6 @@ public:
     return Contents.RegMask;
   }
 
-  /// getRegLiveOut - Returns a bit mask of live-out registers.
-  const uint32_t *getRegLiveOut() const {
-    assert(isRegLiveOut() && "Wrong MachineOperand accessor");
-    return Contents.RegMask;
-  }
-
   const MDNode *getMetadata() const {
     assert(isMetadata() && "Wrong MachineOperand accessor");
     return Contents.MD;
@@ -504,11 +485,6 @@ public:
   void setImm(int64_t immVal) {
     assert(isImm() && "Wrong MachineOperand mutator");
     Contents.ImmVal = immVal;
-  }
-
-  void setFPImm(const ConstantFP *CFP) {
-    assert(isFPImm() && "Wrong MachineOperand mutator");
-    Contents.CFP = CFP;
   }
 
   void setOffset(int64_t Offset) {
@@ -549,11 +525,6 @@ public:
   /// the setImm method should be used.
   void ChangeToImmediate(int64_t ImmVal);
 
-  /// ChangeToFPImmediate - Replace this operand with a new FP immediate operand
-  /// of the specified value.  If an operand is known to be an FP immediate
-  /// already, the setFPImm method should be used.
-  void ChangeToFPImmediate(const ConstantFP *FPImm);
-
   /// ChangeToRegister - Replace this operand with a new register operand of
   /// the specified value.  If an operand is known to be an register already,
   /// the setReg method should be used.
@@ -590,8 +561,6 @@ public:
                                   unsigned SubReg = 0,
                                   bool isDebug = false,
                                   bool isInternalRead = false) {
-    assert(!(isDead && !isDef) && "Dead flag on non-def");
-    assert(!(isKill && isDef) && "Kill flag on def");
     MachineOperand Op(MachineOperand::MO_Register);
     Op.IsDef = isDef;
     Op.IsImp = isImp;
@@ -603,9 +572,9 @@ public:
     Op.TiedTo = 0;
     Op.IsDebug = isDebug;
     Op.SmallContents.RegNo = Reg;
-    Op.Contents.Reg.Prev = nullptr;
-    Op.Contents.Reg.Next = nullptr;
-    Op.setSubReg(SubReg);
+    Op.Contents.Reg.Prev = 0;
+    Op.Contents.Reg.Next = 0;
+    Op.SubReg = SubReg;
     return Op;
   }
   static MachineOperand CreateMBB(MachineBasicBlock *MBB,
@@ -685,12 +654,6 @@ public:
     Op.Contents.RegMask = Mask;
     return Op;
   }
-  static MachineOperand CreateRegLiveOut(const uint32_t *Mask) {
-    assert(Mask && "Missing live-out register mask");
-    MachineOperand Op(MachineOperand::MO_RegisterLiveOut);
-    Op.Contents.RegMask = Mask;
-    return Op;
-  }
   static MachineOperand CreateMetadata(const MDNode *Meta) {
     MachineOperand Op(MachineOperand::MO_Metadata);
     Op.Contents.MD = Meta;
@@ -703,17 +666,9 @@ public:
     return Op;
   }
 
-  static MachineOperand CreateCFIIndex(unsigned CFIIndex) {
-    MachineOperand Op(MachineOperand::MO_CFIIndex);
-    Op.Contents.CFIIndex = CFIIndex;
-    return Op;
-  }
-
   friend class MachineInstr;
   friend class MachineRegisterInfo;
 private:
-  void removeRegFromUses();
-
   //===--------------------------------------------------------------------===//
   // Methods for handling register use/def lists.
   //===--------------------------------------------------------------------===//
@@ -723,12 +678,12 @@ private:
   /// part of a machine instruction.
   bool isOnRegUseList() const {
     assert(isReg() && "Can only add reg operand to use lists");
-    return Contents.Reg.Prev != nullptr;
+    return Contents.Reg.Prev != 0;
   }
 };
 
 inline raw_ostream &operator<<(raw_ostream &OS, const MachineOperand& MO) {
-  MO.print(OS, nullptr);
+  MO.print(OS, 0);
   return OS;
 }
 

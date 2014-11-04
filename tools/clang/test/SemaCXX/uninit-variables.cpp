@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -Wuninitialized -fsyntax-only -fcxx-exceptions %s -verify -std=c++1y
+// RUN: %clang_cc1 -fsyntax-only -Wuninitialized -fsyntax-only -fcxx-exceptions %s -verify
 
 // Stub out types for 'typeid' to work.
 namespace std { class type_info {}; }
@@ -147,6 +147,3 @@ int test_const_ref() {
   consume_const_ref(n);
   return n; // expected-warning {{uninitialized when used here}}
 }
-
-// Don't crash here.
-auto PR19996 = [a=0]{int t; return a;};

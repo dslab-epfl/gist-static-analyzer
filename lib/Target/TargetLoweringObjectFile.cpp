@@ -13,24 +13,21 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Target/TargetLoweringObjectFile.h"
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/DataLayout.h"
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/GlobalVariable.h"
-#include "llvm/IR/Mangler.h"
-#include "llvm/MC/MCAsmInfo.h"
+#include "llvm/Constants.h"
+#include "llvm/DerivedTypes.h"
+#include "llvm/Function.h"
+#include "llvm/GlobalVariable.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSymbol.h"
+#include "llvm/Target/Mangler.h"
+#include "llvm/DataLayout.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetOptions.h"
 #include "llvm/Support/Dwarf.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/TargetLowering.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetOptions.h"
-#include "llvm/Target/TargetSubtargetInfo.h"
 using namespace llvm;
 
 //===----------------------------------------------------------------------===//
@@ -43,11 +40,10 @@ using namespace llvm;
 void TargetLoweringObjectFile::Initialize(MCContext &ctx,
                                           const TargetMachine &TM) {
   Ctx = &ctx;
-  DL = TM.getSubtargetImpl()->getDataLayout();
   InitMCObjectFileInfo(TM.getTargetTriple(),
                        TM.getRelocationModel(), TM.getCodeModel(), *Ctx);
 }
-
+  
 TargetLoweringObjectFile::~TargetLoweringObjectFile() {
 }
 
@@ -63,7 +59,7 @@ static bool isSuitableForBSS(const GlobalVariable *GV, bool NoZerosInBSS) {
     return false;
 
   // If the global has an explicit section specified, don't put it in BSS.
-  if (GV->hasSection())
+  if (!GV->getSection().empty())
     return false;
 
   // If -nozero-initialized-in-bss is specified, don't ever use BSS.
@@ -101,22 +97,10 @@ static bool IsNullTerminatedString(const Constant *C) {
   return false;
 }
 
-MCSymbol *TargetLoweringObjectFile::getSymbolWithGlobalValueBase(
-    const GlobalValue *GV, StringRef Suffix, Mangler &Mang,
-    const TargetMachine &TM) const {
-  assert(!Suffix.empty());
-
-  SmallString<60> NameStr;
-  NameStr += DL->getPrivateGlobalPrefix();
-  TM.getNameWithPrefix(NameStr, GV, Mang);
-  NameStr.append(Suffix.begin(), Suffix.end());
-  return Ctx->GetOrCreateSymbol(NameStr.str());
-}
-
-MCSymbol *TargetLoweringObjectFile::getCFIPersonalitySymbol(
-    const GlobalValue *GV, Mangler &Mang, const TargetMachine &TM,
-    MachineModuleInfo *MMI) const {
-  return TM.getSymbol(GV, Mang);
+MCSymbol *TargetLoweringObjectFile::
+getCFIPersonalitySymbol(const GlobalValue *GV, Mangler *Mang,
+                        MachineModuleInfo *MMI) const {
+  return Mang->getSymbol(GV);
 }
 
 void TargetLoweringObjectFile::emitPersonalityValue(MCStreamer &Streamer,
@@ -139,7 +123,7 @@ SectionKind TargetLoweringObjectFile::getKindForGlobal(const GlobalValue *GV,
 
   // Early exit - functions should be always in text sections.
   const GlobalVariable *GVar = dyn_cast<GlobalVariable>(GV);
-  if (!GVar)
+  if (GVar == 0)
     return SectionKind::getText();
 
   // Handle thread-local data first.
@@ -200,8 +184,7 @@ SectionKind TargetLoweringObjectFile::getKindForGlobal(const GlobalValue *GV,
       // Otherwise, just drop it into a mergable constant section.  If we have
       // a section for this size, use it, otherwise use the arbitrary sized
       // mergable section.
-      switch (TM.getSubtargetImpl()->getDataLayout()->getTypeAllocSize(
-          C->getType())) {
+      switch (TM.getDataLayout()->getTypeAllocSize(C->getType())) {
       case 4:  return SectionKind::getMergeableConst4();
       case 8:  return SectionKind::getMergeableConst8();
       case 16: return SectionKind::getMergeableConst16();
@@ -259,7 +242,7 @@ SectionKind TargetLoweringObjectFile::getKindForGlobal(const GlobalValue *GV,
 /// the specified global variable or function definition.  This should not
 /// be passed external (or available externally) globals.
 const MCSection *TargetLoweringObjectFile::
-SectionForGlobal(const GlobalValue *GV, SectionKind Kind, Mangler &Mang,
+SectionForGlobal(const GlobalValue *GV, SectionKind Kind, Mangler *Mang,
                  const TargetMachine &TM) const {
   // Select section name.
   if (GV->hasSection())
@@ -270,26 +253,22 @@ SectionForGlobal(const GlobalValue *GV, SectionKind Kind, Mangler &Mang,
   return SelectSectionForGlobal(GV, Kind, Mang, TM);
 }
 
-bool TargetLoweringObjectFile::isSectionAtomizableBySymbols(
-    const MCSection &Section) const {
-  return false;
-}
 
 // Lame default implementation. Calculate the section name for global.
 const MCSection *
 TargetLoweringObjectFile::SelectSectionForGlobal(const GlobalValue *GV,
                                                  SectionKind Kind,
-                                                 Mangler &Mang,
+                                                 Mangler *Mang,
                                                  const TargetMachine &TM) const{
   assert(!Kind.isThreadLocal() && "Doesn't support TLS");
 
   if (Kind.isText())
     return getTextSection();
 
-  if (Kind.isBSS() && BSSSection != nullptr)
+  if (Kind.isBSS() && BSSSection != 0)
     return BSSSection;
 
-  if (Kind.isReadOnly() && ReadOnlySection != nullptr)
+  if (Kind.isReadOnly() && ReadOnlySection != 0)
     return ReadOnlySection;
 
   return getDataSection();
@@ -299,49 +278,42 @@ TargetLoweringObjectFile::SelectSectionForGlobal(const GlobalValue *GV,
 /// specified size and relocation information, return a section that it
 /// should be placed in.
 const MCSection *
-TargetLoweringObjectFile::getSectionForConstant(SectionKind Kind,
-                                                const Constant *C) const {
-  if (Kind.isReadOnly() && ReadOnlySection != nullptr)
+TargetLoweringObjectFile::getSectionForConstant(SectionKind Kind) const {
+  if (Kind.isReadOnly() && ReadOnlySection != 0)
     return ReadOnlySection;
 
   return DataSection;
 }
 
-/// getTTypeGlobalReference - Return an MCExpr to use for a
+/// getExprForDwarfGlobalReference - Return an MCExpr to use for a
 /// reference to the specified global variable from exception
 /// handling information.
-const MCExpr *TargetLoweringObjectFile::getTTypeGlobalReference(
-    const GlobalValue *GV, unsigned Encoding, Mangler &Mang,
-    const TargetMachine &TM, MachineModuleInfo *MMI,
-    MCStreamer &Streamer) const {
-  const MCSymbolRefExpr *Ref =
-      MCSymbolRefExpr::Create(TM.getSymbol(GV, Mang), getContext());
-
-  return getTTypeReference(Ref, Encoding, Streamer);
+const MCExpr *TargetLoweringObjectFile::
+getExprForDwarfGlobalReference(const GlobalValue *GV, Mangler *Mang,
+                               MachineModuleInfo *MMI, unsigned Encoding,
+                               MCStreamer &Streamer) const {
+  const MCSymbol *Sym = Mang->getSymbol(GV);
+  return getExprForDwarfReference(Sym, Encoding, Streamer);
 }
 
 const MCExpr *TargetLoweringObjectFile::
-getTTypeReference(const MCSymbolRefExpr *Sym, unsigned Encoding,
-                  MCStreamer &Streamer) const {
+getExprForDwarfReference(const MCSymbol *Sym, unsigned Encoding,
+                         MCStreamer &Streamer) const {
+  const MCExpr *Res = MCSymbolRefExpr::Create(Sym, getContext());
+
   switch (Encoding & 0x70) {
   default:
     report_fatal_error("We do not support this DWARF encoding yet!");
   case dwarf::DW_EH_PE_absptr:
     // Do nothing special
-    return Sym;
+    return Res;
   case dwarf::DW_EH_PE_pcrel: {
     // Emit a label to the streamer for the current position.  This gives us
     // .-foo addressing.
     MCSymbol *PCSym = getContext().CreateTempSymbol();
     Streamer.EmitLabel(PCSym);
     const MCExpr *PC = MCSymbolRefExpr::Create(PCSym, getContext());
-    return MCBinaryExpr::CreateSub(Sym, PC, getContext());
+    return MCBinaryExpr::CreateSub(Res, PC, getContext());
   }
   }
-}
-
-const MCExpr *TargetLoweringObjectFile::getDebugThreadLocalSymbol(const MCSymbol *Sym) const {
-  // FIXME: It's not clear what, if any, default this should have - perhaps a
-  // null return could mean 'no location' & we should just do that here.
-  return MCSymbolRefExpr::Create(Sym, *Ctx);
 }

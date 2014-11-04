@@ -2,6 +2,8 @@
 Sphinx Quickstart Template
 ==========================
 
+.. sectionauthor:: Sean Silva <silvas@purdue.edu>
+
 Introduction and Quickstart
 ===========================
 
@@ -22,8 +24,7 @@ reStructuredText syntax is useful when writing the document, so the last
 ~half of this document (starting with `Example Section`_) gives examples
 which should cover 99% of use cases.
 
-Let me say that again: focus on *content*. But if you really need to verify
-Sphinx's output, see ``docs/README.txt`` for information.
+Let me say that again: focus on *content*.
 
 Once you have finished with the content, please send the ``.rst`` file to
 llvm-commits for review.
@@ -64,7 +65,7 @@ Your text can be *emphasized*, **bold**, or ``monospace``.
 
 Use blank lines to separate paragraphs.
 
-Headings (like ``Example Section`` just above) give your document its
+Headings (like ``Example Section`` just above) give your document
 structure. Use the same kind of adornments (e.g. ``======`` vs. ``------``)
 as are used in this document. The adornment must be the same length as the
 text above it. For Vim users, variations of ``yypVr=`` might be handy.
@@ -85,7 +86,7 @@ Lists can be made like this:
 
 #. This is a second list element.
 
-   #. Use indentation to create nested lists.
+   #. They nest too.
 
 You can also use unordered lists.
 
@@ -103,53 +104,17 @@ You can make blocks of code like this:
 .. code-block:: c++
 
    int main() {
-     return 0;
+     return 0
    }
 
-For a shell session, use a ``console`` code block (some existing docs use
-``bash``):
+For a shell session, use a ``bash`` code block:
 
-.. code-block:: console
+.. code-block:: bash
 
    $ echo "Goodbye cruel world!"
    $ rm -rf /
 
 If you need to show LLVM IR use the ``llvm`` code block.
-
-.. code-block:: llvm
-
-   define i32 @test1() {
-   entry:
-     ret i32 0
-   }
-
-Some other common code blocks you might need are ``c``, ``objc``, ``make``,
-and ``cmake``. If you need something beyond that, you can look at the `full
-list`_ of supported code blocks.
-
-.. _`full list`: http://pygments.org/docs/lexers/
-
-However, don't waste time fiddling with syntax highlighting when you could
-be adding meaningful content. When in doubt, show preformatted text
-without any syntax highlighting like this:
-
-::
-
-                          .
-                           +:.
-                       ..:: ::
-                    .++:+:: ::+:.:.
-                   .:+           :
-            ::.::..::            .+.
-          ..:+    ::              :
-    ......+:.                    ..
-          :++.    ..              :
-            .+:::+::              :
-            ..   . .+            ::
-                     +.:      .::+.
-                      ...+. .: .
-                         .++:..
-                          ...
 
 Hopefully you won't need to be this deep
 """"""""""""""""""""""""""""""""""""""""

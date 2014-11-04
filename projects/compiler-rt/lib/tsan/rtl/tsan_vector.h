@@ -58,35 +58,18 @@ class Vector {
     return begin_[i];
   }
 
-  T *PushBack() {
+  T *PushBack(T v = T()) {
     EnsureSize(Size() + 1);
-    T *p = &end_[-1];
-    internal_memset(p, 0, sizeof(*p));
-    return p;
-  }
-
-  T *PushBack(const T& v) {
-    EnsureSize(Size() + 1);
-    T *p = &end_[-1];
-    internal_memcpy(p, &v, sizeof(*p));
-    return p;
-  }
-
-  void PopBack() {
-    DCHECK_GT(end_, begin_);
-    end_--;
+    end_[-1] = v;
+    return &end_[-1];
   }
 
   void Resize(uptr size) {
-    if (size == 0) {
-      end_ = begin_;
-      return;
-    }
     uptr old_size = Size();
     EnsureSize(size);
     if (old_size < size) {
       for (uptr i = old_size; i < size; i++)
-        internal_memset(&begin_[i], 0, sizeof(begin_[i]));
+        begin_[i] = T();
     }
   }
 
@@ -104,7 +87,7 @@ class Vector {
       return;
     }
     uptr cap0 = last_ - begin_;
-    uptr cap = cap0 * 5 / 4;  // 25% growth
+    uptr cap = 2 * cap0;
     if (cap == 0)
       cap = 16;
     if (cap < size)
@@ -122,6 +105,6 @@ class Vector {
   Vector(const Vector&);
   void operator=(const Vector&);
 };
-}  // namespace __tsan
+}
 
 #endif  // #ifndef TSAN_VECTOR_H

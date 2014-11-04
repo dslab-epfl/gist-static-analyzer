@@ -18,17 +18,16 @@
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
-#include "llvm/Support/raw_ostream.h"
 
 using namespace clang;
 using namespace ento;
 
 namespace {
 class TraversalDumper : public Checker< check::BranchCondition,
-                                        check::EndFunction > {
+                                        check::EndPath > {
 public:
   void checkBranchCondition(const Stmt *Condition, CheckerContext &C) const;
-  void checkEndFunction(CheckerContext &C) const;
+  void checkEndPath(CheckerContext &C) const;
 };
 }
 
@@ -50,8 +49,8 @@ void TraversalDumper::checkBranchCondition(const Stmt *Condition,
                << Parent->getStmtClassName() << "\n";
 }
 
-void TraversalDumper::checkEndFunction(CheckerContext &C) const {
-  llvm::outs() << "--END FUNCTION--\n";
+void TraversalDumper::checkEndPath(CheckerContext &C) const {
+  llvm::outs() << "--END PATH--\n";
 }
 
 void ento::registerTraversalDumper(CheckerManager &mgr) {
@@ -61,18 +60,16 @@ void ento::registerTraversalDumper(CheckerManager &mgr) {
 //------------------------------------------------------------------------------
 
 namespace {
-class CallDumper : public Checker< check::PreCall,
-                                   check::PostCall > {
+class CallDumper : public Checker< check::PreCall > {
 public:
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const;
-  void checkPostCall(const CallEvent &Call, CheckerContext &C) const;
 };
 }
 
 void CallDumper::checkPreCall(const CallEvent &Call, CheckerContext &C) const {
   unsigned Indentation = 0;
   for (const LocationContext *LC = C.getLocationContext()->getParent();
-       LC != nullptr; LC = LC->getParent())
+       LC != 0; LC = LC->getParent())
     ++Indentation;
 
   // It is mildly evil to print directly to llvm::outs() rather than emitting
@@ -80,26 +77,6 @@ void CallDumper::checkPreCall(const CallEvent &Call, CheckerContext &C) const {
   // the static analyzer machinery.
   llvm::outs().indent(Indentation);
   Call.dump(llvm::outs());
-}
-
-void CallDumper::checkPostCall(const CallEvent &Call, CheckerContext &C) const {
-  const Expr *CallE = Call.getOriginExpr();
-  if (!CallE)
-    return;
-
-  unsigned Indentation = 0;
-  for (const LocationContext *LC = C.getLocationContext()->getParent();
-       LC != nullptr; LC = LC->getParent())
-    ++Indentation;
-
-  // It is mildly evil to print directly to llvm::outs() rather than emitting
-  // warnings, but this ensures things do not get filtered out by the rest of
-  // the static analyzer machinery.
-  llvm::outs().indent(Indentation);
-  if (Call.getResultType()->isVoidType())
-    llvm::outs() << "Returning void\n";
-  else
-    llvm::outs() << "Returning " << C.getSVal(CallE) << "\n";
 }
 
 void ento::registerCallDumper(CheckerManager &mgr) {

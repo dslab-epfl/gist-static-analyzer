@@ -3,7 +3,7 @@ template<int N> struct A; // expected-note 5{{template parameter is declared her
 
 A<0> *a0;
 
-A<int()> *a1; // expected-error{{template argument for non-type template parameter is treated as function type 'int ()'}}
+A<int()> *a1; // expected-error{{template argument for non-type template parameter is treated as type 'int ()'}}
 
 A<int> *a2; // expected-error{{template argument for non-type template parameter must be an expression}}
 
@@ -75,14 +75,11 @@ struct Z {
 
   int int_member;
   float float_member;
-  union {
-    int union_member;
-  };
 };
 template<int (Z::*pmf)(int)> struct A6; // expected-note{{template parameter is declared here}}
 A6<&Z::foo> *a17_1;
 A6<&Z::bar> *a17_2;
-A6<&Z::baz> *a17_3; // expected-error-re{{non-type template argument of type 'double (Z::*)(double){{( __attribute__\(\(thiscall\)\))?}}' cannot be converted to a value of type 'int (Z::*)(int){{( __attribute__\(\(thiscall\)\))?}}'}}
+A6<&Z::baz> *a17_3; // expected-error{{non-type template argument of type 'double (Z::*)(double)' cannot be converted to a value of type 'int (Z::*)(int)'}}
 
 
 template<int Z::*pm> struct A7;  // expected-note{{template parameter is declared here}}
@@ -91,7 +88,6 @@ A7<&Z::int_member> *a18_1;
 A7c<&Z::int_member> *a18_2;
 A7<&Z::float_member> *a18_3; // expected-error{{non-type template argument of type 'float Z::*' cannot be converted to a value of type 'int Z::*'}}
 A7c<(&Z::int_member)> *a18_4; // expected-warning{{address non-type template argument cannot be surrounded by parentheses}}
-A7c<&Z::union_member> *a18_5;
 
 template<unsigned char C> struct Overflow; // expected-note{{template parameter is declared here}}
 
@@ -256,16 +252,16 @@ namespace PR8372 {
 
 namespace PR9227 {
   template <bool B> struct enable_if_bool { };
-  template <> struct enable_if_bool<true> { typedef int type; }; // expected-note{{'enable_if_bool<true>::type' declared here}}
-  void test_bool() { enable_if_bool<false>::type i; } // expected-error{{enable_if_bool<false>'; did you mean 'enable_if_bool<true>::type'?}}
+  template <> struct enable_if_bool<true> { typedef int type; };
+  void test_bool() { enable_if_bool<false>::type i; } // expected-error{{enable_if_bool<false>}}
 
   template <char C> struct enable_if_char { };
-  template <> struct enable_if_char<'a'> { typedef int type; }; // expected-note 5{{'enable_if_char<'a'>::type' declared here}}
-  void test_char_0() { enable_if_char<0>::type i; } // expected-error{{enable_if_char<'\x00'>'; did you mean 'enable_if_char<'a'>::type'?}}
-  void test_char_b() { enable_if_char<'b'>::type i; } // expected-error{{enable_if_char<'b'>'; did you mean 'enable_if_char<'a'>::type'?}}
-  void test_char_possibly_negative() { enable_if_char<'\x02'>::type i; } // expected-error{{enable_if_char<'\x02'>'; did you mean 'enable_if_char<'a'>::type'?}}
-  void test_char_single_quote() { enable_if_char<'\''>::type i; } // expected-error{{enable_if_char<'\''>'; did you mean 'enable_if_char<'a'>::type'?}}
-  void test_char_backslash() { enable_if_char<'\\'>::type i; } // expected-error{{enable_if_char<'\\'>'; did you mean 'enable_if_char<'a'>::type'?}}
+  template <> struct enable_if_char<'a'> { typedef int type; };
+  void test_char_0() { enable_if_char<0>::type i; } // expected-error{{enable_if_char<'\x00'>}}
+  void test_char_b() { enable_if_char<'b'>::type i; } // expected-error{{enable_if_char<'b'>}}
+  void test_char_possibly_negative() { enable_if_char<'\x02'>::type i; } // expected-error{{enable_if_char<'\x02'>}}
+  void test_char_single_quote() { enable_if_char<'\''>::type i; } // expected-error{{enable_if_char<'\''>}}
+  void test_char_backslash() { enable_if_char<'\\'>::type i; } // expected-error{{enable_if_char<'\\'>}}
 }
 
 namespace PR10579 {
@@ -327,40 +323,3 @@ namespace PR10579 {
 
 template <int& I> struct PR10766 { static int *ip; };
 template <int& I> int* PR10766<I>::ip = &I;
-
-namespace rdar13000548 {
-  template<typename R, typename U, R F>
-  U f() { return &F; } // expected-error{{cannot take the address of an rvalue of type 'int (*)(int)'}} expected-error{{cannot take the address of an rvalue of type 'int *'}}
-
-  int g(int);
-  int y[3];
-  void test()
-  {
-    f<int(int), int (*)(int), g>(); // expected-note{{in instantiation of}}
-    f<int[3], int*, y>(); // expected-note{{in instantiation of}}
-  }
-
-}
-
-namespace rdar13806270 {
-  template <unsigned N> class X { };
-  const unsigned value = 32;
-  struct Y {
-    X<value + 1> x;
-  };
-  void foo() {}
-}
-
-namespace PR17696 {
-  struct a {
-    union {
-      int i;
-    };
-  };
-
-  template <int (a::*p)> struct b : a {
-    b() { this->*p = 0; }
-  };
-
-  b<&a::i> c; // okay
-}

@@ -12,10 +12,11 @@
 // Linux-specific interception methods.
 //===----------------------------------------------------------------------===//
 
-#if defined(__linux__) || defined(__FreeBSD__)
+#ifdef __linux__
 #include "interception.h"
 
-#include <dlfcn.h>   // for dlsym() and dlvsym()
+#include <stddef.h>  // for NULL
+#include <dlfcn.h>   // for dlsym
 
 namespace __interception {
 bool GetRealFunctionAddress(const char *func_name, uptr *func_addr,
@@ -23,14 +24,7 @@ bool GetRealFunctionAddress(const char *func_name, uptr *func_addr,
   *func_addr = (uptr)dlsym(RTLD_NEXT, func_name);
   return real == wrapper;
 }
-
-#if !defined(__ANDROID__)  // android does not have dlvsym
-void *GetFuncAddrVer(const char *func_name, const char *ver) {
-  return dlvsym(RTLD_NEXT, func_name, ver);
-}
-#endif  // !defined(__ANDROID__)
-
 }  // namespace __interception
 
 
-#endif  // __linux__ || __FreeBSD__
+#endif  // __linux__

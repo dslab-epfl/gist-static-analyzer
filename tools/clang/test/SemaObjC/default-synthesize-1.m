@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -Wobjc-missing-property-synthesis -verify -Wno-objc-root-class %s
+// RUN: %clang_cc1 -fsyntax-only -fobjc-default-synthesize-properties -Wobjc-missing-property-synthesis -verify -Wno-objc-root-class %s
 // rdar://11295716
 
 @interface NSObject 
@@ -123,21 +123,4 @@
 @implementation rdar11333367 // expected-error {{cannot synthesize property 'y' with incomplete type 'struct B'}} \
                              // expected-note {{detected while default synthesizing properties in class implementation}}
 @synthesize x; // expected-error {{cannot synthesize property 'x' with incomplete type 'enum A'}}
-@end
-
-// rdar://17774815
-@interface ZXParsedResult
-@property (nonatomic, copy, readonly) NSString *description; // expected-note {{property declared here}}
-@end
-
-@interface ZXCalendarParsedResult : ZXParsedResult
-
-@property (nonatomic, copy, readonly) NSString *description; // expected-warning {{auto property synthesis will not synthesize property 'description'; it will be implemented by its superclass}}
-
-@end
-
-@implementation ZXCalendarParsedResult // expected-note {{detected while default synthesizing properties in class implementation}}
-- (NSString *) Meth {
-    return _description; // expected-error {{use of undeclared identifier '_description'}}
-}
 @end

@@ -4,43 +4,35 @@
 // RUN: c-index-test -test-load-source all -comments-xml-schema=%S/../../bindings/xml/comment-xml-schema.rng %s | FileCheck %s -check-prefix=WRONG
 // WRONG-NOT: CommentXMLInvalid
 
-// expected-warning@+2 {{HTML tag 'a' requires an end tag}}
 // expected-warning@+1 {{expected quoted string after equals sign}}
 /// <a href=>
 int test_html1(int);
 
-// expected-warning@+2 {{HTML tag 'a' requires an end tag}}
 // expected-warning@+1 {{expected quoted string after equals sign}}
 /// <a href==>
 int test_html2(int);
 
-// expected-warning@+3 {{HTML tag 'a' requires an end tag}}
 // expected-warning@+2 {{expected quoted string after equals sign}}
 // expected-warning@+1 {{HTML start tag prematurely ended, expected attribute name or '>'}}
 /// <a href= blah
 int test_html3(int);
 
-// expected-warning@+2 {{HTML tag 'a' requires an end tag}}
 // expected-warning@+1 {{HTML start tag prematurely ended, expected attribute name or '>'}}
 /// <a =>
 int test_html4(int);
 
-// expected-warning@+2 {{HTML tag 'a' requires an end tag}}
 // expected-warning@+1 {{HTML start tag prematurely ended, expected attribute name or '>'}}
 /// <a "aaa">
 int test_html5(int);
 
-// expected-warning@+2 {{HTML tag 'a' requires an end tag}}
 // expected-warning@+1 {{HTML start tag prematurely ended, expected attribute name or '>'}}
 /// <a a="b" =>
 int test_html6(int);
 
-// expected-warning@+2 {{HTML tag 'a' requires an end tag}}
 // expected-warning@+1 {{HTML start tag prematurely ended, expected attribute name or '>'}}
 /// <a a="b" "aaa">
 int test_html7(int);
 
-// expected-warning@+2 {{HTML tag 'a' requires an end tag}}
 // expected-warning@+1 {{HTML start tag prematurely ended, expected attribute name or '>'}}
 /// <a a="b" =
 int test_html8(int);
@@ -75,8 +67,6 @@ int test_html_nesting3(int);
 /// Bbb</p>
 int test_html_nesting4(int);
 
-// expected-warning@+3 {{HTML tag 'b' requires an end tag}}
-// expected-warning@+2 {{HTML tag 'i' requires an end tag}}
 // expected-warning@+1 {{HTML end tag does not match any start tag}}
 /// <b><i>Meow</a>
 int test_html_nesting5(int);
@@ -91,9 +81,6 @@ int test_html_nesting6(int);
 /// <b><i>Meow</b></i>
 int test_html_nesting7(int);
 
-// expected-warning@+1 {{HTML tag 'b' requires an end tag}}
-/// <b>Meow
-int test_html_nesting8(int);
 
 // expected-warning@+1 {{empty paragraph passed to '\brief' command}}
 /// \brief\returns Aaa
@@ -149,44 +136,42 @@ int test_duplicate_brief2(int);
 int test_duplicate_brief3(int);
 
 
+// expected-warning@+5 {{duplicated command '\return'}} expected-note@+1 {{previous command '\return' here}}
 /// \return Aaa
 ///
 /// Bbb
 ///
 /// \return Ccc
-int test_multiple_returns1(int);
+int test_duplicate_returns1(int);
 
+// expected-warning@+5 {{duplicated command '\returns'}} expected-note@+1 {{previous command '\returns' here}}
 /// \returns Aaa
 ///
 /// Bbb
 ///
 /// \returns Ccc
-int test_multiple_returns2(int);
+int test_duplicate_returns2(int);
 
+// expected-warning@+5 {{duplicated command '\result'}} expected-note@+1 {{previous command '\result' here}}
 /// \result Aaa
 ///
 /// Bbb
 ///
 /// \result Ccc
-int test_multiple_returns3(int);
+int test_duplicate_returns3(int);
 
+// expected-warning@+5 {{duplicated command '\return'}} expected-note@+1 {{previous command '\returns' (an alias of '\return') here}}
 /// \returns Aaa
 ///
 /// Bbb
 ///
 /// \return Ccc
-int test_multiple_returns4(int);
+int test_duplicate_returns4(int);
 
 
 // expected-warning@+1 {{'\param' command used in a comment that is not attached to a function declaration}}
 /// \param a Blah blah.
-int test_param1_backslash;
-
-// rdar://13066276
-// Check that the diagnostic uses the same command marker as the comment.
-// expected-warning@+1 {{'@param' command used in a comment that is not attached to a function declaration}}
-/// @param a Blah blah.
-int test_param1_at;
+int test_param1;
 
 // expected-warning@+1 {{empty paragraph passed to '\param' command}}
 /// \param
@@ -288,120 +273,35 @@ int test_param21(int a);
 /// \param x2 Ccc.
 int test_param22(int x1, int x2, int x3);
 
-//===---
-// Test that we treat typedefs to some non-function types as functions for the
-// purposes of documentation comment parsing.
-//===---
-
-namespace foo {
-  inline namespace bar {
-    template<typename>
-    struct function_wrapper {};
-
-    template<unsigned>
-    struct not_a_function_wrapper {};
-  }
-};
+// expected-warning@+2 {{parameter 'bbb' not found in the function declaration}} expected-note@+2 {{did you mean 'ccc'?}}
+/// \param aaa Meow.
+/// \param bbb Bbb.
+/// \returns aaa.
+typedef int test_param23(int aaa, int ccc);
 
 // expected-warning@+2 {{parameter 'bbb' not found in the function declaration}} expected-note@+2 {{did you mean 'ccc'?}}
 /// \param aaa Meow.
 /// \param bbb Bbb.
 /// \returns aaa.
-typedef int test_function_like_typedef1(int aaa, int ccc);
+typedef int (*test_param24)(int aaa, int ccc);
 
 // expected-warning@+2 {{parameter 'bbb' not found in the function declaration}} expected-note@+2 {{did you mean 'ccc'?}}
 /// \param aaa Meow.
 /// \param bbb Bbb.
 /// \returns aaa.
-typedef int (*test_function_like_typedef2)(int aaa, int ccc);
+typedef int (* const test_param25)(int aaa, int ccc);
 
 // expected-warning@+2 {{parameter 'bbb' not found in the function declaration}} expected-note@+2 {{did you mean 'ccc'?}}
 /// \param aaa Meow.
 /// \param bbb Bbb.
 /// \returns aaa.
-typedef int (* const test_function_like_typedef3)(int aaa, int ccc);
+typedef int (C::*test_param26)(int aaa, int ccc);
 
-// expected-warning@+2 {{parameter 'bbb' not found in the function declaration}} expected-note@+2 {{did you mean 'ccc'?}}
-/// \param aaa Meow.
-/// \param bbb Bbb.
-/// \returns aaa.
-typedef int (C::*test_function_like_typedef4)(int aaa, int ccc);
-
-// expected-warning@+2 {{parameter 'bbb' not found in the function declaration}} expected-note@+2 {{did you mean 'ccc'?}}
-/// \param aaa Meow.
-/// \param bbb Bbb.
-/// \returns aaa.
-typedef foo::function_wrapper<int (int aaa, int ccc)> test_function_like_typedef5;
-
-// expected-warning@+2 {{parameter 'bbb' not found in the function declaration}} expected-note@+2 {{did you mean 'ccc'?}}
-/// \param aaa Meow.
-/// \param bbb Bbb.
-/// \returns aaa.
-typedef foo::function_wrapper<int (int aaa, int ccc)> *test_function_like_typedef6;
-
-// expected-warning@+2 {{parameter 'bbb' not found in the function declaration}} expected-note@+2 {{did you mean 'ccc'?}}
-/// \param aaa Meow.
-/// \param bbb Bbb.
-/// \returns aaa.
-typedef foo::function_wrapper<int (int aaa, int ccc)> &test_function_like_typedef7;
-
-// expected-warning@+2 {{parameter 'bbb' not found in the function declaration}} expected-note@+2 {{did you mean 'ccc'?}}
-/// \param aaa Meow.
-/// \param bbb Bbb.
-/// \returns aaa.
-typedef foo::function_wrapper<int (int aaa, int ccc)> &&test_function_like_typedef8;
-
-
-typedef int (*test_not_function_like_typedef1)(int aaa);
+typedef int (*test_param27)(int aaa);
 
 // expected-warning@+1 {{'\param' command used in a comment that is not attached to a function declaration}}
 /// \param aaa Meow.
-typedef test_not_function_like_typedef1 test_not_function_like_typedef2;
-
-// rdar://13066276
-// Check that the diagnostic uses the same command marker as the comment.
-// expected-warning@+1 {{'@param' command used in a comment that is not attached to a function declaration}}
-/// @param aaa Meow.
-typedef unsigned int test_not_function_like_typedef3;
-
-// expected-warning@+1 {{'\param' command used in a comment that is not attached to a function declaration}}
-/// \param aaa Meow.
-typedef foo::not_a_function_wrapper<1> test_not_function_like_typedef4;
-
-/// \param aaa Aaa
-/// \param ... Vararg
-int test_vararg_param1(int aaa, ...);
-
-/// \param ... Vararg
-int test_vararg_param2(...);
-
-// expected-warning@+1 {{parameter '...' not found in the function declaration}} expected-note@+1 {{did you mean 'aaa'?}}
-/// \param ... Vararg
-int test_vararg_param3(int aaa);
-
-// expected-warning@+1 {{parameter '...' not found in the function declaration}}
-/// \param ... Vararg
-int test_vararg_param4();
-
-
-/// \param aaa Aaa
-/// \param ... Vararg
-template<typename T>
-int test_template_vararg_param1(int aaa, ...);
-
-/// \param ... Vararg
-template<typename T>
-int test_template_vararg_param2(...);
-
-// expected-warning@+1 {{parameter '...' not found in the function declaration}} expected-note@+1 {{did you mean 'aaa'?}}
-/// \param ... Vararg
-template<typename T>
-int test_template_vararg_param3(int aaa);
-
-// expected-warning@+1 {{parameter '...' not found in the function declaration}}
-/// \param ... Vararg
-template<typename T>
-int test_template_vararg_param4();
+typedef test_param27 test_param28;
 
 
 // expected-warning@+1 {{'\tparam' command used in a comment that is not attached to a template declaration}}
@@ -477,35 +377,6 @@ using test_tparam14 = test_tparam13<T, int>;
 template<typename T>
 using test_tparam15 = test_tparam13<T, int>;
 
-// ----
-
-/// \tparam T Aaa
-template<typename T>
-class test_tparam16 { };
-
-typedef test_tparam16<int> test_tparam17;
-typedef test_tparam16<double> test_tparam18;
-
-// ----
-
-template<typename T>
-class test_tparam19;
-
-typedef test_tparam19<int> test_tparam20;
-typedef test_tparam19<double> test_tparam21;
-
-/// \tparam T Aaa
-template<typename T>
-class test_tparam19 { };
-
-// ----
-
-// expected-warning@+1 {{'@tparam' command used in a comment that is not attached to a template declaration}}
-/// @tparam T Aaa
-int test_tparam22;
-
-// ----
-
 
 /// Aaa
 /// \deprecated Bbb
@@ -544,14 +415,6 @@ template<typename T>
 void test_deprecated_7(T aaa);
 
 
-// rdar://12397511
-// expected-note@+2 {{previous command '\headerfile' here}}
-// expected-warning@+2 {{duplicated command '\headerfile'}}
-/// \headerfile ""
-/// \headerfile foo.h
-int test__headerfile_1(int a);
-
-
 /// \invariant aaa
 void test_invariant_1(int a);
 
@@ -586,13 +449,7 @@ T test_returns_right_decl_5(T aaa);
 
 // expected-warning@+1 {{'\returns' command used in a comment that is not attached to a function or method declaration}}
 /// \returns Aaa
-int test_returns_wrong_decl_1_backslash;
-
-// rdar://13066276
-// Check that the diagnostic uses the same command marker as the comment.
-// expected-warning@+1 {{'@returns' command used in a comment that is not attached to a function or method declaration}}
-/// @returns Aaa
-int test_returns_wrong_decl_1_at;
+int test_returns_wrong_decl_1;
 
 // expected-warning@+1 {{'\return' command used in a comment that is not attached to a function or method declaration}}
 /// \return Aaa
@@ -644,18 +501,6 @@ enum test_returns_wrong_decl_8 {
 /// \returns Aaa
 namespace test_returns_wrong_decl_10 { };
 
-// rdar://13094352
-// expected-warning@+1 {{'@function' command should be used in a comment attached to a function declaration}}
-/*!	@function test_function
-*/
-typedef unsigned int Base64Flags;
-unsigned test_function(Base64Flags inFlags);
-
-// expected-warning@+1 {{'@callback' command should be used in a comment attached to a pointer to function declaration}}
-/*! @callback test_callback
-*/
-typedef unsigned int BaseFlags;
-unsigned (*test_callback)(BaseFlags inFlags);
 
 // expected-warning@+1 {{'\endverbatim' command does not terminate a verbatim text block}}
 /// \endverbatim
@@ -686,25 +531,6 @@ int test2, ///< \brief\author Aaa
 // expected-warning@+1 {{empty paragraph passed to '\brief' command}}
 int test4; ///< \brief
            ///< \author Aaa
-
-
-class TestRelates {};
-
-/// \relates TestRelates
-/// \brief Aaa
-void test_relates_1();
-
-/// \related TestRelates
-/// \brief Aaa
-void test_relates_2();
-
-/// \relatesalso TestRelates
-/// \brief Aaa
-void test_relates_3();
-
-/// \relatedalso TestRelates
-/// \brief Aaa
-void test_relates_4();
 
 
 // Check that we attach the comment to the declaration during parsing in the
@@ -1007,105 +833,6 @@ typedef const struct test_nocrash7 * test_nocrash8;
 
 // We used to crash on this.
 
-// expected-warning@+1 {{unknown command tag name}}
 /// aaa \unknown aaa \unknown aaa
 int test_nocrash9;
 
-// We used to crash on this.  PR15068
-
-// expected-warning@+2 {{empty paragraph passed to '@param' command}}
-// expected-warning@+2 {{empty paragraph passed to '@param' command}}
-///@param x
-///@param y
-int test_nocrash10(int x, int y);
-
-// expected-warning@+2 {{empty paragraph passed to '@param' command}} expected-warning@+2 {{parameter 'x' not found in the function declaration}}
-// expected-warning@+2 {{empty paragraph passed to '@param' command}} expected-warning@+2 {{parameter 'y' not found in the function declaration}}
-///@param x
-///@param y
-int test_nocrash11();
-
-// expected-warning@+3 {{empty paragraph passed to '@param' command}} expected-warning@+3 {{parameter 'x' not found in the function declaration}}
-// expected-warning@+3 {{empty paragraph passed to '@param' command}} expected-warning@+3 {{parameter 'y' not found in the function declaration}}
-/**
-@param x
-@param y
-**/
-int test_nocrash12();
-
-// expected-warning@+2 {{empty paragraph passed to '@param' command}}
-// expected-warning@+1 {{empty paragraph passed to '@param' command}}
-///@param x@param y
-int test_nocrash13(int x, int y);
-
-// rdar://12379114
-// expected-warning@+2 {{'@union' command should not be used in a comment attached to a non-union declaration}}
-/*!
-   @union U This is new 
-*/
-struct U { int iS; };
-
-/*!
-  @union U1
-*/
-union U1 {int i; };
-
-// expected-warning@+2 {{'@struct' command should not be used in a comment attached to a non-struct declaration}}
-/*!
- @struct S2
-*/
-union S2 {};
-
-/*!
-  @class C1
-*/
-class C1;
-
-/*!
-  @struct S3;
-*/
-class S3;
-
-// rdar://14124702
-//----------------------------------------------------------------------
-/// @class Predicate Predicate.h "lldb/Host/Predicate.h"
-/// @brief A C++ wrapper class for providing threaded access to a value
-/// of type T.
-///
-/// A templatized class.
-/// specified values.
-//----------------------------------------------------------------------
-template <class T, class T1>
-class Predicate
-{
-};
-
-//----------------------------------------------------------------------
-/// @class Predicate<int, char> Predicate.h "lldb/Host/Predicate.h"
-/// @brief A C++ wrapper class for providing threaded access to a value
-/// of type T.
-///
-/// A template specilization class.
-//----------------------------------------------------------------------
-template<> class Predicate<int, char>
-{
-};
-
-//----------------------------------------------------------------------
-/// @class Predicate<T, int> Predicate.h "lldb/Host/Predicate.h"
-/// @brief A C++ wrapper class for providing threaded access to a value
-/// of type T.
-///
-/// A partial specialization template class.
-//----------------------------------------------------------------------
-template<class T> class Predicate<T, int>
-{
-};
-
-/*!     @function test_function
-*/
-template <class T> T test_function (T arg);
-
-/*!     @function test_function<int>
-*/
-template <> int test_function<int> (int arg);

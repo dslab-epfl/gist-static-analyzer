@@ -1,8 +1,6 @@
 // RUN: %clang_cc1 %s -verify -pedantic -fsyntax-only -cl-std=CL1.2
 
-static constant int A = 0;
-
-int X = 0; // expected-error{{global variables must have a constant address space qualifier}}
+static int A;
 
 // static is not allowed at local scope.
 void kernel foo() {

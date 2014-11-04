@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// \brief Defines several types used to describe C++ lambda expressions
+/// \brief  Defines several types used to describe C++ lambda expressions
 /// that are shared between the parser and AST.
 ///
 //===----------------------------------------------------------------------===//
@@ -26,16 +26,12 @@ enum LambdaCaptureDefault {
   LCD_ByRef
 };
 
-/// \brief The different capture forms in a lambda introducer
-///
-/// C++11 allows capture of \c this, or of local variables by copy or
-/// by reference.  C++1y also allows "init-capture", where the initializer
-/// is an expression.
+/// \brief The different capture forms in a lambda introducer: 'this' or a
+/// copied or referenced variable.
 enum LambdaCaptureKind {
-  LCK_This,   ///< Capturing the \c this pointer
-  LCK_ByCopy, ///< Capturing by copy (a.k.a., by value)
-  LCK_ByRef,  ///< Capturing by reference
-  LCK_VLAType ///< Capturing variable-length array type
+  LCK_This,
+  LCK_ByCopy,
+  LCK_ByRef
 };
 
 } // end namespace clang

@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -fsyntax-only -verify %s
 
-@interface Foo // expected-note {{receiver is instance of class declared here}}
+@interface Foo
 @end
 
 void test() {

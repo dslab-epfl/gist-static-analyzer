@@ -7,20 +7,22 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines the RegAllocBase class which provides common functionality
+// This file defines the RegAllocBase class which provides comon functionality
 // for LiveIntervalUnion-based register allocators.
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "regalloc"
 #include "RegAllocBase.h"
+#include "LiveRegMatrix.h"
 #include "Spiller.h"
+#include "VirtRegMap.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/LiveIntervalAnalysis.h"
 #include "llvm/CodeGen/LiveRangeEdit.h"
-#include "llvm/CodeGen/LiveRegMatrix.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
-#include "llvm/CodeGen/VirtRegMap.h"
+#include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetRegisterInfo.h"
 #ifndef NDEBUG
 #include "llvm/ADT/SparseBitVector.h"
@@ -33,8 +35,6 @@
 
 using namespace llvm;
 
-#define DEBUG_TYPE "regalloc"
-
 STATISTIC(NumNewQueued    , "Number of new live ranges queued");
 
 // Temporary verification option until we can put verification inside
@@ -43,15 +43,12 @@ static cl::opt<bool, true>
 VerifyRegAlloc("verify-regalloc", cl::location(RegAllocBase::VerifyEnabled),
                cl::desc("Verify during register allocation"));
 
-const char RegAllocBase::TimerGroupName[] = "Register Allocation";
+const char *RegAllocBase::TimerGroupName = "Register Allocation";
 bool RegAllocBase::VerifyEnabled = false;
 
 //===----------------------------------------------------------------------===//
 //                         RegAllocBase Implementation
 //===----------------------------------------------------------------------===//
-
-// Pin the vtable to this file.
-void RegAllocBase::anchor() {}
 
 void RegAllocBase::init(VirtRegMap &vrm,
                         LiveIntervals &lis,
@@ -101,29 +98,25 @@ void RegAllocBase::allocatePhysRegs() {
     // register if possible and populate a list of new live intervals that
     // result from splitting.
     DEBUG(dbgs() << "\nselectOrSplit "
-          << MRI->getRegClass(VirtReg->reg)->getName()
-          << ':' << *VirtReg << " w=" << VirtReg->weight << '\n');
-    typedef SmallVector<unsigned, 4> VirtRegVec;
+                 << MRI->getRegClass(VirtReg->reg)->getName()
+                 << ':' << PrintReg(VirtReg->reg) << ' ' << *VirtReg << '\n');
+    typedef SmallVector<LiveInterval*, 4> VirtRegVec;
     VirtRegVec SplitVRegs;
     unsigned AvailablePhysReg = selectOrSplit(*VirtReg, SplitVRegs);
 
     if (AvailablePhysReg == ~0u) {
       // selectOrSplit failed to find a register!
+      const char *Msg = "ran out of registers during register allocation";
       // Probably caused by an inline asm.
-      MachineInstr *MI = nullptr;
-      for (MachineRegisterInfo::reg_instr_iterator
-           I = MRI->reg_instr_begin(VirtReg->reg), E = MRI->reg_instr_end();
-           I != E; ) {
-        MachineInstr *TmpMI = &*(I++);
-        if (TmpMI->isInlineAsm()) {
-          MI = TmpMI;
+      MachineInstr *MI;
+      for (MachineRegisterInfo::reg_iterator I = MRI->reg_begin(VirtReg->reg);
+           (MI = I.skipInstruction());)
+        if (MI->isInlineAsm())
           break;
-        }
-      }
       if (MI)
-        MI->emitError("inline assembly requires more registers than available");
+        MI->emitError(Msg);
       else
-        report_fatal_error("ran out of registers during register allocation");
+        report_fatal_error(Msg);
       // Keep going after reporting the error.
       VRM->assignVirt2Phys(VirtReg->reg,
                  RegClassInfo.getOrder(MRI->getRegClass(VirtReg->reg)).front());
@@ -135,7 +128,7 @@ void RegAllocBase::allocatePhysRegs() {
 
     for (VirtRegVec::iterator I = SplitVRegs.begin(), E = SplitVRegs.end();
          I != E; ++I) {
-      LiveInterval *SplitVirtReg = &LIS->getInterval(*I);
+      LiveInterval *SplitVirtReg = *I;
       assert(!VRM->hasPhys(SplitVirtReg->reg) && "Register already assigned");
       if (MRI->reg_nodbg_empty(SplitVirtReg->reg)) {
         DEBUG(dbgs() << "not queueing unused  " << *SplitVirtReg << '\n');

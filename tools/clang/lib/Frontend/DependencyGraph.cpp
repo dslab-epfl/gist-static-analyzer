@@ -19,8 +19,8 @@
 #include "clang/Lex/PPCallbacks.h"
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/ADT/SetVector.h"
-#include "llvm/Support/GraphWriter.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/GraphWriter.h"
 
 using namespace clang;
 namespace DOT = llvm::DOT;
@@ -31,14 +31,15 @@ class DependencyGraphCallback : public PPCallbacks {
   std::string OutputFile;
   std::string SysRoot;
   llvm::SetVector<const FileEntry *> AllFiles;
-  typedef llvm::DenseMap<const FileEntry *,
-                         SmallVector<const FileEntry *, 2> > DependencyMap;
+  typedef llvm::DenseMap<const FileEntry *, 
+                         llvm::SmallVector<const FileEntry *, 2> >
+    DependencyMap;
   
   DependencyMap Dependencies;
   
 private:
-  raw_ostream &writeNodeReference(raw_ostream &OS,
-                                  const FileEntry *Node);
+  llvm::raw_ostream &writeNodeReference(llvm::raw_ostream &OS,
+                                        const FileEntry *Node);
   void OutputGraphFile();
 
 public:
@@ -46,13 +47,17 @@ public:
                           StringRef SysRoot)
     : PP(_PP), OutputFile(OutputFile.str()), SysRoot(SysRoot.str()) { }
 
-  void InclusionDirective(SourceLocation HashLoc, const Token &IncludeTok,
-                          StringRef FileName, bool IsAngled,
-                          CharSourceRange FilenameRange, const FileEntry *File,
-                          StringRef SearchPath, StringRef RelativePath,
-                          const Module *Imported) override;
+  virtual void InclusionDirective(SourceLocation HashLoc,
+                                  const Token &IncludeTok,
+                                  StringRef FileName,
+                                  bool IsAngled,
+                                  CharSourceRange FilenameRange,
+                                  const FileEntry *File,
+                                  StringRef SearchPath,
+                                  StringRef RelativePath,
+                                  const Module *Imported);
 
-  void EndOfMainFile() override {
+  virtual void EndOfMainFile() {
     OutputGraphFile();
   }
   
@@ -61,8 +66,7 @@ public:
 
 void clang::AttachDependencyGraphGen(Preprocessor &PP, StringRef OutputFile,
                                      StringRef SysRoot) {
-  PP.addPPCallbacks(llvm::make_unique<DependencyGraphCallback>(&PP, OutputFile,
-                                                               SysRoot));
+  PP.addPPCallbacks(new DependencyGraphCallback(&PP, OutputFile, SysRoot));
 }
 
 void DependencyGraphCallback::InclusionDirective(SourceLocation HashLoc,
@@ -80,7 +84,7 @@ void DependencyGraphCallback::InclusionDirective(SourceLocation HashLoc,
   SourceManager &SM = PP->getSourceManager();
   const FileEntry *FromFile
     = SM.getFileEntryForID(SM.getFileID(SM.getExpansionLoc(HashLoc)));
-  if (!FromFile)
+  if (FromFile == 0) 
     return;
 
   Dependencies[FromFile].push_back(File);
@@ -89,19 +93,19 @@ void DependencyGraphCallback::InclusionDirective(SourceLocation HashLoc,
   AllFiles.insert(FromFile);
 }
 
-raw_ostream &
-DependencyGraphCallback::writeNodeReference(raw_ostream &OS,
+llvm::raw_ostream &
+DependencyGraphCallback::writeNodeReference(llvm::raw_ostream &OS,
                                             const FileEntry *Node) {
   OS << "header_" << Node->getUID();
   return OS;
 }
 
 void DependencyGraphCallback::OutputGraphFile() {
-  std::error_code EC;
-  llvm::raw_fd_ostream OS(OutputFile, EC, llvm::sys::fs::F_Text);
-  if (EC) {
-    PP->getDiagnostics().Report(diag::err_fe_error_opening) << OutputFile
-                                                            << EC.message();
+  std::string Err;
+  llvm::raw_fd_ostream OS(OutputFile.c_str(), Err);
+  if (!Err.empty()) {
+    PP->getDiagnostics().Report(diag::err_fe_error_opening)
+      << OutputFile << Err;
     return;
   }
 

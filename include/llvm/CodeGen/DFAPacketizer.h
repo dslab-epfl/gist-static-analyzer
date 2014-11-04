@@ -26,8 +26,8 @@
 #ifndef LLVM_CODEGEN_DFAPACKETIZER_H
 #define LLVM_CODEGEN_DFAPACKETIZER_H
 
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/ADT/DenseMap.h"
 #include <map>
 
 namespace llvm {
@@ -91,6 +91,7 @@ public:
 // API call is made to prune the dependence.
 class VLIWPacketizerList {
 protected:
+  const TargetMachine &TM;
   const MachineFunction &MF;
   const TargetInstrInfo *TII;
 
@@ -106,7 +107,9 @@ protected:
   std::map<MachineInstr*, SUnit*> MIToSUnit;
 
 public:
-  VLIWPacketizerList(MachineFunction &MF, MachineLoopInfo &MLI, bool IsPostRA);
+  VLIWPacketizerList(
+    MachineFunction &MF, MachineLoopInfo &MLI, MachineDominatorTree &MDT,
+    bool IsPostRA);
 
   virtual ~VLIWPacketizerList();
 
@@ -132,7 +135,7 @@ public:
   // initPacketizerState - perform initialization before packetizing
   // an instruction. This function is supposed to be overrided by
   // the target dependent packetizer.
-  virtual void initPacketizerState() { return; }
+  virtual void initPacketizerState(void) { return; }
 
   // ignorePseudoInstruction - Ignore bundling of pseudo instructions.
   virtual bool ignorePseudoInstruction(MachineInstr *I,

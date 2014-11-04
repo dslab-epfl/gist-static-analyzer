@@ -1,5 +1,4 @@
-// RUN: %clang_cc1 -analyze -analyzer-checker=core,alpha.core -analyzer-store=region -analyzer-constraints=range -verify -triple x86_64-apple-darwin9 -Wno-incomplete-implementation %s
-// expected-no-diagnostics
+// RUN: %clang_cc1 -analyze -analyzer-checker=core,alpha.core -analyzer-store=region -analyzer-constraints=range -verify -triple x86_64-apple-darwin9 %s
 
 //===----------------------------------------------------------------------===//
 // Delta-debugging produced forward declarations.
@@ -33,16 +32,16 @@ typedef struct _NSZone NSZone;
 @protocol IHGoogleDocsAdapterDelegate  - (void)googleDocsAdapter:(IHGoogleDocsAdapter*)inGoogleDocsAdapter accountVerifyIsValid:(BOOL)inIsValid error:(NSError *)inError;
 @end   @interface IHGoogleDocsAdapter : NSObject {
 }
-- (NSArray *)entries;
+- (NSArray *)entries; // expected-note {{method definition for 'entries' not found}}
 @end extern Class const kGDataUseRegisteredClass ;
-@interface IHGoogleDocsAdapter ()  - (GDataFeedDocList *)feedDocList;
-- (NSArray *)directoryPathComponents;
-- (unsigned int)currentPathComponentIndex;
-- (void)setCurrentPathComponentIndex:(unsigned int)aCurrentPathComponentIndex;
-- (NSURL *)folderFeedURL;
+@interface IHGoogleDocsAdapter ()  - (GDataFeedDocList *)feedDocList; // expected-note {{method definition for 'feedDocList' not found}}
+- (NSArray *)directoryPathComponents; // expected-note {{method definition for 'directoryPathComponents' not found}}
+- (unsigned int)currentPathComponentIndex; // expected-note {{method definition for 'currentPathComponentIndex' not found}}
+- (void)setCurrentPathComponentIndex:(unsigned int)aCurrentPathComponentIndex; // expected-note {{method definition for 'setCurrentPathComponentIndex:' not found}}
+- (NSURL *)folderFeedURL; // expected-note {{method definition for 'folderFeedURL' not found}}
 @end  
 
-@implementation IHGoogleDocsAdapter    - (id)initWithUsername:(NSString *)inUsername password:(NSString *)inPassword owner:(NSObject <IHGoogleDocsAdapterDelegate> *)owner {
+@implementation IHGoogleDocsAdapter    - (id)initWithUsername:(NSString *)inUsername password:(NSString *)inPassword owner:(NSObject <IHGoogleDocsAdapterDelegate> *)owner {	// expected-warning {{incomplete implementation}}
   return 0;
 }
 

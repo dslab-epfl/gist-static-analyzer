@@ -1,4 +1,3 @@
-; REQUIRES: asserts
 ; This function contains two tail calls, which should be eliminated
 ; RUN: opt < %s -tailcallelim -stats -disable-output 2>&1 | grep "2 tailcallelim"
 

@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_STATICANALYZER_CORE_PATHSENSITIVE_CHECKERCONTEXT_H
-#define LLVM_CLANG_STATICANALYZER_CORE_PATHSENSITIVE_CHECKERCONTEXT_H
+#ifndef LLVM_CLANG_SA_CORE_PATHSENSITIVE_CHECKERCONTEXT
+#define LLVM_CLANG_SA_CORE_PATHSENSITIVE_CHECKERCONTEXT
 
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExprEngine.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramStateTrait.h"
@@ -110,12 +110,16 @@ public:
   StoreManager &getStoreManager() {
     return Eng.getStoreManager();
   }
+
+  const AnalyzerOptions::ConfigTable &getConfig() const {
+    return Eng.getAnalysisManager().options.Config;
+  }
   
   /// \brief Returns the previous node in the exploded graph, which includes
   /// the state of the program before the checker ran. Note, checkers should
   /// not retain the node in their state since the nodes might get invalidated.
   ExplodedNode *getPredecessor() { return Pred; }
-  const ProgramStateRef &getState() const { return Pred->getState(); }
+  ProgramStateRef getState() const { return Pred->getState(); }
 
   /// \brief Check if the checker changed the state of the execution; ex: added
   /// a new transition or a bug report.
@@ -174,21 +178,16 @@ public:
     return Pred->getLocationContext()->getAnalysisDeclContext();
   }
 
-  /// \brief Get the blockID.
-  unsigned getBlockID() const {
-    return NB.getContext().getBlock()->getBlockID();
-  }
-
-  /// \brief If the given node corresponds to a PostStore program point,
-  /// retrieve the location region as it was uttered in the code.
+  /// \brief If the given node corresponds to a PostStore program point, retrieve
+  /// the location region as it was uttered in the code.
   ///
   /// This utility can be useful for generating extensive diagnostics, for
   /// example, for finding variables that the given symbol was assigned to.
   static const MemRegion *getLocationRegionIfPostStore(const ExplodedNode *N) {
     ProgramPoint L = N->getLocation();
-    if (Optional<PostStore> PSL = L.getAs<PostStore>())
+    if (const PostStore *PSL = dyn_cast<PostStore>(&L))
       return reinterpret_cast<const MemRegion*>(PSL->getLocationValue());
-    return nullptr;
+    return 0;
   }
 
   /// \brief Get the value of arbitrary expressions at this point in the path.
@@ -205,9 +204,9 @@ public:
   ///        tag is specified, a default tag, unique to the given checker,
   ///        will be used. Tags are used to prevent states generated at
   ///        different sites from caching out.
-  ExplodedNode *addTransition(ProgramStateRef State = nullptr,
-                              const ProgramPointTag *Tag = nullptr) {
-    return addTransitionImpl(State ? State : getState(), false, nullptr, Tag);
+  ExplodedNode *addTransition(ProgramStateRef State = 0,
+                              const ProgramPointTag *Tag = 0) {
+    return addTransitionImpl(State ? State : getState(), false, 0, Tag);
   }
 
   /// \brief Generates a new transition with the given predecessor.
@@ -219,15 +218,15 @@ public:
   /// @param Tag The tag to uniquely identify the creation site.
   ExplodedNode *addTransition(ProgramStateRef State,
                               ExplodedNode *Pred,
-                              const ProgramPointTag *Tag = nullptr) {
+                              const ProgramPointTag *Tag = 0) {
     return addTransitionImpl(State, false, Pred, Tag);
   }
 
   /// \brief Generate a sink node. Generating a sink stops exploration of the
   /// given path.
-  ExplodedNode *generateSink(ProgramStateRef State = nullptr,
-                             ExplodedNode *Pred = nullptr,
-                             const ProgramPointTag *Tag = nullptr) {
+  ExplodedNode *generateSink(ProgramStateRef State = 0,
+                             ExplodedNode *Pred = 0,
+                             const ProgramPointTag *Tag = 0) {
     return addTransitionImpl(State ? State : getState(), true, Pred, Tag);
   }
 
@@ -249,7 +248,7 @@ public:
     if (FunDecl)
       return FunDecl->getIdentifier();
     else
-      return nullptr;
+      return 0;
   }
 
   /// \brief Get the name of the called function (path-sensitive).
@@ -285,8 +284,8 @@ public:
 private:
   ExplodedNode *addTransitionImpl(ProgramStateRef State,
                                  bool MarkAsSink,
-                                 ExplodedNode *P = nullptr,
-                                 const ProgramPointTag *Tag = nullptr) {
+                                 ExplodedNode *P = 0,
+                                 const ProgramPointTag *Tag = 0) {
     if (!State || (State == Pred->getState() && !Tag && !MarkAsSink))
       return Pred;
 
@@ -302,6 +301,14 @@ private:
       node = NB.generateNode(LocalLoc, State, P);
     return node;
   }
+};
+
+/// \brief A helper class which wraps a boolean value set to false by default.
+struct DefaultBool {
+  bool Val;
+  DefaultBool() : Val(false) {}
+  operator bool() const { return Val; }
+  DefaultBool &operator=(bool b) { Val = b; return *this; }
 };
 
 } // end GR namespace

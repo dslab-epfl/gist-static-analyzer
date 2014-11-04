@@ -1,5 +1,5 @@
 // RUN: rm -f %t
-// RUN: %clang_cc1 -analyze -analyzer-checker=unix.Malloc -analyzer-output=plist -analyzer-config path-diagnostics-alternate=false -o %t %s
+// RUN: %clang_cc1 -analyze -analyzer-checker=unix.Malloc -analyzer-output=plist -o %t %s
 // RUN: FileCheck -input-file %t %s
 
 typedef __typeof(sizeof(int)) size_t;
@@ -169,28 +169,6 @@ void use_function_with_leak7() {
     function_with_leak7();
 }
 
-// Test that we do not print the name of a variable not visible from where
-// the issue is reported.
-int *my_malloc() {
-  int *p = malloc(12);
-  return p;
-}
-void testOnlyRefferToVisibleVariables() {
-  my_malloc();
-} // expected-warning {{Potential leak of memory}}
-
-struct PointerWrapper{
-  int*p;
-};
-int *my_malloc_into_struct() {
-  struct PointerWrapper w;
-  w.p = malloc(12);
-  return w.p;
-}
-void testMyMalloc() {
-  my_malloc_into_struct(); // expected-warning {{Potential leak of memory}}
-}
-
 // CHECK:  <key>diagnostics</key>
 // CHECK-NEXT:  <array>
 // CHECK-NEXT:   <dict>
@@ -257,7 +235,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Assuming &apos;in&apos; is &gt; 5</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Assuming &apos;in&apos; is &gt; 5</string>
+// CHECK-NEXT: <string>Assuming &apos;in&apos; is &gt; 5</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -354,7 +332,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Memory is allocated</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Memory is allocated</string>
+// CHECK-NEXT: <string>Memory is allocated</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -400,17 +378,17 @@ void testMyMalloc() {
 // CHECK-NEXT:      </dict>
 // CHECK-NEXT:      <key>depth</key><integer>0</integer>
 // CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;p&apos;</string>
+// CHECK-NEXT:      <string>Memory is never released; potential leak of memory pointed to by &apos;p&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;p&apos;</string>
+// CHECK-NEXT: <string>Memory is never released; potential leak of memory pointed to by &apos;p&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:    </array>
-// CHECK-NEXT:    <key>description</key><string>Potential leak of memory pointed to by &apos;p&apos;</string>
+// CHECK-NEXT:    <key>description</key><string>Memory is never released; potential leak of memory pointed to by &apos;p&apos;</string>
 // CHECK-NEXT:    <key>category</key><string>Memory Error</string>
 // CHECK-NEXT:    <key>type</key><string>Memory leak</string>
 // CHECK-NEXT:   <key>issue_context_kind</key><string>function</string>
 // CHECK-NEXT:   <key>issue_context</key><string>diagnosticTest</string>
-// CHECK-NEXT:   <key>issue_hash</key><string>2</string>
+// CHECK-NEXT:   <key>issue_hash</key><integer>5</integer>
 // CHECK-NEXT:   <key>location</key>
 // CHECK-NEXT:   <dict>
 // CHECK-NEXT:    <key>line</key><integer>15</integer>
@@ -516,7 +494,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Memory is allocated</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Memory is allocated</string>
+// CHECK-NEXT: <string>Memory is allocated</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -562,17 +540,17 @@ void testMyMalloc() {
 // CHECK-NEXT:      </dict>
 // CHECK-NEXT:      <key>depth</key><integer>0</integer>
 // CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;A&apos;</string>
+// CHECK-NEXT:      <string>Memory is never released; potential leak of memory pointed to by &apos;A&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;A&apos;</string>
+// CHECK-NEXT: <string>Memory is never released; potential leak of memory pointed to by &apos;A&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:    </array>
-// CHECK-NEXT:    <key>description</key><string>Potential leak of memory pointed to by &apos;A&apos;</string>
+// CHECK-NEXT:    <key>description</key><string>Memory is never released; potential leak of memory pointed to by &apos;A&apos;</string>
 // CHECK-NEXT:    <key>category</key><string>Memory Error</string>
 // CHECK-NEXT:    <key>type</key><string>Memory leak</string>
 // CHECK-NEXT:   <key>issue_context_kind</key><string>function</string>
 // CHECK-NEXT:   <key>issue_context</key><string>myArrayAllocation</string>
-// CHECK-NEXT:   <key>issue_hash</key><string>2</string>
+// CHECK-NEXT:   <key>issue_hash</key><integer>4</integer>
 // CHECK-NEXT:   <key>location</key>
 // CHECK-NEXT:   <dict>
 // CHECK-NEXT:    <key>line</key><integer>22</integer>
@@ -644,7 +622,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Memory is allocated</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Memory is allocated</string>
+// CHECK-NEXT: <string>Memory is allocated</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -741,7 +719,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Attempt to reallocate memory</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Attempt to reallocate memory</string>
+// CHECK-NEXT: <string>Attempt to reallocate memory</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -838,7 +816,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Assuming &apos;tmp&apos; is null</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Assuming &apos;tmp&apos; is null</string>
+// CHECK-NEXT: <string>Assuming &apos;tmp&apos; is null</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -901,7 +879,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Reallocation failed</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Reallocation failed</string>
+// CHECK-NEXT: <string>Reallocation failed</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -947,17 +925,17 @@ void testMyMalloc() {
 // CHECK-NEXT:      </dict>
 // CHECK-NEXT:      <key>depth</key><integer>0</integer>
 // CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;buf&apos;</string>
+// CHECK-NEXT:      <string>Memory is never released; potential leak of memory pointed to by &apos;buf&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;buf&apos;</string>
+// CHECK-NEXT: <string>Memory is never released; potential leak of memory pointed to by &apos;buf&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:    </array>
-// CHECK-NEXT:    <key>description</key><string>Potential leak of memory pointed to by &apos;buf&apos;</string>
+// CHECK-NEXT:    <key>description</key><string>Memory is never released; potential leak of memory pointed to by &apos;buf&apos;</string>
 // CHECK-NEXT:    <key>category</key><string>Memory Error</string>
 // CHECK-NEXT:    <key>type</key><string>Memory leak</string>
 // CHECK-NEXT:   <key>issue_context_kind</key><string>function</string>
 // CHECK-NEXT:   <key>issue_context</key><string>reallocDiagnostics</string>
-// CHECK-NEXT:   <key>issue_hash</key><string>1</string>
+// CHECK-NEXT:   <key>issue_hash</key><integer>5</integer>
 // CHECK-NEXT:   <key>location</key>
 // CHECK-NEXT:   <dict>
 // CHECK-NEXT:    <key>line</key><integer>29</integer>
@@ -1029,7 +1007,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Calling &apos;wrapper&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Calling &apos;wrapper&apos;</string>
+// CHECK-NEXT: <string>Calling &apos;wrapper&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>event</string>
@@ -1043,7 +1021,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Entered call from &apos;test_wrapper&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Entered call from &apos;test_wrapper&apos;</string>
+// CHECK-NEXT: <string>Entered call from &apos;test_wrapper&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -1140,7 +1118,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Memory is allocated</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Memory is allocated</string>
+// CHECK-NEXT: <string>Memory is allocated</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -1237,7 +1215,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Assuming &apos;x&apos; is non-null</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Assuming &apos;x&apos; is non-null</string>
+// CHECK-NEXT: <string>Assuming &apos;x&apos; is non-null</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -1296,11 +1274,11 @@ void testMyMalloc() {
 // CHECK-NEXT:         </dict>
 // CHECK-NEXT:        </array>
 // CHECK-NEXT:      </array>
-// CHECK-NEXT:      <key>depth</key><integer>0</integer>
+// CHECK-NEXT:      <key>depth</key><integer>1</integer>
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Returned allocated memory</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Returned allocated memory</string>
+// CHECK-NEXT: <string>Returned allocated memory</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -1346,17 +1324,17 @@ void testMyMalloc() {
 // CHECK-NEXT:      </dict>
 // CHECK-NEXT:      <key>depth</key><integer>0</integer>
 // CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;buf&apos;</string>
+// CHECK-NEXT:      <string>Memory is never released; potential leak of memory pointed to by &apos;buf&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;buf&apos;</string>
+// CHECK-NEXT: <string>Memory is never released; potential leak of memory pointed to by &apos;buf&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:    </array>
-// CHECK-NEXT:    <key>description</key><string>Potential leak of memory pointed to by &apos;buf&apos;</string>
+// CHECK-NEXT:    <key>description</key><string>Memory is never released; potential leak of memory pointed to by &apos;buf&apos;</string>
 // CHECK-NEXT:    <key>category</key><string>Memory Error</string>
 // CHECK-NEXT:    <key>type</key><string>Memory leak</string>
 // CHECK-NEXT:   <key>issue_context_kind</key><string>function</string>
 // CHECK-NEXT:   <key>issue_context</key><string>test_wrapper</string>
-// CHECK-NEXT:   <key>issue_hash</key><string>1</string>
+// CHECK-NEXT:   <key>issue_hash</key><integer>3</integer>
 // CHECK-NEXT:   <key>location</key>
 // CHECK-NEXT:   <dict>
 // CHECK-NEXT:    <key>line</key><integer>46</integer>
@@ -1428,7 +1406,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Calling &apos;my_malloc_and_free&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Calling &apos;my_malloc_and_free&apos;</string>
+// CHECK-NEXT: <string>Calling &apos;my_malloc_and_free&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>event</string>
@@ -1442,7 +1420,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Entered call from &apos;test_double_action_call&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Entered call from &apos;test_double_action_call&apos;</string>
+// CHECK-NEXT: <string>Entered call from &apos;test_double_action_call&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -1539,7 +1517,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Memory is allocated</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Memory is allocated</string>
+// CHECK-NEXT: <string>Memory is allocated</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -1636,7 +1614,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Calling &apos;my_free&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Calling &apos;my_free&apos;</string>
+// CHECK-NEXT: <string>Calling &apos;my_free&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>event</string>
@@ -1650,7 +1628,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Entered call from &apos;my_malloc_and_free&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Entered call from &apos;my_malloc_and_free&apos;</string>
+// CHECK-NEXT: <string>Entered call from &apos;my_malloc_and_free&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -1713,7 +1691,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Memory is released</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Memory is released</string>
+// CHECK-NEXT: <string>Memory is released</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>event</string>
@@ -1738,11 +1716,11 @@ void testMyMalloc() {
 // CHECK-NEXT:         </dict>
 // CHECK-NEXT:        </array>
 // CHECK-NEXT:      </array>
-// CHECK-NEXT:      <key>depth</key><integer>1</integer>
+// CHECK-NEXT:      <key>depth</key><integer>2</integer>
 // CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Returning; memory was released via 1st parameter</string>
+// CHECK-NEXT:      <string>Returned released memory via 1st parameter</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Returning; memory was released via 1st parameter</string>
+// CHECK-NEXT: <string>Returned released memory via 1st parameter</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -1801,11 +1779,11 @@ void testMyMalloc() {
 // CHECK-NEXT:         </dict>
 // CHECK-NEXT:        </array>
 // CHECK-NEXT:      </array>
-// CHECK-NEXT:      <key>depth</key><integer>0</integer>
+// CHECK-NEXT:      <key>depth</key><integer>1</integer>
 // CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Returning; memory was released via 1st parameter</string>
+// CHECK-NEXT:      <string>Returned released memory via 1st parameter</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Returning; memory was released via 1st parameter</string>
+// CHECK-NEXT: <string>Returned released memory via 1st parameter</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -1868,7 +1846,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Use of memory after it is freed</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Use of memory after it is freed</string>
+// CHECK-NEXT: <string>Use of memory after it is freed</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:    </array>
 // CHECK-NEXT:    <key>description</key><string>Use of memory after it is freed</string>
@@ -1876,7 +1854,7 @@ void testMyMalloc() {
 // CHECK-NEXT:    <key>type</key><string>Use-after-free</string>
 // CHECK-NEXT:   <key>issue_context_kind</key><string>function</string>
 // CHECK-NEXT:   <key>issue_context</key><string>test_double_action_call</string>
-// CHECK-NEXT:   <key>issue_hash</key><string>3</string>
+// CHECK-NEXT:   <key>issue_hash</key><integer>3</integer>
 // CHECK-NEXT:   <key>location</key>
 // CHECK-NEXT:   <dict>
 // CHECK-NEXT:    <key>line</key><integer>62</integer>
@@ -1948,7 +1926,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Memory is allocated</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Memory is allocated</string>
+// CHECK-NEXT: <string>Memory is allocated</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -2011,7 +1989,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Calling &apos;my_realloc&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Calling &apos;my_realloc&apos;</string>
+// CHECK-NEXT: <string>Calling &apos;my_realloc&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>event</string>
@@ -2025,7 +2003,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Entered call from &apos;reallocIntra&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Entered call from &apos;reallocIntra&apos;</string>
+// CHECK-NEXT: <string>Entered call from &apos;reallocIntra&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -2156,7 +2134,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Attempt to reallocate memory</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Attempt to reallocate memory</string>
+// CHECK-NEXT: <string>Attempt to reallocate memory</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -2253,7 +2231,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Assuming &apos;tmp&apos; is null</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Assuming &apos;tmp&apos; is null</string>
+// CHECK-NEXT: <string>Assuming &apos;tmp&apos; is null</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -2316,7 +2294,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Reallocation failed</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Reallocation failed</string>
+// CHECK-NEXT: <string>Reallocation failed</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -2375,11 +2353,11 @@ void testMyMalloc() {
 // CHECK-NEXT:         </dict>
 // CHECK-NEXT:        </array>
 // CHECK-NEXT:      </array>
-// CHECK-NEXT:      <key>depth</key><integer>0</integer>
+// CHECK-NEXT:      <key>depth</key><integer>1</integer>
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Reallocation of 1st parameter failed</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Reallocation of 1st parameter failed</string>
+// CHECK-NEXT: <string>Reallocation of 1st parameter failed</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -2425,17 +2403,17 @@ void testMyMalloc() {
 // CHECK-NEXT:      </dict>
 // CHECK-NEXT:      <key>depth</key><integer>0</integer>
 // CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;buf&apos;</string>
+// CHECK-NEXT:      <string>Memory is never released; potential leak of memory pointed to by &apos;buf&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;buf&apos;</string>
+// CHECK-NEXT: <string>Memory is never released; potential leak of memory pointed to by &apos;buf&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:    </array>
-// CHECK-NEXT:    <key>description</key><string>Potential leak of memory pointed to by &apos;buf&apos;</string>
+// CHECK-NEXT:    <key>description</key><string>Memory is never released; potential leak of memory pointed to by &apos;buf&apos;</string>
 // CHECK-NEXT:    <key>category</key><string>Memory Error</string>
 // CHECK-NEXT:    <key>type</key><string>Memory leak</string>
 // CHECK-NEXT:   <key>issue_context_kind</key><string>function</string>
 // CHECK-NEXT:   <key>issue_context</key><string>reallocIntra</string>
-// CHECK-NEXT:   <key>issue_hash</key><string>1</string>
+// CHECK-NEXT:   <key>issue_hash</key><integer>3</integer>
 // CHECK-NEXT:   <key>location</key>
 // CHECK-NEXT:   <dict>
 // CHECK-NEXT:    <key>line</key><integer>77</integer>
@@ -2507,7 +2485,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Calling &apos;malloc_wrapper_ret&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Calling &apos;malloc_wrapper_ret&apos;</string>
+// CHECK-NEXT: <string>Calling &apos;malloc_wrapper_ret&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>event</string>
@@ -2521,7 +2499,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Entered call from &apos;use_ret&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Entered call from &apos;use_ret&apos;</string>
+// CHECK-NEXT: <string>Entered call from &apos;use_ret&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -2618,7 +2596,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Memory is allocated</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Memory is allocated</string>
+// CHECK-NEXT: <string>Memory is allocated</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>event</string>
@@ -2643,11 +2621,11 @@ void testMyMalloc() {
 // CHECK-NEXT:         </dict>
 // CHECK-NEXT:        </array>
 // CHECK-NEXT:      </array>
-// CHECK-NEXT:      <key>depth</key><integer>0</integer>
+// CHECK-NEXT:      <key>depth</key><integer>1</integer>
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Returned allocated memory</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Returned allocated memory</string>
+// CHECK-NEXT: <string>Returned allocated memory</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -2693,17 +2671,17 @@ void testMyMalloc() {
 // CHECK-NEXT:      </dict>
 // CHECK-NEXT:      <key>depth</key><integer>0</integer>
 // CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;v&apos;</string>
+// CHECK-NEXT:      <string>Memory is never released; potential leak of memory pointed to by &apos;v&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;v&apos;</string>
+// CHECK-NEXT: <string>Memory is never released; potential leak of memory pointed to by &apos;v&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:    </array>
-// CHECK-NEXT:    <key>description</key><string>Potential leak of memory pointed to by &apos;v&apos;</string>
+// CHECK-NEXT:    <key>description</key><string>Memory is never released; potential leak of memory pointed to by &apos;v&apos;</string>
 // CHECK-NEXT:    <key>category</key><string>Memory Error</string>
 // CHECK-NEXT:    <key>type</key><string>Memory leak</string>
 // CHECK-NEXT:   <key>issue_context_kind</key><string>function</string>
 // CHECK-NEXT:   <key>issue_context</key><string>use_ret</string>
-// CHECK-NEXT:   <key>issue_hash</key><string>2</string>
+// CHECK-NEXT:   <key>issue_hash</key><integer>3</integer>
 // CHECK-NEXT:   <key>location</key>
 // CHECK-NEXT:   <dict>
 // CHECK-NEXT:    <key>line</key><integer>87</integer>
@@ -2809,7 +2787,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Memory is allocated</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Memory is allocated</string>
+// CHECK-NEXT: <string>Memory is allocated</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -2855,17 +2833,17 @@ void testMyMalloc() {
 // CHECK-NEXT:      </dict>
 // CHECK-NEXT:      <key>depth</key><integer>0</integer>
 // CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;m&apos;</string>
+// CHECK-NEXT:      <string>Memory is never released; potential leak of memory pointed to by &apos;m&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;m&apos;</string>
+// CHECK-NEXT: <string>Memory is never released; potential leak of memory pointed to by &apos;m&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:    </array>
-// CHECK-NEXT:    <key>description</key><string>Potential leak of memory pointed to by &apos;m&apos;</string>
+// CHECK-NEXT:    <key>description</key><string>Memory is never released; potential leak of memory pointed to by &apos;m&apos;</string>
 // CHECK-NEXT:    <key>category</key><string>Memory Error</string>
 // CHECK-NEXT:    <key>type</key><string>Memory leak</string>
 // CHECK-NEXT:   <key>issue_context_kind</key><string>function</string>
 // CHECK-NEXT:   <key>issue_context</key><string>LeakedSymbol</string>
-// CHECK-NEXT:   <key>issue_hash</key><string>3</string>
+// CHECK-NEXT:   <key>issue_hash</key><integer>8</integer>
 // CHECK-NEXT:   <key>location</key>
 // CHECK-NEXT:   <dict>
 // CHECK-NEXT:    <key>line</key><integer>98</integer>
@@ -2903,7 +2881,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Calling &apos;function_with_leak1&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Calling &apos;function_with_leak1&apos;</string>
+// CHECK-NEXT: <string>Calling &apos;function_with_leak1&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>event</string>
@@ -2917,7 +2895,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Entered call from &apos;use_function_with_leak1&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Entered call from &apos;use_function_with_leak1&apos;</string>
+// CHECK-NEXT: <string>Entered call from &apos;use_function_with_leak1&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -3014,7 +2992,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Memory is allocated</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Memory is allocated</string>
+// CHECK-NEXT: <string>Memory is allocated</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -3037,13 +3015,13 @@ void testMyMalloc() {
 // CHECK-NEXT:         <key>end</key>
 // CHECK-NEXT:          <array>
 // CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>104</integer>
-// CHECK-NEXT:            <key>col</key><integer>1</integer>
+// CHECK-NEXT:            <key>line</key><integer>103</integer>
+// CHECK-NEXT:            <key>col</key><integer>5</integer>
 // CHECK-NEXT:            <key>file</key><integer>0</integer>
 // CHECK-NEXT:           </dict>
 // CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>104</integer>
-// CHECK-NEXT:            <key>col</key><integer>1</integer>
+// CHECK-NEXT:            <key>line</key><integer>103</integer>
+// CHECK-NEXT:            <key>col</key><integer>8</integer>
 // CHECK-NEXT:            <key>file</key><integer>0</integer>
 // CHECK-NEXT:           </dict>
 // CHECK-NEXT:          </array>
@@ -3054,27 +3032,27 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>kind</key><string>event</string>
 // CHECK-NEXT:      <key>location</key>
 // CHECK-NEXT:      <dict>
-// CHECK-NEXT:       <key>line</key><integer>104</integer>
-// CHECK-NEXT:       <key>col</key><integer>1</integer>
+// CHECK-NEXT:       <key>line</key><integer>103</integer>
+// CHECK-NEXT:       <key>col</key><integer>5</integer>
 // CHECK-NEXT:       <key>file</key><integer>0</integer>
 // CHECK-NEXT:      </dict>
 // CHECK-NEXT:      <key>depth</key><integer>1</integer>
 // CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;x&apos;</string>
+// CHECK-NEXT:      <string>Memory is never released; potential leak of memory pointed to by &apos;x&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;x&apos;</string>
+// CHECK-NEXT: <string>Memory is never released; potential leak of memory pointed to by &apos;x&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:    </array>
-// CHECK-NEXT:    <key>description</key><string>Potential leak of memory pointed to by &apos;x&apos;</string>
+// CHECK-NEXT:    <key>description</key><string>Memory is never released; potential leak of memory pointed to by &apos;x&apos;</string>
 // CHECK-NEXT:    <key>category</key><string>Memory Error</string>
 // CHECK-NEXT:    <key>type</key><string>Memory leak</string>
 // CHECK-NEXT:   <key>issue_context_kind</key><string>function</string>
 // CHECK-NEXT:   <key>issue_context</key><string>function_with_leak1</string>
-// CHECK-NEXT:   <key>issue_hash</key><string>1</string>
+// CHECK-NEXT:   <key>issue_hash</key><integer>1</integer>
 // CHECK-NEXT:   <key>location</key>
 // CHECK-NEXT:   <dict>
-// CHECK-NEXT:    <key>line</key><integer>104</integer>
-// CHECK-NEXT:    <key>col</key><integer>1</integer>
+// CHECK-NEXT:    <key>line</key><integer>103</integer>
+// CHECK-NEXT:    <key>col</key><integer>5</integer>
 // CHECK-NEXT:    <key>file</key><integer>0</integer>
 // CHECK-NEXT:   </dict>
 // CHECK-NEXT:   </dict>
@@ -3108,7 +3086,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Calling &apos;function_with_leak2&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Calling &apos;function_with_leak2&apos;</string>
+// CHECK-NEXT: <string>Calling &apos;function_with_leak2&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>event</string>
@@ -3122,7 +3100,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Entered call from &apos;use_function_with_leak2&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Entered call from &apos;use_function_with_leak2&apos;</string>
+// CHECK-NEXT: <string>Entered call from &apos;use_function_with_leak2&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -3219,7 +3197,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Memory is allocated</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Memory is allocated</string>
+// CHECK-NEXT: <string>Memory is allocated</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -3265,17 +3243,17 @@ void testMyMalloc() {
 // CHECK-NEXT:      </dict>
 // CHECK-NEXT:      <key>depth</key><integer>1</integer>
 // CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;x&apos;</string>
+// CHECK-NEXT:      <string>Memory is never released; potential leak of memory pointed to by &apos;x&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;x&apos;</string>
+// CHECK-NEXT: <string>Memory is never released; potential leak of memory pointed to by &apos;x&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:    </array>
-// CHECK-NEXT:    <key>description</key><string>Potential leak of memory pointed to by &apos;x&apos;</string>
+// CHECK-NEXT:    <key>description</key><string>Memory is never released; potential leak of memory pointed to by &apos;x&apos;</string>
 // CHECK-NEXT:    <key>category</key><string>Memory Error</string>
 // CHECK-NEXT:    <key>type</key><string>Memory leak</string>
 // CHECK-NEXT:   <key>issue_context_kind</key><string>function</string>
 // CHECK-NEXT:   <key>issue_context</key><string>function_with_leak2</string>
-// CHECK-NEXT:   <key>issue_hash</key><string>1</string>
+// CHECK-NEXT:   <key>issue_hash</key><integer>2</integer>
 // CHECK-NEXT:   <key>location</key>
 // CHECK-NEXT:   <dict>
 // CHECK-NEXT:    <key>line</key><integer>112</integer>
@@ -3313,7 +3291,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Calling &apos;function_with_leak3&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Calling &apos;function_with_leak3&apos;</string>
+// CHECK-NEXT: <string>Calling &apos;function_with_leak3&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>event</string>
@@ -3327,7 +3305,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Entered call from &apos;use_function_with_leak3&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Entered call from &apos;use_function_with_leak3&apos;</string>
+// CHECK-NEXT: <string>Entered call from &apos;use_function_with_leak3&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -3424,7 +3402,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Memory is allocated</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Memory is allocated</string>
+// CHECK-NEXT: <string>Memory is allocated</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -3521,7 +3499,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Assuming &apos;y&apos; is not equal to 0</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Assuming &apos;y&apos; is not equal to 0</string>
+// CHECK-NEXT: <string>Assuming &apos;y&apos; is not equal to 0</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -3567,17 +3545,17 @@ void testMyMalloc() {
 // CHECK-NEXT:      </dict>
 // CHECK-NEXT:      <key>depth</key><integer>1</integer>
 // CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;x&apos;</string>
+// CHECK-NEXT:      <string>Memory is never released; potential leak of memory pointed to by &apos;x&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;x&apos;</string>
+// CHECK-NEXT: <string>Memory is never released; potential leak of memory pointed to by &apos;x&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:    </array>
-// CHECK-NEXT:    <key>description</key><string>Potential leak of memory pointed to by &apos;x&apos;</string>
+// CHECK-NEXT:    <key>description</key><string>Memory is never released; potential leak of memory pointed to by &apos;x&apos;</string>
 // CHECK-NEXT:    <key>category</key><string>Memory Error</string>
 // CHECK-NEXT:    <key>type</key><string>Memory leak</string>
 // CHECK-NEXT:   <key>issue_context_kind</key><string>function</string>
 // CHECK-NEXT:   <key>issue_context</key><string>function_with_leak3</string>
-// CHECK-NEXT:   <key>issue_hash</key><string>1</string>
+// CHECK-NEXT:   <key>issue_hash</key><integer>3</integer>
 // CHECK-NEXT:   <key>location</key>
 // CHECK-NEXT:   <dict>
 // CHECK-NEXT:    <key>line</key><integer>121</integer>
@@ -3615,7 +3593,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Calling &apos;function_with_leak4&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Calling &apos;function_with_leak4&apos;</string>
+// CHECK-NEXT: <string>Calling &apos;function_with_leak4&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>event</string>
@@ -3629,7 +3607,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Entered call from &apos;use_function_with_leak4&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Entered call from &apos;use_function_with_leak4&apos;</string>
+// CHECK-NEXT: <string>Entered call from &apos;use_function_with_leak4&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -3726,7 +3704,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Memory is allocated</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Memory is allocated</string>
+// CHECK-NEXT: <string>Memory is allocated</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -3823,7 +3801,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Assuming &apos;y&apos; is 0</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Assuming &apos;y&apos; is 0</string>
+// CHECK-NEXT: <string>Assuming &apos;y&apos; is 0</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -3869,17 +3847,17 @@ void testMyMalloc() {
 // CHECK-NEXT:      </dict>
 // CHECK-NEXT:      <key>depth</key><integer>1</integer>
 // CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;x&apos;</string>
+// CHECK-NEXT:      <string>Memory is never released; potential leak of memory pointed to by &apos;x&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;x&apos;</string>
+// CHECK-NEXT: <string>Memory is never released; potential leak of memory pointed to by &apos;x&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:    </array>
-// CHECK-NEXT:    <key>description</key><string>Potential leak of memory pointed to by &apos;x&apos;</string>
+// CHECK-NEXT:    <key>description</key><string>Memory is never released; potential leak of memory pointed to by &apos;x&apos;</string>
 // CHECK-NEXT:    <key>category</key><string>Memory Error</string>
 // CHECK-NEXT:    <key>type</key><string>Memory leak</string>
 // CHECK-NEXT:   <key>issue_context_kind</key><string>function</string>
 // CHECK-NEXT:   <key>issue_context</key><string>function_with_leak4</string>
-// CHECK-NEXT:   <key>issue_hash</key><string>1</string>
+// CHECK-NEXT:   <key>issue_hash</key><integer>5</integer>
 // CHECK-NEXT:   <key>location</key>
 // CHECK-NEXT:   <dict>
 // CHECK-NEXT:    <key>line</key><integer>132</integer>
@@ -3917,7 +3895,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Calling &apos;function_with_leak5&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Calling &apos;function_with_leak5&apos;</string>
+// CHECK-NEXT: <string>Calling &apos;function_with_leak5&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>event</string>
@@ -3931,7 +3909,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Entered call from &apos;use_function_with_leak5&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Entered call from &apos;use_function_with_leak5&apos;</string>
+// CHECK-NEXT: <string>Entered call from &apos;use_function_with_leak5&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -4028,7 +4006,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Memory is allocated</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Memory is allocated</string>
+// CHECK-NEXT: <string>Memory is allocated</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -4074,17 +4052,17 @@ void testMyMalloc() {
 // CHECK-NEXT:      </dict>
 // CHECK-NEXT:      <key>depth</key><integer>1</integer>
 // CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;x&apos;</string>
+// CHECK-NEXT:      <string>Memory is never released; potential leak of memory pointed to by &apos;x&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;x&apos;</string>
+// CHECK-NEXT: <string>Memory is never released; potential leak of memory pointed to by &apos;x&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:    </array>
-// CHECK-NEXT:    <key>description</key><string>Potential leak of memory pointed to by &apos;x&apos;</string>
+// CHECK-NEXT:    <key>description</key><string>Memory is never released; potential leak of memory pointed to by &apos;x&apos;</string>
 // CHECK-NEXT:    <key>category</key><string>Memory Error</string>
 // CHECK-NEXT:    <key>type</key><string>Memory leak</string>
 // CHECK-NEXT:   <key>issue_context_kind</key><string>function</string>
 // CHECK-NEXT:   <key>issue_context</key><string>function_with_leak5</string>
-// CHECK-NEXT:   <key>issue_hash</key><string>1</string>
+// CHECK-NEXT:   <key>issue_hash</key><integer>2</integer>
 // CHECK-NEXT:   <key>location</key>
 // CHECK-NEXT:   <dict>
 // CHECK-NEXT:    <key>line</key><integer>143</integer>
@@ -4122,7 +4100,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Calling &apos;function_with_leak6&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Calling &apos;function_with_leak6&apos;</string>
+// CHECK-NEXT: <string>Calling &apos;function_with_leak6&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>event</string>
@@ -4136,7 +4114,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Entered call from &apos;use_function_with_leak6&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Entered call from &apos;use_function_with_leak6&apos;</string>
+// CHECK-NEXT: <string>Entered call from &apos;use_function_with_leak6&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -4233,7 +4211,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Memory is allocated</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Memory is allocated</string>
+// CHECK-NEXT: <string>Memory is allocated</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -4279,17 +4257,17 @@ void testMyMalloc() {
 // CHECK-NEXT:      </dict>
 // CHECK-NEXT:      <key>depth</key><integer>1</integer>
 // CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;x&apos;</string>
+// CHECK-NEXT:      <string>Memory is never released; potential leak of memory pointed to by &apos;x&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Potential leak of memory pointed to by &apos;x&apos;</string>
+// CHECK-NEXT: <string>Memory is never released; potential leak of memory pointed to by &apos;x&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:    </array>
-// CHECK-NEXT:    <key>description</key><string>Potential leak of memory pointed to by &apos;x&apos;</string>
+// CHECK-NEXT:    <key>description</key><string>Memory is never released; potential leak of memory pointed to by &apos;x&apos;</string>
 // CHECK-NEXT:    <key>category</key><string>Memory Error</string>
 // CHECK-NEXT:    <key>type</key><string>Memory leak</string>
 // CHECK-NEXT:   <key>issue_context_kind</key><string>function</string>
 // CHECK-NEXT:   <key>issue_context</key><string>function_with_leak6</string>
-// CHECK-NEXT:   <key>issue_hash</key><string>1</string>
+// CHECK-NEXT:   <key>issue_hash</key><integer>2</integer>
 // CHECK-NEXT:   <key>location</key>
 // CHECK-NEXT:   <dict>
 // CHECK-NEXT:    <key>line</key><integer>154</integer>
@@ -4327,7 +4305,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Calling &apos;function_with_leak7&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Calling &apos;function_with_leak7&apos;</string>
+// CHECK-NEXT: <string>Calling &apos;function_with_leak7&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>event</string>
@@ -4341,7 +4319,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Entered call from &apos;use_function_with_leak7&apos;</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Entered call from &apos;use_function_with_leak7&apos;</string>
+// CHECK-NEXT: <string>Entered call from &apos;use_function_with_leak7&apos;</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -4438,7 +4416,7 @@ void testMyMalloc() {
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Memory is allocated</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Memory is allocated</string>
+// CHECK-NEXT: <string>Memory is allocated</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>event</string>
@@ -4463,11 +4441,11 @@ void testMyMalloc() {
 // CHECK-NEXT:         </dict>
 // CHECK-NEXT:        </array>
 // CHECK-NEXT:      </array>
-// CHECK-NEXT:      <key>depth</key><integer>0</integer>
+// CHECK-NEXT:      <key>depth</key><integer>1</integer>
 // CHECK-NEXT:      <key>extended_message</key>
 // CHECK-NEXT:      <string>Returned allocated memory</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Returned allocated memory</string>
+// CHECK-NEXT: <string>Returned allocated memory</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:     <dict>
 // CHECK-NEXT:      <key>kind</key><string>control</string>
@@ -4513,522 +4491,20 @@ void testMyMalloc() {
 // CHECK-NEXT:      </dict>
 // CHECK-NEXT:      <key>depth</key><integer>0</integer>
 // CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Potential memory leak</string>
+// CHECK-NEXT:      <string>Memory is never released; potential leak</string>
 // CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Potential memory leak</string>
+// CHECK-NEXT: <string>Memory is never released; potential leak</string>
 // CHECK-NEXT:     </dict>
 // CHECK-NEXT:    </array>
-// CHECK-NEXT:    <key>description</key><string>Potential memory leak</string>
+// CHECK-NEXT:    <key>description</key><string>Memory is never released; potential leak</string>
 // CHECK-NEXT:    <key>category</key><string>Memory Error</string>
 // CHECK-NEXT:    <key>type</key><string>Memory leak</string>
 // CHECK-NEXT:   <key>issue_context_kind</key><string>function</string>
 // CHECK-NEXT:   <key>issue_context</key><string>use_function_with_leak7</string>
-// CHECK-NEXT:   <key>issue_hash</key><string>1</string>
+// CHECK-NEXT:   <key>issue_hash</key><integer>2</integer>
 // CHECK-NEXT:   <key>location</key>
 // CHECK-NEXT:   <dict>
 // CHECK-NEXT:    <key>line</key><integer>170</integer>
-// CHECK-NEXT:    <key>col</key><integer>1</integer>
-// CHECK-NEXT:    <key>file</key><integer>0</integer>
-// CHECK-NEXT:   </dict>
-// CHECK-NEXT:   </dict>
-// CHECK-NEXT:   <dict>
-// CHECK-NEXT:    <key>path</key>
-// CHECK-NEXT:    <array>
-// CHECK-NEXT:     <dict>
-// CHECK-NEXT:      <key>kind</key><string>event</string>
-// CHECK-NEXT:      <key>location</key>
-// CHECK-NEXT:      <dict>
-// CHECK-NEXT:       <key>line</key><integer>179</integer>
-// CHECK-NEXT:       <key>col</key><integer>3</integer>
-// CHECK-NEXT:       <key>file</key><integer>0</integer>
-// CHECK-NEXT:      </dict>
-// CHECK-NEXT:      <key>ranges</key>
-// CHECK-NEXT:      <array>
-// CHECK-NEXT:        <array>
-// CHECK-NEXT:         <dict>
-// CHECK-NEXT:          <key>line</key><integer>179</integer>
-// CHECK-NEXT:          <key>col</key><integer>3</integer>
-// CHECK-NEXT:          <key>file</key><integer>0</integer>
-// CHECK-NEXT:         </dict>
-// CHECK-NEXT:         <dict>
-// CHECK-NEXT:          <key>line</key><integer>179</integer>
-// CHECK-NEXT:          <key>col</key><integer>13</integer>
-// CHECK-NEXT:          <key>file</key><integer>0</integer>
-// CHECK-NEXT:         </dict>
-// CHECK-NEXT:        </array>
-// CHECK-NEXT:      </array>
-// CHECK-NEXT:      <key>depth</key><integer>0</integer>
-// CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Calling &apos;my_malloc&apos;</string>
-// CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Calling &apos;my_malloc&apos;</string>
-// CHECK-NEXT:     </dict>
-// CHECK-NEXT:     <dict>
-// CHECK-NEXT:      <key>kind</key><string>event</string>
-// CHECK-NEXT:      <key>location</key>
-// CHECK-NEXT:      <dict>
-// CHECK-NEXT:       <key>line</key><integer>174</integer>
-// CHECK-NEXT:       <key>col</key><integer>1</integer>
-// CHECK-NEXT:       <key>file</key><integer>0</integer>
-// CHECK-NEXT:      </dict>
-// CHECK-NEXT:      <key>depth</key><integer>1</integer>
-// CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Entered call from &apos;testOnlyRefferToVisibleVariables&apos;</string>
-// CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Entered call from &apos;testOnlyRefferToVisibleVariables&apos;</string>
-// CHECK-NEXT:     </dict>
-// CHECK-NEXT:     <dict>
-// CHECK-NEXT:      <key>kind</key><string>control</string>
-// CHECK-NEXT:      <key>edges</key>
-// CHECK-NEXT:       <array>
-// CHECK-NEXT:        <dict>
-// CHECK-NEXT:         <key>start</key>
-// CHECK-NEXT:          <array>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>174</integer>
-// CHECK-NEXT:            <key>col</key><integer>1</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>174</integer>
-// CHECK-NEXT:            <key>col</key><integer>3</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:          </array>
-// CHECK-NEXT:         <key>end</key>
-// CHECK-NEXT:          <array>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>175</integer>
-// CHECK-NEXT:            <key>col</key><integer>3</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>175</integer>
-// CHECK-NEXT:            <key>col</key><integer>5</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:          </array>
-// CHECK-NEXT:        </dict>
-// CHECK-NEXT:       </array>
-// CHECK-NEXT:     </dict>
-// CHECK-NEXT:     <dict>
-// CHECK-NEXT:      <key>kind</key><string>control</string>
-// CHECK-NEXT:      <key>edges</key>
-// CHECK-NEXT:       <array>
-// CHECK-NEXT:        <dict>
-// CHECK-NEXT:         <key>start</key>
-// CHECK-NEXT:          <array>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>175</integer>
-// CHECK-NEXT:            <key>col</key><integer>3</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>175</integer>
-// CHECK-NEXT:            <key>col</key><integer>5</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:          </array>
-// CHECK-NEXT:         <key>end</key>
-// CHECK-NEXT:          <array>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>175</integer>
-// CHECK-NEXT:            <key>col</key><integer>12</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>175</integer>
-// CHECK-NEXT:            <key>col</key><integer>17</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:          </array>
-// CHECK-NEXT:        </dict>
-// CHECK-NEXT:       </array>
-// CHECK-NEXT:     </dict>
-// CHECK-NEXT:     <dict>
-// CHECK-NEXT:      <key>kind</key><string>event</string>
-// CHECK-NEXT:      <key>location</key>
-// CHECK-NEXT:      <dict>
-// CHECK-NEXT:       <key>line</key><integer>175</integer>
-// CHECK-NEXT:       <key>col</key><integer>12</integer>
-// CHECK-NEXT:       <key>file</key><integer>0</integer>
-// CHECK-NEXT:      </dict>
-// CHECK-NEXT:      <key>ranges</key>
-// CHECK-NEXT:      <array>
-// CHECK-NEXT:        <array>
-// CHECK-NEXT:         <dict>
-// CHECK-NEXT:          <key>line</key><integer>175</integer>
-// CHECK-NEXT:          <key>col</key><integer>12</integer>
-// CHECK-NEXT:          <key>file</key><integer>0</integer>
-// CHECK-NEXT:         </dict>
-// CHECK-NEXT:         <dict>
-// CHECK-NEXT:          <key>line</key><integer>175</integer>
-// CHECK-NEXT:          <key>col</key><integer>21</integer>
-// CHECK-NEXT:          <key>file</key><integer>0</integer>
-// CHECK-NEXT:         </dict>
-// CHECK-NEXT:        </array>
-// CHECK-NEXT:      </array>
-// CHECK-NEXT:      <key>depth</key><integer>1</integer>
-// CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Memory is allocated</string>
-// CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Memory is allocated</string>
-// CHECK-NEXT:     </dict>
-// CHECK-NEXT:     <dict>
-// CHECK-NEXT:      <key>kind</key><string>event</string>
-// CHECK-NEXT:      <key>location</key>
-// CHECK-NEXT:      <dict>
-// CHECK-NEXT:       <key>line</key><integer>179</integer>
-// CHECK-NEXT:       <key>col</key><integer>3</integer>
-// CHECK-NEXT:       <key>file</key><integer>0</integer>
-// CHECK-NEXT:      </dict>
-// CHECK-NEXT:      <key>ranges</key>
-// CHECK-NEXT:      <array>
-// CHECK-NEXT:        <array>
-// CHECK-NEXT:         <dict>
-// CHECK-NEXT:          <key>line</key><integer>179</integer>
-// CHECK-NEXT:          <key>col</key><integer>3</integer>
-// CHECK-NEXT:          <key>file</key><integer>0</integer>
-// CHECK-NEXT:         </dict>
-// CHECK-NEXT:         <dict>
-// CHECK-NEXT:          <key>line</key><integer>179</integer>
-// CHECK-NEXT:          <key>col</key><integer>13</integer>
-// CHECK-NEXT:          <key>file</key><integer>0</integer>
-// CHECK-NEXT:         </dict>
-// CHECK-NEXT:        </array>
-// CHECK-NEXT:      </array>
-// CHECK-NEXT:      <key>depth</key><integer>0</integer>
-// CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Returned allocated memory</string>
-// CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Returned allocated memory</string>
-// CHECK-NEXT:     </dict>
-// CHECK-NEXT:     <dict>
-// CHECK-NEXT:      <key>kind</key><string>control</string>
-// CHECK-NEXT:      <key>edges</key>
-// CHECK-NEXT:       <array>
-// CHECK-NEXT:        <dict>
-// CHECK-NEXT:         <key>start</key>
-// CHECK-NEXT:          <array>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>179</integer>
-// CHECK-NEXT:            <key>col</key><integer>3</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>179</integer>
-// CHECK-NEXT:            <key>col</key><integer>11</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:          </array>
-// CHECK-NEXT:         <key>end</key>
-// CHECK-NEXT:          <array>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>180</integer>
-// CHECK-NEXT:            <key>col</key><integer>1</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>180</integer>
-// CHECK-NEXT:            <key>col</key><integer>1</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:          </array>
-// CHECK-NEXT:        </dict>
-// CHECK-NEXT:       </array>
-// CHECK-NEXT:     </dict>
-// CHECK-NEXT:     <dict>
-// CHECK-NEXT:      <key>kind</key><string>event</string>
-// CHECK-NEXT:      <key>location</key>
-// CHECK-NEXT:      <dict>
-// CHECK-NEXT:       <key>line</key><integer>180</integer>
-// CHECK-NEXT:       <key>col</key><integer>1</integer>
-// CHECK-NEXT:       <key>file</key><integer>0</integer>
-// CHECK-NEXT:      </dict>
-// CHECK-NEXT:      <key>depth</key><integer>0</integer>
-// CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Potential memory leak</string>
-// CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Potential memory leak</string>
-// CHECK-NEXT:     </dict>
-// CHECK-NEXT:    </array>
-// CHECK-NEXT:    <key>description</key><string>Potential memory leak</string>
-// CHECK-NEXT:    <key>category</key><string>Memory Error</string>
-// CHECK-NEXT:    <key>type</key><string>Memory leak</string>
-// CHECK-NEXT:   <key>issue_context_kind</key><string>function</string>
-// CHECK-NEXT:   <key>issue_context</key><string>testOnlyRefferToVisibleVariables</string>
-// CHECK-NEXT:   <key>issue_hash</key><string>1</string>
-// CHECK-NEXT:   <key>location</key>
-// CHECK-NEXT:   <dict>
-// CHECK-NEXT:    <key>line</key><integer>180</integer>
-// CHECK-NEXT:    <key>col</key><integer>1</integer>
-// CHECK-NEXT:    <key>file</key><integer>0</integer>
-// CHECK-NEXT:   </dict>
-// CHECK-NEXT:   </dict>
-// CHECK-NEXT:   <dict>
-// CHECK-NEXT:    <key>path</key>
-// CHECK-NEXT:    <array>
-// CHECK-NEXT:     <dict>
-// CHECK-NEXT:      <key>kind</key><string>event</string>
-// CHECK-NEXT:      <key>location</key>
-// CHECK-NEXT:      <dict>
-// CHECK-NEXT:       <key>line</key><integer>191</integer>
-// CHECK-NEXT:       <key>col</key><integer>3</integer>
-// CHECK-NEXT:       <key>file</key><integer>0</integer>
-// CHECK-NEXT:      </dict>
-// CHECK-NEXT:      <key>ranges</key>
-// CHECK-NEXT:      <array>
-// CHECK-NEXT:        <array>
-// CHECK-NEXT:         <dict>
-// CHECK-NEXT:          <key>line</key><integer>191</integer>
-// CHECK-NEXT:          <key>col</key><integer>3</integer>
-// CHECK-NEXT:          <key>file</key><integer>0</integer>
-// CHECK-NEXT:         </dict>
-// CHECK-NEXT:         <dict>
-// CHECK-NEXT:          <key>line</key><integer>191</integer>
-// CHECK-NEXT:          <key>col</key><integer>25</integer>
-// CHECK-NEXT:          <key>file</key><integer>0</integer>
-// CHECK-NEXT:         </dict>
-// CHECK-NEXT:        </array>
-// CHECK-NEXT:      </array>
-// CHECK-NEXT:      <key>depth</key><integer>0</integer>
-// CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Calling &apos;my_malloc_into_struct&apos;</string>
-// CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Calling &apos;my_malloc_into_struct&apos;</string>
-// CHECK-NEXT:     </dict>
-// CHECK-NEXT:     <dict>
-// CHECK-NEXT:      <key>kind</key><string>event</string>
-// CHECK-NEXT:      <key>location</key>
-// CHECK-NEXT:      <dict>
-// CHECK-NEXT:       <key>line</key><integer>185</integer>
-// CHECK-NEXT:       <key>col</key><integer>1</integer>
-// CHECK-NEXT:       <key>file</key><integer>0</integer>
-// CHECK-NEXT:      </dict>
-// CHECK-NEXT:      <key>depth</key><integer>1</integer>
-// CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Entered call from &apos;testMyMalloc&apos;</string>
-// CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Entered call from &apos;testMyMalloc&apos;</string>
-// CHECK-NEXT:     </dict>
-// CHECK-NEXT:     <dict>
-// CHECK-NEXT:      <key>kind</key><string>control</string>
-// CHECK-NEXT:      <key>edges</key>
-// CHECK-NEXT:       <array>
-// CHECK-NEXT:        <dict>
-// CHECK-NEXT:         <key>start</key>
-// CHECK-NEXT:          <array>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>185</integer>
-// CHECK-NEXT:            <key>col</key><integer>1</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>185</integer>
-// CHECK-NEXT:            <key>col</key><integer>3</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:          </array>
-// CHECK-NEXT:         <key>end</key>
-// CHECK-NEXT:          <array>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>186</integer>
-// CHECK-NEXT:            <key>col</key><integer>3</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>186</integer>
-// CHECK-NEXT:            <key>col</key><integer>8</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:          </array>
-// CHECK-NEXT:        </dict>
-// CHECK-NEXT:       </array>
-// CHECK-NEXT:     </dict>
-// CHECK-NEXT:     <dict>
-// CHECK-NEXT:      <key>kind</key><string>control</string>
-// CHECK-NEXT:      <key>edges</key>
-// CHECK-NEXT:       <array>
-// CHECK-NEXT:        <dict>
-// CHECK-NEXT:         <key>start</key>
-// CHECK-NEXT:          <array>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>186</integer>
-// CHECK-NEXT:            <key>col</key><integer>3</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>186</integer>
-// CHECK-NEXT:            <key>col</key><integer>8</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:          </array>
-// CHECK-NEXT:         <key>end</key>
-// CHECK-NEXT:          <array>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>187</integer>
-// CHECK-NEXT:            <key>col</key><integer>3</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>187</integer>
-// CHECK-NEXT:            <key>col</key><integer>3</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:          </array>
-// CHECK-NEXT:        </dict>
-// CHECK-NEXT:       </array>
-// CHECK-NEXT:     </dict>
-// CHECK-NEXT:     <dict>
-// CHECK-NEXT:      <key>kind</key><string>control</string>
-// CHECK-NEXT:      <key>edges</key>
-// CHECK-NEXT:       <array>
-// CHECK-NEXT:        <dict>
-// CHECK-NEXT:         <key>start</key>
-// CHECK-NEXT:          <array>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>187</integer>
-// CHECK-NEXT:            <key>col</key><integer>3</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>187</integer>
-// CHECK-NEXT:            <key>col</key><integer>3</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:          </array>
-// CHECK-NEXT:         <key>end</key>
-// CHECK-NEXT:          <array>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>187</integer>
-// CHECK-NEXT:            <key>col</key><integer>9</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>187</integer>
-// CHECK-NEXT:            <key>col</key><integer>14</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:          </array>
-// CHECK-NEXT:        </dict>
-// CHECK-NEXT:       </array>
-// CHECK-NEXT:     </dict>
-// CHECK-NEXT:     <dict>
-// CHECK-NEXT:      <key>kind</key><string>event</string>
-// CHECK-NEXT:      <key>location</key>
-// CHECK-NEXT:      <dict>
-// CHECK-NEXT:       <key>line</key><integer>187</integer>
-// CHECK-NEXT:       <key>col</key><integer>9</integer>
-// CHECK-NEXT:       <key>file</key><integer>0</integer>
-// CHECK-NEXT:      </dict>
-// CHECK-NEXT:      <key>ranges</key>
-// CHECK-NEXT:      <array>
-// CHECK-NEXT:        <array>
-// CHECK-NEXT:         <dict>
-// CHECK-NEXT:          <key>line</key><integer>187</integer>
-// CHECK-NEXT:          <key>col</key><integer>9</integer>
-// CHECK-NEXT:          <key>file</key><integer>0</integer>
-// CHECK-NEXT:         </dict>
-// CHECK-NEXT:         <dict>
-// CHECK-NEXT:          <key>line</key><integer>187</integer>
-// CHECK-NEXT:          <key>col</key><integer>18</integer>
-// CHECK-NEXT:          <key>file</key><integer>0</integer>
-// CHECK-NEXT:         </dict>
-// CHECK-NEXT:        </array>
-// CHECK-NEXT:      </array>
-// CHECK-NEXT:      <key>depth</key><integer>1</integer>
-// CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Memory is allocated</string>
-// CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Memory is allocated</string>
-// CHECK-NEXT:     </dict>
-// CHECK-NEXT:     <dict>
-// CHECK-NEXT:      <key>kind</key><string>event</string>
-// CHECK-NEXT:      <key>location</key>
-// CHECK-NEXT:      <dict>
-// CHECK-NEXT:       <key>line</key><integer>191</integer>
-// CHECK-NEXT:       <key>col</key><integer>3</integer>
-// CHECK-NEXT:       <key>file</key><integer>0</integer>
-// CHECK-NEXT:      </dict>
-// CHECK-NEXT:      <key>ranges</key>
-// CHECK-NEXT:      <array>
-// CHECK-NEXT:        <array>
-// CHECK-NEXT:         <dict>
-// CHECK-NEXT:          <key>line</key><integer>191</integer>
-// CHECK-NEXT:          <key>col</key><integer>3</integer>
-// CHECK-NEXT:          <key>file</key><integer>0</integer>
-// CHECK-NEXT:         </dict>
-// CHECK-NEXT:         <dict>
-// CHECK-NEXT:          <key>line</key><integer>191</integer>
-// CHECK-NEXT:          <key>col</key><integer>25</integer>
-// CHECK-NEXT:          <key>file</key><integer>0</integer>
-// CHECK-NEXT:         </dict>
-// CHECK-NEXT:        </array>
-// CHECK-NEXT:      </array>
-// CHECK-NEXT:      <key>depth</key><integer>0</integer>
-// CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Returned allocated memory</string>
-// CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Returned allocated memory</string>
-// CHECK-NEXT:     </dict>
-// CHECK-NEXT:     <dict>
-// CHECK-NEXT:      <key>kind</key><string>control</string>
-// CHECK-NEXT:      <key>edges</key>
-// CHECK-NEXT:       <array>
-// CHECK-NEXT:        <dict>
-// CHECK-NEXT:         <key>start</key>
-// CHECK-NEXT:          <array>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>191</integer>
-// CHECK-NEXT:            <key>col</key><integer>3</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>191</integer>
-// CHECK-NEXT:            <key>col</key><integer>23</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:          </array>
-// CHECK-NEXT:         <key>end</key>
-// CHECK-NEXT:          <array>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>192</integer>
-// CHECK-NEXT:            <key>col</key><integer>1</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:           <dict>
-// CHECK-NEXT:            <key>line</key><integer>192</integer>
-// CHECK-NEXT:            <key>col</key><integer>1</integer>
-// CHECK-NEXT:            <key>file</key><integer>0</integer>
-// CHECK-NEXT:           </dict>
-// CHECK-NEXT:          </array>
-// CHECK-NEXT:        </dict>
-// CHECK-NEXT:       </array>
-// CHECK-NEXT:     </dict>
-// CHECK-NEXT:     <dict>
-// CHECK-NEXT:      <key>kind</key><string>event</string>
-// CHECK-NEXT:      <key>location</key>
-// CHECK-NEXT:      <dict>
-// CHECK-NEXT:       <key>line</key><integer>192</integer>
-// CHECK-NEXT:       <key>col</key><integer>1</integer>
-// CHECK-NEXT:       <key>file</key><integer>0</integer>
-// CHECK-NEXT:      </dict>
-// CHECK-NEXT:      <key>depth</key><integer>0</integer>
-// CHECK-NEXT:      <key>extended_message</key>
-// CHECK-NEXT:      <string>Potential memory leak</string>
-// CHECK-NEXT:      <key>message</key>
-// CHECK-NEXT:      <string>Potential memory leak</string>
-// CHECK-NEXT:     </dict>
-// CHECK-NEXT:    </array>
-// CHECK-NEXT:    <key>description</key><string>Potential memory leak</string>
-// CHECK-NEXT:    <key>category</key><string>Memory Error</string>
-// CHECK-NEXT:    <key>type</key><string>Memory leak</string>
-// CHECK-NEXT:   <key>issue_context_kind</key><string>function</string>
-// CHECK-NEXT:   <key>issue_context</key><string>testMyMalloc</string>
-// CHECK-NEXT:   <key>issue_hash</key><string>1</string>
-// CHECK-NEXT:   <key>location</key>
-// CHECK-NEXT:   <dict>
-// CHECK-NEXT:    <key>line</key><integer>192</integer>
 // CHECK-NEXT:    <key>col</key><integer>1</integer>
 // CHECK-NEXT:    <key>file</key><integer>0</integer>
 // CHECK-NEXT:   </dict>

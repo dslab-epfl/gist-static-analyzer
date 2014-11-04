@@ -14,8 +14,8 @@
 //===----------------------------------------------------------------------===//
 
 
-#ifndef LLVM_SUPPORT_DATASTREAM_H
-#define LLVM_SUPPORT_DATASTREAM_H
+#ifndef LLVM_SUPPORT_DATASTREAM_H_
+#define LLVM_SUPPORT_DATASTREAM_H_
 
 #include <string>
 

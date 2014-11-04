@@ -6,7 +6,7 @@
 
 %struct = type { i8*, i8*, i16, i64, i16, i16, i16, i64, i64, i16, i8*, i64, i64, i64 }
 
-; CHECK-LABEL: @test(
+; CHECK: @test
 ; CHECK: for.body:
 ; CHECK: lsr.iv = phi %struct
 ; CHECK: br

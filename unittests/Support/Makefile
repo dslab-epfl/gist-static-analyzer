@@ -1,4 +1,4 @@
-##===- unittests/Support/Makefile --------------------------*- Makefile -*-===##
+##===- unittests/ADT/Makefile ------------------------------*- Makefile -*-===##
 #
 #                     The LLVM Compiler Infrastructure
 #

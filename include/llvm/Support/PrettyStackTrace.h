@@ -21,7 +21,11 @@
 namespace llvm {
   class raw_ostream;
 
-  void EnablePrettyStackTrace();
+  /// DisablePrettyStackTrace - Set this to true to disable this module. This
+  /// might be necessary if the host application installs its own signal
+  /// handlers which conflict with the ones installed by this module.
+  /// Defaults to false.
+  extern bool DisablePrettyStackTrace;
 
   /// PrettyStackTraceEntry - This class is used to represent a frame of the
   /// "pretty" stack trace that is dumped when a program crashes. You can define
@@ -50,7 +54,7 @@ namespace llvm {
     const char *Str;
   public:
     PrettyStackTraceString(const char *str) : Str(str) {}
-    void print(raw_ostream &OS) const override;
+    virtual void print(raw_ostream &OS) const LLVM_OVERRIDE;
   };
 
   /// PrettyStackTraceProgram - This object prints a specified program arguments
@@ -60,10 +64,8 @@ namespace llvm {
     const char *const *ArgV;
   public:
     PrettyStackTraceProgram(int argc, const char * const*argv)
-      : ArgC(argc), ArgV(argv) {
-      EnablePrettyStackTrace();
-    }
-    void print(raw_ostream &OS) const override;
+      : ArgC(argc), ArgV(argv) {}
+    virtual void print(raw_ostream &OS) const LLVM_OVERRIDE;
   };
 
 } // end namespace llvm

@@ -1,5 +1,4 @@
-// RUN: %clang -emit-llvm -x objc++-cpp-output -S %s -o /dev/null
-// RUN: %clang -emit-llvm -x objc++-cpp-output -S %s -o /dev/null -### 2>&1 | FileCheck %s
+// RUN: %clang -x objc++-cpp-output -c %s -o /dev/null
 
 // PR13820
 // REQUIRES: LP64
@@ -10,8 +9,3 @@
 @end
 void f() {}
 class C {};
-
-// Make sure the driver is passing all the necessary exception flags.
-// CHECK: "-fobjc-exceptions"
-// CHECK: "-fcxx-exceptions"
-// CHECK: "-fexceptions" 

@@ -13,15 +13,15 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Lex/Preprocessor.h"
+#include "clang/Lex/HeaderSearch.h"
+#include "clang/Lex/MacroInfo.h"
+#include "clang/Lex/LexDiagnostic.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/SourceManager.h"
-#include "clang/Lex/HeaderSearch.h"
-#include "clang/Lex/LexDiagnostic.h"
-#include "clang/Lex/MacroInfo.h"
-#include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/Path.h"
+#include "llvm/Support/PathV2.h"
+#include "llvm/ADT/StringSwitch.h"
 using namespace clang;
 
 PPCallbacks::~PPCallbacks() {}
@@ -58,7 +58,7 @@ PreprocessorLexer *Preprocessor::getCurrentFileLexer() const {
     if (IsFileLexer(ISI))
       return ISI.ThePPLexer;
   }
-  return nullptr;
+  return 0;
 }
 
 
@@ -68,9 +68,9 @@ PreprocessorLexer *Preprocessor::getCurrentFileLexer() const {
 
 /// EnterSourceFile - Add a source file to the top of the include stack and
 /// start lexing tokens from it instead of the current buffer.
-bool Preprocessor::EnterSourceFile(FileID FID, const DirectoryLookup *CurDir,
+void Preprocessor::EnterSourceFile(FileID FID, const DirectoryLookup *CurDir,
                                    SourceLocation Loc) {
-  assert(!CurTokenLexer && "Cannot #include a file inside a macro!");
+  assert(CurTokenLexer == 0 && "Cannot #include a file inside a macro!");
   ++NumEnteredSourceFiles;
 
   if (MaxIncludeStackDepth < IncludeMacroStack.size())
@@ -79,7 +79,7 @@ bool Preprocessor::EnterSourceFile(FileID FID, const DirectoryLookup *CurDir,
   if (PTH) {
     if (PTHLexer *PL = PTH->CreateLexer(FID)) {
       EnterSourceFileWithPTH(PL, CurDir);
-      return false;
+      return;
     }
   }
   
@@ -91,7 +91,7 @@ bool Preprocessor::EnterSourceFile(FileID FID, const DirectoryLookup *CurDir,
     SourceLocation FileStart = SourceMgr.getLocForStartOfFile(FID);
     Diag(Loc, diag::err_pp_error_opening_file)
       << std::string(SourceMgr.getBufferName(FileStart)) << "";
-    return true;
+    return;
   }
 
   if (isCodeCompletionEnabled() &&
@@ -102,7 +102,7 @@ bool Preprocessor::EnterSourceFile(FileID FID, const DirectoryLookup *CurDir,
   }
 
   EnterSourceFileWithLexer(new Lexer(FID, InputFile, *this), CurDir);
-  return false;
+  return;
 }
 
 /// EnterSourceFileWithLexer - Add a source file to the top of the include stack
@@ -117,7 +117,6 @@ void Preprocessor::EnterSourceFileWithLexer(Lexer *TheLexer,
   CurLexer.reset(TheLexer);
   CurPPLexer = TheLexer;
   CurDirLookup = CurDir;
-  CurSubmodule = nullptr;
   if (CurLexerKind != CLK_LexAfterModuleImport)
     CurLexerKind = CLK_Lexer;
   
@@ -142,7 +141,6 @@ void Preprocessor::EnterSourceFileWithPTH(PTHLexer *PL,
   CurDirLookup = CurDir;
   CurPTHLexer.reset(PL);
   CurPPLexer = CurPTHLexer.get();
-  CurSubmodule = nullptr;
   if (CurLexerKind != CLK_LexAfterModuleImport)
     CurLexerKind = CLK_PTHLexer;
   
@@ -160,17 +158,15 @@ void Preprocessor::EnterSourceFileWithPTH(PTHLexer *PL,
 /// tokens from it instead of the current buffer.
 void Preprocessor::EnterMacro(Token &Tok, SourceLocation ILEnd,
                               MacroInfo *Macro, MacroArgs *Args) {
-  std::unique_ptr<TokenLexer> TokLexer;
-  if (NumCachedTokenLexers == 0) {
-    TokLexer = llvm::make_unique<TokenLexer>(Tok, ILEnd, Macro, Args, *this);
-  } else {
-    TokLexer = std::move(TokenLexerCache[--NumCachedTokenLexers]);
-    TokLexer->Init(Tok, ILEnd, Macro, Args);
-  }
-
   PushIncludeMacroStack();
-  CurDirLookup = nullptr;
-  CurTokenLexer = std::move(TokLexer);
+  CurDirLookup = 0;
+
+  if (NumCachedTokenLexers == 0) {
+    CurTokenLexer.reset(new TokenLexer(Tok, ILEnd, Macro, Args, *this));
+  } else {
+    CurTokenLexer.reset(TokenLexerCache[--NumCachedTokenLexers]);
+    CurTokenLexer->Init(Tok, ILEnd, Macro, Args);
+  }
   if (CurLexerKind != CLK_LexAfterModuleImport)
     CurLexerKind = CLK_TokenLexer;
 }
@@ -190,39 +186,18 @@ void Preprocessor::EnterMacro(Token &Tok, SourceLocation ILEnd,
 void Preprocessor::EnterTokenStream(const Token *Toks, unsigned NumToks,
                                     bool DisableMacroExpansion,
                                     bool OwnsTokens) {
-  if (CurLexerKind == CLK_CachingLexer) {
-    if (CachedLexPos < CachedTokens.size()) {
-      // We're entering tokens into the middle of our cached token stream. We
-      // can't represent that, so just insert the tokens into the buffer.
-      CachedTokens.insert(CachedTokens.begin() + CachedLexPos,
-                          Toks, Toks + NumToks);
-      if (OwnsTokens)
-        delete [] Toks;
-      return;
-    }
-
-    // New tokens are at the end of the cached token sequnece; insert the
-    // token stream underneath the caching lexer.
-    ExitCachingLexMode();
-    EnterTokenStream(Toks, NumToks, DisableMacroExpansion, OwnsTokens);
-    EnterCachingLexMode();
-    return;
-  }
-
-  // Create a macro expander to expand from the specified token stream.
-  std::unique_ptr<TokenLexer> TokLexer;
-  if (NumCachedTokenLexers == 0) {
-    TokLexer = llvm::make_unique<TokenLexer>(
-        Toks, NumToks, DisableMacroExpansion, OwnsTokens, *this);
-  } else {
-    TokLexer = std::move(TokenLexerCache[--NumCachedTokenLexers]);
-    TokLexer->Init(Toks, NumToks, DisableMacroExpansion, OwnsTokens);
-  }
-
   // Save our current state.
   PushIncludeMacroStack();
-  CurDirLookup = nullptr;
-  CurTokenLexer = std::move(TokLexer);
+  CurDirLookup = 0;
+
+  // Create a macro expander to expand from the specified token stream.
+  if (NumCachedTokenLexers == 0) {
+    CurTokenLexer.reset(new TokenLexer(Toks, NumToks, DisableMacroExpansion,
+                                       OwnsTokens, *this));
+  } else {
+    CurTokenLexer.reset(TokenLexerCache[--NumCachedTokenLexers]);
+    CurTokenLexer->Init(Toks, NumToks, DisableMacroExpansion, OwnsTokens);
+  }
   if (CurLexerKind != CLK_LexAfterModuleImport)
     CurLexerKind = CLK_TokenLexer;
 }
@@ -252,42 +227,6 @@ static void computeRelativePath(FileManager &FM, const DirectoryEntry *Dir,
   Result = File->getName();
 }
 
-void Preprocessor::PropagateLineStartLeadingSpaceInfo(Token &Result) {
-  if (CurTokenLexer) {
-    CurTokenLexer->PropagateLineStartLeadingSpaceInfo(Result);
-    return;
-  }
-  if (CurLexer) {
-    CurLexer->PropagateLineStartLeadingSpaceInfo(Result);
-    return;
-  }
-  // FIXME: Handle other kinds of lexers?  It generally shouldn't matter,
-  // but it might if they're empty?
-}
-
-/// \brief Determine the location to use as the end of the buffer for a lexer.
-///
-/// If the file ends with a newline, form the EOF token on the newline itself,
-/// rather than "on the line following it", which doesn't exist.  This makes
-/// diagnostics relating to the end of file include the last file that the user
-/// actually typed, which is goodness.
-const char *Preprocessor::getCurLexerEndPos() {
-  const char *EndPos = CurLexer->BufferEnd;
-  if (EndPos != CurLexer->BufferStart &&
-      (EndPos[-1] == '\n' || EndPos[-1] == '\r')) {
-    --EndPos;
-
-    // Handle \n\r and \r\n:
-    if (EndPos != CurLexer->BufferStart &&
-        (EndPos[-1] == '\n' || EndPos[-1] == '\r') &&
-        EndPos[-1] != EndPos[0])
-      --EndPos;
-  }
-
-  return EndPos;
-}
-
-
 /// HandleEndOfFile - This callback is invoked when the lexer hits the end of
 /// the current file.  This either returns the EOF token or pops a level off
 /// the include stack and keeps going.
@@ -301,46 +240,8 @@ bool Preprocessor::HandleEndOfFile(Token &Result, bool isEndOfMacro) {
           CurPPLexer->MIOpt.GetControllingMacroAtEndOfFile()) {
       // Okay, this has a controlling macro, remember in HeaderFileInfo.
       if (const FileEntry *FE =
-            SourceMgr.getFileEntryForID(CurPPLexer->getFileID())) {
+            SourceMgr.getFileEntryForID(CurPPLexer->getFileID()))
         HeaderInfo.SetFileControllingMacro(FE, ControllingMacro);
-        if (MacroInfo *MI =
-              getMacroInfo(const_cast<IdentifierInfo*>(ControllingMacro))) {
-          MI->UsedForHeaderGuard = true;
-        }
-        if (const IdentifierInfo *DefinedMacro =
-              CurPPLexer->MIOpt.GetDefinedMacro()) {
-          if (!ControllingMacro->hasMacroDefinition() &&
-              DefinedMacro != ControllingMacro &&
-              HeaderInfo.FirstTimeLexingFile(FE)) {
-
-            // If the edit distance between the two macros is more than 50%,
-            // DefinedMacro may not be header guard, or can be header guard of
-            // another header file. Therefore, it maybe defining something
-            // completely different. This can be observed in the wild when
-            // handling feature macros or header guards in different files.
-
-            const StringRef ControllingMacroName = ControllingMacro->getName();
-            const StringRef DefinedMacroName = DefinedMacro->getName();
-            const size_t MaxHalfLength = std::max(ControllingMacroName.size(),
-                                                  DefinedMacroName.size()) / 2;
-            const unsigned ED = ControllingMacroName.edit_distance(
-                DefinedMacroName, true, MaxHalfLength);
-            if (ED <= MaxHalfLength) {
-              // Emit a warning for a bad header guard.
-              Diag(CurPPLexer->MIOpt.GetMacroLocation(),
-                   diag::warn_header_guard)
-                  << CurPPLexer->MIOpt.GetMacroLocation() << ControllingMacro;
-              Diag(CurPPLexer->MIOpt.GetDefinedLocation(),
-                   diag::note_header_guard)
-                  << CurPPLexer->MIOpt.GetDefinedLocation() << DefinedMacro
-                  << ControllingMacro
-                  << FixItHint::CreateReplacement(
-                         CurPPLexer->MIOpt.GetDefinedLocation(),
-                         ControllingMacro->getName());
-            }
-          }
-        }
-      }
     }
   }
 
@@ -373,7 +274,7 @@ bool Preprocessor::HandleEndOfFile(Token &Result, bool isEndOfMacro) {
         CurPTHLexer.reset();
       }
 
-      CurPPLexer = nullptr;
+      CurPPLexer = 0;
       return true;
     }
 
@@ -390,23 +291,9 @@ bool Preprocessor::HandleEndOfFile(Token &Result, bool isEndOfMacro) {
     FileID ExitedFID;
     if (Callbacks && !isEndOfMacro && CurPPLexer)
       ExitedFID = CurPPLexer->getFileID();
-
-    bool LeavingSubmodule = CurSubmodule && CurLexer;
-    if (LeavingSubmodule) {
-      // Notify the parser that we've left the module.
-      const char *EndPos = getCurLexerEndPos();
-      Result.startToken();
-      CurLexer->BufferPtr = EndPos;
-      CurLexer->FormTokenWithChars(Result, EndPos, tok::annot_module_end);
-      Result.setAnnotationEndLoc(Result.getLocation());
-      Result.setAnnotationValue(CurSubmodule);
-    }
-
+    
     // We're done with the #included file.
     RemoveTopOfLexerStack();
-
-    // Propagate info about start-of-line/leading white-space/etc.
-    PropagateLineStartLeadingSpaceInfo(Result);
 
     // Notify the client, if desired, that we are in a new source file.
     if (Callbacks && !isEndOfMacro && CurPPLexer) {
@@ -416,27 +303,30 @@ bool Preprocessor::HandleEndOfFile(Token &Result, bool isEndOfMacro) {
                              PPCallbacks::ExitFile, FileType, ExitedFID);
     }
 
-    // Client should lex another token unless we generated an EOM.
-    return LeavingSubmodule;
+    // Client should lex another token.
+    return false;
   }
 
-  // If this is the end of the main file, form an EOF token.
+  // If the file ends with a newline, form the EOF token on the newline itself,
+  // rather than "on the line following it", which doesn't exist.  This makes
+  // diagnostics relating to the end of file include the last file that the user
+  // actually typed, which is goodness.
   if (CurLexer) {
-    const char *EndPos = getCurLexerEndPos();
+    const char *EndPos = CurLexer->BufferEnd;
+    if (EndPos != CurLexer->BufferStart &&
+        (EndPos[-1] == '\n' || EndPos[-1] == '\r')) {
+      --EndPos;
+
+      // Handle \n\r and \r\n:
+      if (EndPos != CurLexer->BufferStart &&
+          (EndPos[-1] == '\n' || EndPos[-1] == '\r') &&
+          EndPos[-1] != EndPos[0])
+        --EndPos;
+    }
+
     Result.startToken();
     CurLexer->BufferPtr = EndPos;
     CurLexer->FormTokenWithChars(Result, EndPos, tok::eof);
-
-    if (isCodeCompletionEnabled()) {
-      // Inserting the code-completion point increases the source buffer by 1,
-      // but the main FileID was created before inserting the point.
-      // Compensate by reducing the EOF location by 1, otherwise the location
-      // will point to the next FileID.
-      // FIXME: This is hacky, the code-completion point should probably be
-      // inserted before the main FileID is created.
-      if (CurLexer->getFileLoc() == CodeCompletionFileLoc)
-        Result.setLocation(Result.getLocation().getLocWithOffset(-1));
-    }
 
     if (!isIncrementalProcessingEnabled())
       // We're done with lexing.
@@ -448,17 +338,13 @@ bool Preprocessor::HandleEndOfFile(Token &Result, bool isEndOfMacro) {
   }
   
   if (!isIncrementalProcessingEnabled())
-    CurPPLexer = nullptr;
+    CurPPLexer = 0;
 
-  if (TUKind == TU_Complete) {
-    // This is the end of the top-level file. 'WarnUnusedMacroLocs' has
-    // collected all macro locations that we need to warn because they are not
-    // used.
-    for (WarnUnusedMacroLocsTy::iterator
-           I=WarnUnusedMacroLocs.begin(), E=WarnUnusedMacroLocs.end();
-           I!=E; ++I)
-      Diag(*I, diag::pp_macro_not_used);
-  }
+  // This is the end of the top-level file. 'WarnUnusedMacroLocs' has collected
+  // all macro locations that we need to warn because they are not used.
+  for (WarnUnusedMacroLocsTy::iterator
+         I=WarnUnusedMacroLocs.begin(), E=WarnUnusedMacroLocs.end(); I!=E; ++I)
+    Diag(*I, diag::pp_macro_not_used);
 
   // If we are building a module that has an umbrella header, make sure that
   // each of the headers within the directory covered by the umbrella header
@@ -468,66 +354,40 @@ bool Preprocessor::HandleEndOfFile(Token &Result, bool isEndOfMacro) {
       SourceLocation StartLoc
         = SourceMgr.getLocForStartOfFile(SourceMgr.getMainFileID());
 
-      if (!getDiagnostics().isIgnored(diag::warn_uncovered_module_header,
-                                      StartLoc)) {
+      if (getDiagnostics().getDiagnosticLevel(
+            diag::warn_uncovered_module_header, 
+            StartLoc) != DiagnosticsEngine::Ignored) {
         ModuleMap &ModMap = getHeaderSearchInfo().getModuleMap();
+        typedef llvm::sys::fs::recursive_directory_iterator
+          recursive_directory_iterator;
         const DirectoryEntry *Dir = Mod->getUmbrellaDir();
-        vfs::FileSystem &FS = *FileMgr.getVirtualFileSystem();
-        std::error_code EC;
-        for (vfs::recursive_directory_iterator Entry(FS, Dir->getName(), EC), End;
+        llvm::error_code EC;
+        for (recursive_directory_iterator Entry(Dir->getName(), EC), End;
              Entry != End && !EC; Entry.increment(EC)) {
           using llvm::StringSwitch;
           
           // Check whether this entry has an extension typically associated with
           // headers.
-          if (!StringSwitch<bool>(llvm::sys::path::extension(Entry->getName()))
+          if (!StringSwitch<bool>(llvm::sys::path::extension(Entry->path()))
                  .Cases(".h", ".H", ".hh", ".hpp", true)
                  .Default(false))
             continue;
 
-          if (const FileEntry *Header =
-                  getFileManager().getFile(Entry->getName()))
+          if (const FileEntry *Header = getFileManager().getFile(Entry->path()))
             if (!getSourceManager().hasFileInfo(Header)) {
               if (!ModMap.isHeaderInUnavailableModule(Header)) {
                 // Find the relative path that would access this header.
                 SmallString<128> RelativePath;
                 computeRelativePath(FileMgr, Dir, Header, RelativePath);              
                 Diag(StartLoc, diag::warn_uncovered_module_header)
-                  << Mod->getFullModuleName() << RelativePath;
+                  << RelativePath;
               }
             }
         }
       }
     }
-
-    // Check whether there are any headers that were included, but not
-    // mentioned at all in the module map. Such headers 
-    SourceLocation StartLoc
-      = SourceMgr.getLocForStartOfFile(SourceMgr.getMainFileID());
-    if (!getDiagnostics().isIgnored(diag::warn_forgotten_module_header,
-                                    StartLoc)) {
-      ModuleMap &ModMap = getHeaderSearchInfo().getModuleMap();
-      for (unsigned I = 0, N = SourceMgr.local_sloc_entry_size(); I != N; ++I) {
-        // We only care about file entries.
-        const SrcMgr::SLocEntry &Entry = SourceMgr.getLocalSLocEntry(I);
-        if (!Entry.isFile())
-          continue;
-
-        // Dig out the actual file.
-        const FileEntry *File = Entry.getFile().getContentCache()->OrigEntry;
-        if (!File)
-          continue;
-
-        // If it's not part of a module and not unknown, complain.
-        if (!ModMap.findModuleForHeader(File) &&
-            !ModMap.isHeaderInUnavailableModule(File)) {
-          Diag(StartLoc, diag::warn_forgotten_module_header)
-            << File->getName() << Mod->getFullModuleName();
-        }
-      }
-    }
   }
-
+  
   return true;
 }
 
@@ -545,7 +405,7 @@ bool Preprocessor::HandleEndOfTokenLexer(Token &Result) {
   if (NumCachedTokenLexers == TokenLexerCacheSize)
     CurTokenLexer.reset();
   else
-    TokenLexerCache[NumCachedTokenLexers++] = std::move(CurTokenLexer);
+    TokenLexerCache[NumCachedTokenLexers++] = CurTokenLexer.take();
 
   // Handle this like a #include file being popped off the stack.
   return HandleEndOfFile(Result, true);
@@ -562,7 +422,7 @@ void Preprocessor::RemoveTopOfLexerStack() {
     if (NumCachedTokenLexers == TokenLexerCacheSize)
       CurTokenLexer.reset();
     else
-      TokenLexerCache[NumCachedTokenLexers++] = std::move(CurTokenLexer);
+      TokenLexerCache[NumCachedTokenLexers++] = CurTokenLexer.take();
   }
 
   PopIncludeMacroStack();
@@ -578,11 +438,11 @@ void Preprocessor::HandleMicrosoftCommentPaste(Token &Tok) {
   // We handle this by scanning for the closest real lexer, switching it to
   // raw mode and preprocessor mode.  This will cause it to return \n as an
   // explicit EOD token.
-  PreprocessorLexer *FoundLexer = nullptr;
+  PreprocessorLexer *FoundLexer = 0;
   bool LexerWasInPPMode = false;
   for (unsigned i = 0, e = IncludeMacroStack.size(); i != e; ++i) {
     IncludeStackInfo &ISI = *(IncludeMacroStack.end()-i-1);
-    if (ISI.ThePPLexer == nullptr) continue;  // Scan for a real lexer.
+    if (ISI.ThePPLexer == 0) continue;  // Scan for a real lexer.
 
     // Once we find a real lexer, mark it as raw mode (disabling macro
     // expansions) and preprocessor mode (return EOD).  We know that the lexer

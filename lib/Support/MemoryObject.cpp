@@ -15,7 +15,8 @@ MemoryObject::~MemoryObject() {
 
 int MemoryObject::readBytes(uint64_t address,
                             uint64_t size,
-                            uint8_t* buf) const {
+                            uint8_t* buf,
+                            uint64_t* copied) const {
   uint64_t current = address;
   uint64_t limit = getBase() + getExtent();
 
@@ -28,6 +29,9 @@ int MemoryObject::readBytes(uint64_t address,
     
     current++;
   }
+  
+  if (copied)
+    *copied = current - address;
   
   return 0;
 }

@@ -11,14 +11,14 @@
 #define LLVM_CLANG_EDIT_EDITEDSOURCE_H
 
 #include "clang/Edit/FileOffset.h"
+#include "llvm/Support/Allocator.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/Allocator.h"
 #include <map>
 
 namespace clang {
   class LangOptions;
-  class PPConditionalDirectiveRecord;
+  class PreprocessingRecord;
 
 namespace edit {
   class Commit;
@@ -27,7 +27,7 @@ namespace edit {
 class EditedSource {
   const SourceManager &SourceMgr;
   const LangOptions &LangOpts;
-  const PPConditionalDirectiveRecord *PPRec;
+  const PreprocessingRecord *PPRec;
 
   struct FileEdit {
     StringRef Text;
@@ -45,15 +45,13 @@ class EditedSource {
 
 public:
   EditedSource(const SourceManager &SM, const LangOptions &LangOpts,
-               const PPConditionalDirectiveRecord *PPRec = nullptr)
+               const PreprocessingRecord *PPRec = 0)
     : SourceMgr(SM), LangOpts(LangOpts), PPRec(PPRec),
-      StrAlloc() { }
+      StrAlloc(/*size=*/512) { }
 
   const SourceManager &getSourceManager() const { return SourceMgr; }
   const LangOptions &getLangOpts() const { return LangOpts; }
-  const PPConditionalDirectiveRecord *getPPCondDirectiveRecord() const {
-    return PPRec;
-  }
+  const PreprocessingRecord *getPreprocessingRecord() const { return PPRec; }
 
   bool canInsertInOffset(SourceLocation OrigLoc, FileOffset Offs);
 

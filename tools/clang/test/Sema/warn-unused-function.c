@@ -12,8 +12,10 @@ int x = sizeof(f0());
 static void f3();
 extern void f3() { } // expected-warning{{unused}}
 
-inline static void f4();
-void f4() { } // expected-warning{{unused}}
+// FIXME: This will trigger a warning when it should not.
+// Update once PR6281 is fixed.
+//inline static void f4();
+//void f4() { }
 
 static void __attribute__((used)) f5() {}
 static void f6();

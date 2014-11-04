@@ -27,12 +27,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CODEGEN_MACHINELOOPINFO_H
-#define LLVM_CODEGEN_MACHINELOOPINFO_H
+#ifndef LLVM_CODEGEN_MACHINE_LOOP_INFO_H
+#define LLVM_CODEGEN_MACHINE_LOOP_INFO_H
 
-#include "llvm/Analysis/LoopInfo.h"
-#include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/Analysis/LoopInfo.h"
 
 namespace llvm {
 
@@ -120,11 +119,11 @@ public:
 
   /// runOnFunction - Calculate the natural loop information.
   ///
-  bool runOnMachineFunction(MachineFunction &F) override;
+  virtual bool runOnMachineFunction(MachineFunction &F);
 
-  void releaseMemory() override { LI.releaseMemory(); }
+  virtual void releaseMemory() { LI.releaseMemory(); }
 
-  void getAnalysisUsage(AnalysisUsage &AU) const override;
+  virtual void getAnalysisUsage(AnalysisUsage &AU) const;
 
   /// removeLoop - This removes the specified top-level loop from this loop info
   /// object.  The loop is not deleted, as it will presumably be inserted into

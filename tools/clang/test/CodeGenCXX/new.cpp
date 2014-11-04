@@ -2,39 +2,15 @@
 
 typedef __typeof__(sizeof(0)) size_t;
 
-// Declare an 'operator new' template to tickle a bug in __builtin_operator_new.
-template<typename T> void *operator new(size_t, int (*)(T));
-
-// Ensure that this declaration doesn't cause operator new to lose its
-// 'noalias' attribute.
-void *operator new[](size_t);
-
 void t1() {
-  delete new int;
-  delete [] new int [3];
+  int* a = new int;
 }
-
-// CHECK: declare noalias i8* @_Znwm(i64) [[ATTR_NOBUILTIN:#[^ ]*]]
-// CHECK: declare void @_ZdlPv(i8*) [[ATTR_NOBUILTIN_NOUNWIND:#[^ ]*]]
-// CHECK: declare noalias i8* @_Znam(i64) [[ATTR_NOBUILTIN]]
-// CHECK: declare void @_ZdaPv(i8*) [[ATTR_NOBUILTIN_NOUNWIND]]
-
-namespace std {
-  struct nothrow_t {};
-}
-std::nothrow_t nothrow;
 
 // Declare the reserved placement operators.
 void *operator new(size_t, void*) throw();
 void operator delete(void*, void*) throw();
 void *operator new[](size_t, void*) throw();
 void operator delete[](void*, void*) throw();
-
-// Declare the replaceable global allocation operators.
-void *operator new(size_t, const std::nothrow_t &) throw();
-void *operator new[](size_t, const std::nothrow_t &) throw();
-void operator delete(void *, const std::nothrow_t &) throw();
-void operator delete[](void *, const std::nothrow_t &) throw();
 
 void t2(int* a) {
   int* b = new (a) int;
@@ -101,6 +77,10 @@ void t8(int n) {
   new U[n];
 }
 
+// noalias
+// CHECK: declare noalias i8* @_Znam
+void *operator new[](size_t);
+
 void t9() {
   bool b;
 
@@ -118,7 +98,7 @@ A* t10() {
   return new(1, 2, 3.45, 100) A;
 }
 
-// CHECK-LABEL: define void @_Z3t11i
+// CHECK: define void @_Z3t11i
 struct B { int a; };
 struct Bmemptr { int Bmemptr::* memptr; int a; };
 
@@ -142,7 +122,7 @@ void t11(int n) {
 struct Empty { };
 
 // We don't need to initialize an empty class.
-// CHECK-LABEL: define void @_Z3t12v
+// CHECK: define void @_Z3t12v
 void t12() {
   // CHECK: call noalias i8* @_Znam
   // CHECK-NOT: br
@@ -156,7 +136,7 @@ void t12() {
 }
 
 // Zero-initialization
-// CHECK-LABEL: define void @_Z3t13i
+// CHECK: define void @_Z3t13i
 void t13(int n) {
   // CHECK: call noalias i8* @_Znwm
   // CHECK: store i32 0, i32*
@@ -191,7 +171,7 @@ void f() {
 namespace test15 {
   struct A { A(); ~A(); };
 
-  // CHECK-LABEL:    define void @_ZN6test155test0EPv(
+  // CHECK:    define void @_ZN6test155test0EPv(
   // CHECK:      [[P:%.*]] = load i8*
   // CHECK-NEXT: icmp eq i8* [[P]], null
   // CHECK-NEXT: br i1
@@ -201,7 +181,7 @@ namespace test15 {
     new (p) A();
   }
 
-  // CHECK-LABEL:    define void @_ZN6test155test1EPv(
+  // CHECK:    define void @_ZN6test155test1EPv(
   // CHECK:      [[P:%.*]] = load i8**
   // CHECK-NEXT: icmp eq i8* [[P]], null
   // CHECK-NEXT: br i1
@@ -219,7 +199,7 @@ namespace test15 {
 
   // TODO: it's okay if all these size calculations get dropped.
   // FIXME: maybe we should try to throw on overflow?
-  // CHECK-LABEL:    define void @_ZN6test155test2EPvi(
+  // CHECK:    define void @_ZN6test155test2EPvi(
   // CHECK:      [[N:%.*]] = load i32*
   // CHECK-NEXT: [[T0:%.*]] = sext i32 [[N]] to i64
   // CHECK-NEXT: [[T1:%.*]] = icmp slt i64 [[T0]], 0
@@ -240,7 +220,7 @@ namespace test15 {
 }
 
 namespace PR10197 {
-  // CHECK-LABEL: define weak_odr void @_ZN7PR101971fIiEEvv()
+  // CHECK: define weak_odr void @_ZN7PR101971fIiEEvv()
   template<typename T>
   void f() {
     // CHECK: [[CALL:%.*]] = call noalias i8* @_Znwm
@@ -255,7 +235,7 @@ namespace PR10197 {
 namespace PR11523 {
   class MyClass;
   typedef int MyClass::* NewTy;
-  // CHECK-LABEL: define i64* @_ZN7PR115231fEv
+  // CHECK: define i64* @_ZN7PR115231fEv
   // CHECK: store i64 -1
   NewTy* f() { return new NewTy[2](); }
 }
@@ -274,78 +254,9 @@ namespace PR11757 {
 namespace PR13380 {
   struct A { A() {} };
   struct B : public A { int x; };
-  // CHECK-LABEL: define i8* @_ZN7PR133801fEv
+  // CHECK: define i8* @_ZN7PR133801fEv
   // CHECK: call noalias i8* @_Znam(
   // CHECK: call void @llvm.memset.p0i8
   // CHECK-NEXT: call void @_ZN7PR133801BC1Ev
   void* f() { return new B[2](); }
 }
-
-struct MyPlacementType {} mpt;
-void *operator new(size_t, MyPlacementType);
-
-namespace N3664 {
-  struct S { S() throw(int); };
-
-  // CHECK-LABEL: define void @_ZN5N36641fEv
-  void f() {
-    // CHECK: call noalias i8* @_Znwm(i64 4) [[ATTR_BUILTIN_NEW:#[^ ]*]]
-    int *p = new int;
-    // CHECK: call void @_ZdlPv({{.*}}) [[ATTR_BUILTIN_DELETE:#[^ ]*]]
-    delete p;
-
-    // CHECK: call noalias i8* @_Znam(i64 12) [[ATTR_BUILTIN_NEW]]
-    int *q = new int[3];
-    // CHECK: call void @_ZdaPv({{.*}}) [[ATTR_BUILTIN_DELETE]]
-    delete [] p;
-
-    // CHECK: call i8* @_ZnamRKSt9nothrow_t(i64 3, {{.*}}) [[ATTR_BUILTIN_NOTHROW_NEW:#[^ ]*]]
-    (void) new (nothrow) S[3];
-
-    // CHECK: call i8* @_Znwm15MyPlacementType(i64 4){{$}}
-    (void) new (mpt) int;
-  }
-
-  // FIXME: Can we mark this noalias?
-  // CHECK: declare i8* @_ZnamRKSt9nothrow_t(i64, {{.*}}) [[ATTR_NOBUILTIN_NOUNWIND]]
-
-  // CHECK-LABEL: define void @_ZN5N36641gEv
-  void g() {
-    // It's OK for there to be attributes here, so long as we don't have a
-    // 'builtin' attribute.
-    // CHECK: call noalias i8* @_Znwm(i64 4){{$}}
-    int *p = (int*)operator new(4);
-    // CHECK: call void @_ZdlPv({{.*}}) [[ATTR_NOUNWIND:#[^ ]*]]
-    operator delete(p);
-
-    // CHECK: call noalias i8* @_Znam(i64 12){{$}}
-    int *q = (int*)operator new[](12);
-    // CHECK: call void @_ZdaPv({{.*}}) [[ATTR_NOUNWIND]]
-    operator delete [](p);
-
-    // CHECK: call i8* @_ZnamRKSt9nothrow_t(i64 3, {{.*}}) [[ATTR_NOUNWIND]]
-    (void) operator new[](3, nothrow);
-  }
-}
-
-namespace builtins {
-  // CHECK-LABEL: define void @_ZN8builtins1fEv
-  void f() {
-    // CHECK: call noalias i8* @_Znwm(i64 4) [[ATTR_BUILTIN_NEW]]
-    // CHECK: call void @_ZdlPv({{.*}}) [[ATTR_BUILTIN_DELETE]]
-    __builtin_operator_delete(__builtin_operator_new(4));
-  }
-}
-
-// CHECK-DAG: attributes [[ATTR_NOBUILTIN]] = {{[{].*}} nobuiltin {{.*[}]}}
-// CHECK-DAG: attributes [[ATTR_NOBUILTIN_NOUNWIND]] = {{[{].*}} nobuiltin nounwind {{.*[}]}}
-
-// CHECK: attributes [[ATTR_NOUNWIND]] =
-// CHECK-NOT: builtin
-// CHECK-NOT: attributes
-// CHECK: nounwind
-// CHECK-NOT: builtin
-// CHECK: attributes
-
-// CHECK-DAG: attributes [[ATTR_BUILTIN_NEW]] = {{[{].*}} builtin {{.*[}]}}
-// CHECK-DAG: attributes [[ATTR_BUILTIN_DELETE]] = {{[{].*}} builtin {{.*[}]}}

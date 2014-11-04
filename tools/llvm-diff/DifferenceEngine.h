@@ -12,13 +12,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_TOOLS_LLVM_DIFF_DIFFERENCEENGINE_H
-#define LLVM_TOOLS_LLVM_DIFF_DIFFERENCEENGINE_H
+#ifndef _LLVM_DIFFERENCE_ENGINE_H_
+#define _LLVM_DIFFERENCE_ENGINE_H_
 
-#include "DiffConsumer.h"
-#include "DiffLog.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "DiffLog.h"
+#include "DiffConsumer.h"
+
 #include <utility>
 
 namespace llvm {
@@ -59,7 +60,7 @@ namespace llvm {
     };
 
     DifferenceEngine(Consumer &consumer)
-      : consumer(consumer), globalValueOracle(nullptr) {}
+      : consumer(consumer), globalValueOracle(0) {}
 
     void diff(Module *L, Module *R);
     void diff(Function *L, Function *R);

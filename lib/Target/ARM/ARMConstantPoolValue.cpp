@@ -13,11 +13,11 @@
 
 #include "ARMConstantPoolValue.h"
 #include "llvm/ADT/FoldingSet.h"
+#include "llvm/Constant.h"
+#include "llvm/Constants.h"
+#include "llvm/GlobalValue.h"
+#include "llvm/Type.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
-#include "llvm/IR/Constant.h"
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/GlobalValue.h"
-#include "llvm/IR/Type.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cstdlib>
 using namespace llvm;
@@ -163,7 +163,21 @@ const BlockAddress *ARMConstantPoolConstant::getBlockAddress() const {
 
 int ARMConstantPoolConstant::getExistingMachineCPValue(MachineConstantPool *CP,
                                                        unsigned Alignment) {
-  return getExistingMachineCPValueImpl<ARMConstantPoolConstant>(CP, Alignment);
+  unsigned AlignMask = Alignment - 1;
+  const std::vector<MachineConstantPoolEntry> Constants = CP->getConstants();
+  for (unsigned i = 0, e = Constants.size(); i != e; ++i) {
+    if (Constants[i].isMachineConstantPoolEntry() &&
+        (Constants[i].getAlignment() & AlignMask) == 0) {
+      ARMConstantPoolValue *CPV =
+        (ARMConstantPoolValue *)Constants[i].Val.MachineCPVal;
+      ARMConstantPoolConstant *APC = dyn_cast<ARMConstantPoolConstant>(CPV);
+      if (!APC) continue;
+      if (APC->CVal == CVal && equals(APC))
+        return i;
+    }
+  }
+
+  return -1;
 }
 
 bool ARMConstantPoolConstant::hasSameValue(ARMConstantPoolValue *ACPV) {
@@ -192,7 +206,11 @@ ARMConstantPoolSymbol::ARMConstantPoolSymbol(LLVMContext &C, const char *s,
                                              bool AddCurrentAddress)
   : ARMConstantPoolValue(C, id, ARMCP::CPExtSymbol, PCAdj, Modifier,
                          AddCurrentAddress),
-    S(s) {}
+    S(strdup(s)) {}
+
+ARMConstantPoolSymbol::~ARMConstantPoolSymbol() {
+  free((void*)S);
+}
 
 ARMConstantPoolSymbol *
 ARMConstantPoolSymbol::Create(LLVMContext &C, const char *s,
@@ -200,18 +218,42 @@ ARMConstantPoolSymbol::Create(LLVMContext &C, const char *s,
   return new ARMConstantPoolSymbol(C, s, ID, PCAdj, ARMCP::no_modifier, false);
 }
 
+static bool CPV_streq(const char *S1, const char *S2) {
+  if (S1 == S2)
+    return true;
+  if (S1 && S2 && strcmp(S1, S2) == 0)
+    return true;
+  return false;
+}
+
 int ARMConstantPoolSymbol::getExistingMachineCPValue(MachineConstantPool *CP,
                                                      unsigned Alignment) {
-  return getExistingMachineCPValueImpl<ARMConstantPoolSymbol>(CP, Alignment);
+  unsigned AlignMask = Alignment - 1;
+  const std::vector<MachineConstantPoolEntry> Constants = CP->getConstants();
+  for (unsigned i = 0, e = Constants.size(); i != e; ++i) {
+    if (Constants[i].isMachineConstantPoolEntry() &&
+        (Constants[i].getAlignment() & AlignMask) == 0) {
+      ARMConstantPoolValue *CPV =
+        (ARMConstantPoolValue *)Constants[i].Val.MachineCPVal;
+      ARMConstantPoolSymbol *APS = dyn_cast<ARMConstantPoolSymbol>(CPV);
+      if (!APS) continue;
+
+      if (CPV_streq(APS->S, S) && equals(APS))
+        return i;
+    }
+  }
+
+  return -1;
 }
 
 bool ARMConstantPoolSymbol::hasSameValue(ARMConstantPoolValue *ACPV) {
   const ARMConstantPoolSymbol *ACPS = dyn_cast<ARMConstantPoolSymbol>(ACPV);
-  return ACPS && ACPS->S == S && ARMConstantPoolValue::hasSameValue(ACPV);
+  return ACPS && CPV_streq(ACPS->S, S) &&
+    ARMConstantPoolValue::hasSameValue(ACPV);
 }
 
 void ARMConstantPoolSymbol::addSelectionDAGCSEId(FoldingSetNodeID &ID) {
-  ID.AddString(S);
+  ID.AddPointer(S);
   ARMConstantPoolValue::addSelectionDAGCSEId(ID);
 }
 
@@ -242,7 +284,22 @@ ARMConstantPoolMBB *ARMConstantPoolMBB::Create(LLVMContext &C,
 
 int ARMConstantPoolMBB::getExistingMachineCPValue(MachineConstantPool *CP,
                                                   unsigned Alignment) {
-  return getExistingMachineCPValueImpl<ARMConstantPoolMBB>(CP, Alignment);
+  unsigned AlignMask = Alignment - 1;
+  const std::vector<MachineConstantPoolEntry> Constants = CP->getConstants();
+  for (unsigned i = 0, e = Constants.size(); i != e; ++i) {
+    if (Constants[i].isMachineConstantPoolEntry() &&
+        (Constants[i].getAlignment() & AlignMask) == 0) {
+      ARMConstantPoolValue *CPV =
+        (ARMConstantPoolValue *)Constants[i].Val.MachineCPVal;
+      ARMConstantPoolMBB *APMBB = dyn_cast<ARMConstantPoolMBB>(CPV);
+      if (!APMBB) continue;
+
+      if (APMBB->MBB == MBB && equals(APMBB))
+        return i;
+    }
+  }
+
+  return -1;
 }
 
 bool ARMConstantPoolMBB::hasSameValue(ARMConstantPoolValue *ACPV) {

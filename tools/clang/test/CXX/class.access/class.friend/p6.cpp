@@ -11,10 +11,6 @@ struct Y {
   friend void X::f2() { } // expected-error{{friend function definition cannot be qualified with 'X::'}}
 };
 
-template <typename T> struct Z {
-  friend void T::f() {} // expected-error{{friend function definition cannot be qualified with 'T::'}}
-};
-
 void local() {
   void f();
 

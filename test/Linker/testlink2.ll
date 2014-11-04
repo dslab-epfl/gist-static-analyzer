@@ -8,8 +8,6 @@
 %Ty1 = type { %Ty2* }
 %Ty2 = type opaque
 
-%VecSize = type { <10 x i32> }
-
 @GVTy1 = global %Ty1* null
 @GVTy2 = external global %Ty2*
 
@@ -55,4 +53,3 @@ define internal void @testIntern() {
   ret void
 }
 
-declare void @VecSizeCrash1(%VecSize)

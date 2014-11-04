@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_HEXAGON_HEXAGON_H
-#define LLVM_LIB_TARGET_HEXAGON_HEXAGON_H
+#ifndef TARGET_Hexagon_H
+#define TARGET_Hexagon_H
 
 #include "MCTargetDesc/HexagonMCTargetDesc.h"
 #include "llvm/Target/TargetLowering.h"
@@ -21,44 +21,39 @@
 
 namespace llvm {
   class FunctionPass;
-  class ModulePass;
   class TargetMachine;
   class MachineInstr;
-  class HexagonMCInst;
+  class MCInst;
   class HexagonAsmPrinter;
   class HexagonTargetMachine;
   class raw_ostream;
 
-  FunctionPass *createHexagonISelDag(HexagonTargetMachine &TM,
-                                     CodeGenOpt::Level OptLevel);
-  FunctionPass *createHexagonDelaySlotFillerPass(const TargetMachine &TM);
-  FunctionPass *createHexagonFPMoverPass(const TargetMachine &TM);
-  FunctionPass *createHexagonRemoveExtendArgs(const HexagonTargetMachine &TM);
-  FunctionPass *createHexagonCFGOptimizer(const HexagonTargetMachine &TM);
+  FunctionPass *createHexagonISelDag(HexagonTargetMachine &TM);
+  FunctionPass *createHexagonDelaySlotFillerPass(TargetMachine &TM);
+  FunctionPass *createHexagonFPMoverPass(TargetMachine &TM);
+  FunctionPass *createHexagonRemoveExtendOps(HexagonTargetMachine &TM);
+  FunctionPass *createHexagonCFGOptimizer(HexagonTargetMachine &TM);
 
-  FunctionPass *createHexagonSplitTFRCondSets(const HexagonTargetMachine &TM);
-  FunctionPass *createHexagonSplitConst32AndConst64(
-                      const HexagonTargetMachine &TM);
-  FunctionPass *createHexagonExpandPredSpillCode(
-                      const HexagonTargetMachine &TM);
+  FunctionPass *createHexagonSplitTFRCondSets(HexagonTargetMachine &TM);
+  FunctionPass *createHexagonExpandPredSpillCode(HexagonTargetMachine &TM);
+
   FunctionPass *createHexagonHardwareLoops();
   FunctionPass *createHexagonPeephole();
   FunctionPass *createHexagonFixupHwLoops();
-  FunctionPass *createHexagonNewValueJump();
-  FunctionPass *createHexagonCopyToCombine();
   FunctionPass *createHexagonPacketizer();
   FunctionPass *createHexagonNewValueJump();
 
+
 /* TODO: object output.
   MCCodeEmitter *createHexagonMCCodeEmitter(const Target &,
-                                            const TargetMachine &TM,
+                                            TargetMachine &TM,
                                             MCContext &Ctx);
 */
 /* TODO: assembler input.
   TargetAsmBackend *createHexagonAsmBackend(const Target &,
                                                   const std::string &);
 */
-  void HexagonLowerToMC(const MachineInstr *MI, HexagonMCInst &MCI,
+  void HexagonLowerToMC(const MachineInstr *MI, MCInst &MCI,
                         HexagonAsmPrinter &AP);
 } // end namespace llvm;
 

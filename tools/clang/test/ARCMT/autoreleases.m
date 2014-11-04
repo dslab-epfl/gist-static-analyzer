@@ -1,6 +1,7 @@
 // RUN: %clang_cc1 -triple x86_64-apple-darwin10 -fsyntax-only -fobjc-arc -x objective-c %s.result
 // RUN: arcmt-test --args -triple x86_64-apple-darwin10 -fsyntax-only -x objective-c %s > %t
 // RUN: diff %t %s.result
+// DISABLE: mingw32
 
 #include "Common.h"
 
@@ -62,14 +63,4 @@ int main (int argc, const char * argv[]) {
 void test(A *prevVal, A *newVal) {
   [prevVal autorelease];
   prevVal = [newVal retain];
-}
-
-id test2(A* val) {
-  [[val retain] autorelease];
-  return val;
-}
-
-id test3() {
-  id a = [[A alloc] init];
-  [a autorelease];
 }

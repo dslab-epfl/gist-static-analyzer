@@ -24,11 +24,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_TOOLING_COMMONOPTIONSPARSER_H
-#define LLVM_CLANG_TOOLING_COMMONOPTIONSPARSER_H
+#ifndef LLVM_TOOLS_CLANG_INCLUDE_CLANG_TOOLING_COMMONOPTIONSPARSER_H
+#define LLVM_TOOLS_CLANG_INCLUDE_CLANG_TOOLING_COMMONOPTIONSPARSER_H
 
 #include "clang/Tooling/CompilationDatabase.h"
-#include "llvm/Support/CommandLine.h"
 
 namespace clang {
 namespace tooling {
@@ -47,47 +46,40 @@ namespace tooling {
 /// using namespace clang::tooling;
 /// using namespace llvm;
 ///
-/// static cl::OptionCategory MyToolCategory("My tool options");
 /// static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
 /// static cl::extrahelp MoreHelp("\nMore help text...");
-/// static cl::opt<bool> YourOwnOption(...);
+/// static cl:opt<bool> YourOwnOption(...);
 /// ...
 ///
 /// int main(int argc, const char **argv) {
-///   CommonOptionsParser OptionsParser(argc, argv, MyToolCategory);
-///   ClangTool Tool(OptionsParser.getCompilations(),
-///                  OptionsParser.getSourcePathListi());
+///   CommonOptionsParser OptionsParser(argc, argv);
+///   ClangTool Tool(OptionsParser.GetCompilations(),
+///                  OptionsParser.GetSourcePathListi());
 ///   return Tool.run(newFrontendActionFactory<clang::SyntaxOnlyAction>());
 /// }
 /// \endcode
 class CommonOptionsParser {
 public:
   /// \brief Parses command-line, initializes a compilation database.
-  ///
   /// This constructor can change argc and argv contents, e.g. consume
   /// command-line options used for creating FixedCompilationDatabase.
-  ///
-  /// All options not belonging to \p Category become hidden.
-  ///
   /// This constructor exits program in case of error.
-  CommonOptionsParser(int &argc, const char **argv,
-                      llvm::cl::OptionCategory &Category,
-                      const char *Overview = nullptr);
+  CommonOptionsParser(int &argc, const char **argv);
 
   /// Returns a reference to the loaded compilations database.
-  CompilationDatabase &getCompilations() {
+  CompilationDatabase &GetCompilations() {
     return *Compilations;
   }
 
   /// Returns a list of source file paths to process.
-  std::vector<std::string> getSourcePathList() {
+  std::vector<std::string> GetSourcePathList() {
     return SourcePathList;
   }
 
   static const char *const HelpMessage;
 
 private:
-  std::unique_ptr<CompilationDatabase> Compilations;
+  llvm::OwningPtr<CompilationDatabase> Compilations;
   std::vector<std::string> SourcePathList;
 };
 

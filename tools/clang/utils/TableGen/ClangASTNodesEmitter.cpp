@@ -77,7 +77,7 @@ std::pair<Record *, Record *> ClangASTNodesEmitter::EmitNode(
 
   ChildIterator i = Tree.lower_bound(Base), e = Tree.upper_bound(Base);
 
-  Record *First = nullptr, *Last = nullptr;
+  Record *First = 0, *Last = 0;
   // This might be the pseudo-node for Stmt; don't assume it has an Abstract
   // bit
   if (Base->getValue("Abstract") && !Base->getValueAsBit("Abstract"))
@@ -133,8 +133,6 @@ std::pair<Record *, Record *> ClangASTNodesEmitter::EmitNode(
 }
 
 void ClangASTNodesEmitter::run(raw_ostream &OS) {
-  emitSourceFileHeader("List of AST nodes of a particular kind", OS);
-
   // Write the preamble
   OS << "#ifndef ABSTRACT_" << macroName(Root.getName()) << "\n";
   OS << "#  define ABSTRACT_" << macroName(Root.getName()) << "(Type) Type\n";
@@ -184,8 +182,6 @@ void EmitClangASTNodes(RecordKeeper &RK, raw_ostream &OS,
 // contexts.
 void EmitClangDeclContext(RecordKeeper &Records, raw_ostream &OS) {
   // FIXME: Find a .td file format to allow for this to be represented better.
-
-  emitSourceFileHeader("List of AST Decl nodes", OS);
 
   OS << "#ifndef DECL_CONTEXT\n";
   OS << "#  define DECL_CONTEXT(DECL)\n";

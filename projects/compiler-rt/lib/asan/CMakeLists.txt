@@ -1,17 +1,7 @@
 # Build for the AddressSanitizer runtime support library.
 
-if(APPLE)
-# Don't set rpath for the ASan libraries. Developers are encouraged to ship
-# their binaries together with the corresponding ASan runtime libraries,
-# so they'll anyway need to fix the rpath and the install name.
-set(CMAKE_BUILD_WITH_INSTALL_RPATH OFF)
-endif()
-
 set(ASAN_SOURCES
-  asan_allocator2.cc
-  asan_activation.cc
-  asan_debugging.cc
-  asan_fake_stack.cc
+  asan_allocator.cc
   asan_globals.cc
   asan_interceptors.cc
   asan_linux.cc
@@ -19,6 +9,7 @@ set(ASAN_SOURCES
   asan_malloc_linux.cc
   asan_malloc_mac.cc
   asan_malloc_win.cc
+  asan_new_delete.cc
   asan_poisoning.cc
   asan_posix.cc
   asan_report.cc
@@ -26,171 +17,117 @@ set(ASAN_SOURCES
   asan_stack.cc
   asan_stats.cc
   asan_thread.cc
-  asan_win.cc)
+  asan_thread_registry.cc
+  asan_win.cc
+  )
 
-set(ASAN_CXX_SOURCES
-  asan_new_delete.cc)
-
-set(ASAN_PREINIT_SOURCES
-  asan_preinit.cc)
+set(ASAN_DYLIB_SOURCES
+  ${ASAN_SOURCES}
+  dynamic/asan_interceptors_dynamic.cc
+  )
 
 include_directories(..)
 
-if(ANDROID)
-  include_directories(${COMPILER_RT_EXTRA_ANDROID_HEADERS})
-endif()
-
 set(ASAN_CFLAGS ${SANITIZER_COMMON_CFLAGS})
-append_no_rtti_flag(ASAN_CFLAGS)
-
-set(ASAN_COMMON_DEFINITIONS
-  ASAN_HAS_EXCEPTIONS=1)
 
 if(ANDROID)
-  list(APPEND ASAN_COMMON_DEFINITIONS
-    ASAN_LOW_MEMORY=1)
-endif()
-
-set(ASAN_DYNAMIC_DEFINITIONS
-  ${ASAN_COMMON_DEFINITIONS} ASAN_DYNAMIC=1)
-append_if(WIN32 INTERCEPTION_DYNAMIC_CRT ASAN_DYNAMIC_DEFINITIONS)
-
-set(ASAN_DYNAMIC_CFLAGS ${ASAN_CFLAGS})
-append_if(COMPILER_RT_HAS_FTLS_MODEL_INITIAL_EXEC
-  -ftls-model=initial-exec ASAN_DYNAMIC_CFLAGS)
-append_if(MSVC /DEBUG ASAN_DYNAMIC_CFLAGS)
-
-append_if(COMPILER_RT_HAS_LIBC c ASAN_DYNAMIC_LIBS)
-append_if(COMPILER_RT_HAS_LIBDL dl ASAN_DYNAMIC_LIBS)
-append_if(COMPILER_RT_HAS_LIBM m ASAN_DYNAMIC_LIBS)
-append_if(COMPILER_RT_HAS_LIBPTHREAD pthread ASAN_DYNAMIC_LIBS)
-append_if(COMPILER_RT_HAS_LIBSTDCXX stdc++ ASAN_DYNAMIC_LIBS)
-
-append_if(ANDROID log ASAN_DYNAMIC_LIBS)
-
-# Compile ASan sources into an object library.
-if(APPLE)
-  foreach(os ${SANITIZER_COMMON_SUPPORTED_DARWIN_OS})
-    add_compiler_rt_darwin_object_library(RTAsan ${os}
-      ARCH ${ASAN_SUPPORTED_ARCH}
-      SOURCES ${ASAN_SOURCES} ${ASAN_CXX_SOURCES}
-      CFLAGS ${ASAN_CFLAGS}
-      DEFS ${ASAN_COMMON_DEFINITIONS})
-  endforeach()
+  set(ASAN_COMMON_DEFINITIONS
+    ASAN_HAS_EXCEPTIONS=1
+    ASAN_FLEXIBLE_MAPPING_AND_OFFSET=0
+    ASAN_NEEDS_SEGV=0
+    ASAN_LOW_MEMORY=1
+    )
 else()
-  foreach(arch ${ASAN_SUPPORTED_ARCH})
-    add_compiler_rt_object_library(RTAsan ${arch}
-      SOURCES ${ASAN_SOURCES} CFLAGS ${ASAN_CFLAGS}
-      DEFS ${ASAN_COMMON_DEFINITIONS})
-    add_compiler_rt_object_library(RTAsan_cxx ${arch}
-      SOURCES ${ASAN_CXX_SOURCES} CFLAGS ${ASAN_CFLAGS}
-      DEFS ${ASAN_COMMON_DEFINITIONS})
-    add_compiler_rt_object_library(RTAsan_preinit ${arch}
-      SOURCES ${ASAN_PREINIT_SOURCES} CFLAGS ${ASAN_CFLAGS}
-      DEFS ${ASAN_COMMON_DEFINITIONS})
-    if (COMPILER_RT_BUILD_SHARED_ASAN)
-      add_compiler_rt_object_library(RTAsan_dynamic ${arch}
-        SOURCES ${ASAN_SOURCES} ${ASAN_CXX_SOURCES}
-        CFLAGS ${ASAN_DYNAMIC_CFLAGS}
-        DEFS ${ASAN_DYNAMIC_DEFINITIONS})
-    endif()
-  endforeach()
+  set(ASAN_COMMON_DEFINITIONS
+    ASAN_HAS_EXCEPTIONS=1
+    ASAN_FLEXIBLE_MAPPING_AND_OFFSET=0
+    ASAN_NEEDS_SEGV=1
+    )
 endif()
 
-# Build ASan runtimes shipped with Clang.
-add_custom_target(asan)
+set(ASAN_DYLIB_DEFINITIONS
+  ${ASAN_COMMON_DEFINITIONS}
+  MAC_INTERPOSE_FUNCTIONS=1
+  )
+
+set(ASAN_RUNTIME_LIBRARIES)
 if(APPLE)
-  foreach (os ${SANITIZER_COMMON_SUPPORTED_DARWIN_OS})
-    add_compiler_rt_darwin_dynamic_runtime(clang_rt.asan_${os}_dynamic ${os}
-      ARCH ${ASAN_SUPPORTED_ARCH}
-      SOURCES $<TARGET_OBJECTS:RTAsan.${os}>
-              $<TARGET_OBJECTS:RTInterception.${os}>
-              $<TARGET_OBJECTS:RTSanitizerCommon.${os}>
-              $<TARGET_OBJECTS:RTLSanCommon.${os}>
-      CFLAGS ${ASAN_CFLAGS}
-      DEFS ${ASAN_COMMON_DEFINITIONS})
-    add_dependencies(asan clang_rt.asan_${os}_dynamic)
-  endforeach()
+  # Build universal binary on APPLE.
+  add_library(clang_rt.asan_osx STATIC
+    ${ASAN_SOURCES}
+    $<TARGET_OBJECTS:RTInterception.osx>
+    $<TARGET_OBJECTS:RTSanitizerCommon.osx>
+    )
+  set_target_compile_flags(clang_rt.asan_osx ${ASAN_CFLAGS})
+  filter_available_targets(ASAN_TARGETS x86_64 i386)
+  set_target_properties(clang_rt.asan_osx PROPERTIES
+    OSX_ARCHITECTURES "${ASAN_TARGETS}")
+  list(APPEND ASAN_RUNTIME_LIBRARIES clang_rt.asan_osx)
+elseif(ANDROID)
+  add_library(clang_rt.asan-arm-android SHARED
+    ${ASAN_SOURCES}
+    $<TARGET_OBJECTS:RTInterception.arm.android>
+    $<TARGET_OBJECTS:RTSanitizerCommon.arm.android>
+    )
+  set_target_compile_flags(clang_rt.asan-arm-android
+    ${ASAN_CFLAGS}
+    )
+  target_link_libraries(clang_rt.asan-arm-android dl)
+  list(APPEND ASAN_RUNTIME_LIBRARIES clang_rt.asan-arm-android)
 else()
-  # Build separate libraries for each target.
-  foreach(arch ${ASAN_SUPPORTED_ARCH})
-    set(ASAN_COMMON_RUNTIME_OBJECTS
-      $<TARGET_OBJECTS:RTInterception.${arch}>
-      $<TARGET_OBJECTS:RTSanitizerCommon.${arch}>
-      $<TARGET_OBJECTS:RTSanitizerCommonLibc.${arch}>)
-    if(NOT WIN32)
-      # We can't build Leak Sanitizer on Windows yet.
-      list(APPEND ASAN_COMMON_RUNTIME_OBJECTS
-           $<TARGET_OBJECTS:RTLSanCommon.${arch}>)
-    endif()
-
-    add_compiler_rt_runtime(clang_rt.asan-${arch} ${arch} STATIC
-      SOURCES $<TARGET_OBJECTS:RTAsan_preinit.${arch}>
-              $<TARGET_OBJECTS:RTAsan.${arch}>
-              ${ASAN_COMMON_RUNTIME_OBJECTS}
-      CFLAGS ${ASAN_CFLAGS}
-      DEFS ${ASAN_COMMON_DEFINITIONS})
-    add_dependencies(asan clang_rt.asan-${arch})
-
-    add_compiler_rt_runtime(clang_rt.asan_cxx-${arch} ${arch} STATIC
-      SOURCES $<TARGET_OBJECTS:RTAsan_cxx.${arch}>
-      CFLAGS ${ASAN_CFLAGS}
-      DEFS ${ASAN_COMMON_DEFINITIONS})
-    add_dependencies(asan clang_rt.asan_cxx-${arch})
-
-    if (COMPILER_RT_BUILD_SHARED_ASAN)
-      add_compiler_rt_runtime(clang_rt.asan-preinit-${arch} ${arch} STATIC
-        SOURCES $<TARGET_OBJECTS:RTAsan_preinit.${arch}>
-        CFLAGS ${ASAN_CFLAGS}
-        DEFS ${ASAN_COMMON_DEFINITIONS})
-      add_dependencies(asan clang_rt.asan-preinit-${arch})
-
-      if (WIN32)
-         set(SHARED_ASAN_NAME clang_rt.asan_dynamic-${arch}${COMPILER_RT_OS_SUFFIX})
-      else()
-         set(SHARED_ASAN_NAME clang_rt.asan-${arch}${COMPILER_RT_OS_SUFFIX})
-      endif()
-
-      add_compiler_rt_runtime(clang_rt.asan-dynamic-${arch} ${arch} SHARED
-        OUTPUT_NAME ${SHARED_ASAN_NAME}
-        SOURCES $<TARGET_OBJECTS:RTAsan_dynamic.${arch}>
-                ${ASAN_COMMON_RUNTIME_OBJECTS}
-        CFLAGS ${ASAN_DYNAMIC_CFLAGS}
-        DEFS ${ASAN_DYNAMIC_DEFINITIONS})
-      target_link_libraries(clang_rt.asan-dynamic-${arch} ${ASAN_DYNAMIC_LIBS})
-      add_dependencies(asan clang_rt.asan-dynamic-${arch})
-    endif()
-
-    if (UNIX AND NOT ${arch} STREQUAL "i386" AND NOT ${arch} STREQUAL "i686")
-      add_sanitizer_rt_symbols(clang_rt.asan_cxx-${arch})
-      add_dependencies(asan clang_rt.asan_cxx-${arch}-symbols)
-      add_sanitizer_rt_symbols(clang_rt.asan-${arch} asan.syms.extra)
-      add_dependencies(asan clang_rt.asan-${arch}-symbols)
-    endif()
-
-    if (WIN32)
-      add_compiler_rt_runtime(clang_rt.asan_dll_thunk-${arch} ${arch} STATIC
-        SOURCES asan_win_dll_thunk.cc
-                $<TARGET_OBJECTS:RTInterception.${arch}>
-        CFLAGS ${ASAN_CFLAGS} -DASAN_DLL_THUNK
-        DEFS ${ASAN_COMMON_DEFINITIONS})
-      add_dependencies(asan clang_rt.asan_dll_thunk-${arch})
-      add_compiler_rt_runtime(clang_rt.asan_dynamic_runtime_thunk-${arch} ${arch}
-        STATIC
-        SOURCES asan_win_dynamic_runtime_thunk.cc
-        CFLAGS ${ASAN_CFLAGS} -DASAN_DYNAMIC_RUNTIME_THUNK -Zl
-        DEFS ${ASAN_COMMON_DEFINITIONS})
-      add_dependencies(asan clang_rt.asan_dynamic_runtime_thunk-${arch})
-    endif()
-  endforeach()
+  # Otherwise, build separate libraries for each target.
+  if(CAN_TARGET_X86_64)
+    add_library(clang_rt.asan-x86_64 STATIC
+      ${ASAN_SOURCES}
+      $<TARGET_OBJECTS:RTInterception.x86_64>
+      $<TARGET_OBJECTS:RTSanitizerCommon.x86_64>
+      )
+    set_target_compile_flags(clang_rt.asan-x86_64
+      ${ASAN_CFLAGS} ${TARGET_X86_64_CFLAGS}
+      )
+    list(APPEND ASAN_RUNTIME_LIBRARIES clang_rt.asan-x86_64)
+  endif()
+  if(CAN_TARGET_I386)
+    add_library(clang_rt.asan-i386 STATIC
+      ${ASAN_SOURCES}
+      $<TARGET_OBJECTS:RTInterception.i386>
+      $<TARGET_OBJECTS:RTSanitizerCommon.i386>
+      )
+    set_target_compile_flags(clang_rt.asan-i386
+      ${ASAN_CFLAGS} ${TARGET_I386_CFLAGS}
+      )
+    list(APPEND ASAN_RUNTIME_LIBRARIES clang_rt.asan-i386)
+  endif()
 endif()
 
-add_compiler_rt_resource_file(asan_blacklist asan_blacklist.txt)
-add_dependencies(asan asan_blacklist)
-add_dependencies(compiler-rt asan)
+set_property(TARGET ${ASAN_RUNTIME_LIBRARIES} APPEND PROPERTY
+  COMPILE_DEFINITIONS ${ASAN_COMMON_DEFINITIONS})
+add_clang_compiler_rt_libraries(${ASAN_RUNTIME_LIBRARIES})
 
-add_subdirectory(scripts)
+set(ASAN_DYNAMIC_RUNTIME_LIBRARIES)
+if(APPLE)
+  # Build universal binary on APPLE.
+  add_library(clang_rt.asan_osx_dynamic SHARED
+    ${ASAN_DYLIB_SOURCES}
+    $<TARGET_OBJECTS:RTInterception.osx>
+    $<TARGET_OBJECTS:RTSanitizerCommon.osx>
+    )
+  set_target_compile_flags(clang_rt.asan_osx_dynamic ${ASAN_CFLAGS})
+  filter_available_targets(ASAN_TARGETS x86_64 i386)
+  set_target_properties(clang_rt.asan_osx_dynamic PROPERTIES
+    COMPILE_DEFINITIONS "${ASAN_DYLIB_DEFINITIONS}"
+    OSX_ARCHITECTURES "${ASAN_TARGETS}"
+    LINK_FLAGS "-framework Foundation")
+  list(APPEND ASAN_DYNAMIC_RUNTIME_LIBRARIES clang_rt.asan_osx_dynamic)
+endif()
+add_clang_compiler_rt_libraries(${ASAN_DYNAMIC_RUNTIME_LIBRARIES})
 
-if(COMPILER_RT_INCLUDE_TESTS)
+
+if(LLVM_INCLUDE_TESTS)
   add_subdirectory(tests)
 endif()
+
+# ASan output tests.
+# FIXME: move all output tests from output_tests/ to lit_tests/ and get rid
+# of the first directory.
+add_subdirectory(lit_tests)

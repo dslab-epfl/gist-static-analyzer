@@ -4,14 +4,14 @@ target triple = "msp430-generic-generic"
 @foo = common global i8 0, align 1
 
 define void @mov(i8 %a) nounwind {
-; CHECK-LABEL: mov:
+; CHECK: mov:
 ; CHECK: mov.b	r15, &foo
 	store i8 %a, i8* @foo
 	ret void
 }
 
 define void @and(i8 %a) nounwind {
-; CHECK-LABEL: and:
+; CHECK: and:
 ; CHECK: and.b	r15, &foo
 	%1 = load i8* @foo
 	%2 = and i8 %a, %1
@@ -20,7 +20,7 @@ define void @and(i8 %a) nounwind {
 }
 
 define void @add(i8 %a) nounwind {
-; CHECK-LABEL: add:
+; CHECK: add:
 ; CHECK: add.b	r15, &foo
 	%1 = load i8* @foo
 	%2 = add i8 %a, %1
@@ -29,7 +29,7 @@ define void @add(i8 %a) nounwind {
 }
 
 define void @bis(i8 %a) nounwind {
-; CHECK-LABEL: bis:
+; CHECK: bis:
 ; CHECK: bis.b	r15, &foo
 	%1 = load i8* @foo
 	%2 = or i8 %a, %1
@@ -38,7 +38,7 @@ define void @bis(i8 %a) nounwind {
 }
 
 define void @bic(i8 zeroext %m) nounwind {
-; CHECK-LABEL: bic:
+; CHECK: bic:
 ; CHECK: bic.b   r15, &foo
         %1 = xor i8 %m, -1
         %2 = load i8* @foo
@@ -48,7 +48,7 @@ define void @bic(i8 zeroext %m) nounwind {
 }
 
 define void @xor(i8 %a) nounwind {
-; CHECK-LABEL: xor:
+; CHECK: xor:
 ; CHECK: xor.b	r15, &foo
 	%1 = load i8* @foo
 	%2 = xor i8 %a, %1

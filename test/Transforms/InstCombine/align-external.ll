@@ -8,7 +8,7 @@
 ; CHECK: %q = add i64 %r, 1
 ; CHECK: ret i64 %q
 
-target datalayout = "i32:8:32"
+target datalayout = "-i32:8:32"
 
 @A = external global i32
 @B = weak_odr global i32 0
@@ -22,7 +22,7 @@ define i64 @foo(i64 %a) {
 }
 
 define i32 @bar() {
-; CHECK-LABEL: @bar(
+; CHECK: @bar
   %r = load i32* @B, align 1
 ; CHECK: align 1
   ret i32 %r

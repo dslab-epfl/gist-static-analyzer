@@ -4,7 +4,7 @@
 %0 = type { double, double }
 
 define void @foo(%0* noalias nocapture sret %agg.result, double %x.0, double %y.0) nounwind {
-; CHECK-LABEL: foo:
+; CHECK: foo:
 ; CHECK: bl __aeabi_dadd
 ; CHECK-NOT: strd
 ; CHECK: mov

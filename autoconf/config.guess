@@ -864,9 +864,6 @@ EOF
     i*86:Minix:*:*)
 	echo ${UNAME_MACHINE}-pc-minix
 	exit ;;
-    aarch64*:Linux:*)
-	    echo ${UNAME_MACHINE}-unknown-linux-gnu
-	exit ;;
     alpha:Linux:*:*)
 	case `sed -n '/^cpu model/s/^.*: \(.*\)/\1/p' < /proc/cpuinfo` in
 	  EV5)   UNAME_MACHINE=alphaev5 ;;
@@ -967,9 +964,6 @@ EOF
 	exit ;;
     ppc64:Linux:*:*)
 	echo powerpc64-unknown-linux-gnu
-	exit ;;
-    ppc64le:Linux:*:*)
-	echo powerpc64le-unknown-linux-gnu
 	exit ;;
     ppc:Linux:*:*)
 	echo powerpc-unknown-linux-gnu

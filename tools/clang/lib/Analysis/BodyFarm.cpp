@@ -12,13 +12,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "BodyFarm.h"
-#include "clang/Analysis/CodeInjector.h"
-#include "clang/AST/ASTContext.h"
-#include "clang/AST/Decl.h"
-#include "clang/AST/Expr.h"
-#include "clang/AST/ExprObjC.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "clang/AST/ASTContext.h"
+#include "clang/AST/Expr.h"
+#include "clang/AST/Decl.h"
+#include "clang/AST/ExprObjC.h"
+#include "BodyFarm.h"
 
 using namespace clang;
 
@@ -36,7 +35,8 @@ static bool isDispatchBlock(QualType Ty) {
   // returns void.
   const FunctionProtoType *FT =
   BPT->getPointeeType()->getAs<FunctionProtoType>();
-  if (!FT || !FT->getReturnType()->isVoidType() || FT->getNumParams() != 0)
+  if (!FT || !FT->getResultType()->isVoidType()  ||
+      FT->getNumArgs() != 0)
     return false;
 
   return true;
@@ -74,9 +74,6 @@ public:
   
   /// Create an Objective-C bool literal.
   ObjCBoolLiteralExpr *makeObjCBool(bool Val);
-
-  /// Create an Objective-C ivar reference.
-  ObjCIvarRefExpr *makeObjCIvarRef(const Expr *Base, const ObjCIvarDecl *IVar);
   
   /// Create a Return statement.
   ReturnStmt *makeReturn(const Expr *RetVal);
@@ -106,7 +103,9 @@ BinaryOperator *ASTMaker::makeComparison(const Expr *LHS, const Expr *RHS,
 }
 
 CompoundStmt *ASTMaker::makeCompound(ArrayRef<Stmt *> Stmts) {
-  return new (C) CompoundStmt(C, Stmts, SourceLocation(), SourceLocation());
+  return new (C) CompoundStmt(C, const_cast<Stmt**>(Stmts.data()),
+                              Stmts.size(),
+                              SourceLocation(), SourceLocation());
 }
 
 DeclRefExpr *ASTMaker::makeDeclRefExpr(const VarDecl *D) {
@@ -129,20 +128,20 @@ UnaryOperator *ASTMaker::makeDereference(const Expr *Arg, QualType Ty) {
 
 ImplicitCastExpr *ASTMaker::makeLvalueToRvalue(const Expr *Arg, QualType Ty) {
   return ImplicitCastExpr::Create(C, Ty, CK_LValueToRValue,
-                                  const_cast<Expr*>(Arg), nullptr, VK_RValue);
+                                  const_cast<Expr*>(Arg), 0, VK_RValue);
 }
 
 Expr *ASTMaker::makeIntegralCast(const Expr *Arg, QualType Ty) {
   if (Arg->getType() == Ty)
     return const_cast<Expr*>(Arg);
-
+  
   return ImplicitCastExpr::Create(C, Ty, CK_IntegralCast,
-                                  const_cast<Expr*>(Arg), nullptr, VK_RValue);
+                                  const_cast<Expr*>(Arg), 0, VK_RValue);
 }
 
 ImplicitCastExpr *ASTMaker::makeIntegralCastToBoolean(const Expr *Arg) {
   return ImplicitCastExpr::Create(C, C.BoolTy, CK_IntegralToBoolean,
-                                  const_cast<Expr*>(Arg), nullptr, VK_RValue);
+                                  const_cast<Expr*>(Arg), 0, VK_RValue);
 }
 
 ObjCBoolLiteralExpr *ASTMaker::makeObjCBool(bool Val) {
@@ -150,18 +149,8 @@ ObjCBoolLiteralExpr *ASTMaker::makeObjCBool(bool Val) {
   return new (C) ObjCBoolLiteralExpr(Val, Ty, SourceLocation());
 }
 
-ObjCIvarRefExpr *ASTMaker::makeObjCIvarRef(const Expr *Base,
-                                           const ObjCIvarDecl *IVar) {
-  return new (C) ObjCIvarRefExpr(const_cast<ObjCIvarDecl*>(IVar),
-                                 IVar->getType(), SourceLocation(),
-                                 SourceLocation(), const_cast<Expr*>(Base),
-                                 /*arrow=*/true, /*free=*/false);
-}
-
-
 ReturnStmt *ASTMaker::makeReturn(const Expr *RetVal) {
-  return new (C) ReturnStmt(SourceLocation(), const_cast<Expr*>(RetVal),
-                            nullptr);
+  return new (C) ReturnStmt(SourceLocation(), const_cast<Expr*>(RetVal), 0);
 }
 
 //===----------------------------------------------------------------------===//
@@ -174,24 +163,24 @@ typedef Stmt *(*FunctionFarmer)(ASTContext &C, const FunctionDecl *D);
 static Stmt *create_dispatch_once(ASTContext &C, const FunctionDecl *D) {
   // Check if we have at least two parameters.
   if (D->param_size() != 2)
-    return nullptr;
+    return 0;
 
   // Check if the first parameter is a pointer to integer type.
   const ParmVarDecl *Predicate = D->getParamDecl(0);
   QualType PredicateQPtrTy = Predicate->getType();
   const PointerType *PredicatePtrTy = PredicateQPtrTy->getAs<PointerType>();
   if (!PredicatePtrTy)
-    return nullptr;
+    return 0;
   QualType PredicateTy = PredicatePtrTy->getPointeeType();
   if (!PredicateTy->isIntegerType())
-    return nullptr;
-
+    return 0;
+  
   // Check if the second parameter is the proper block type.
   const ParmVarDecl *Block = D->getParamDecl(1);
   QualType Ty = Block->getType();
   if (!isDispatchBlock(Ty))
-    return nullptr;
-
+    return 0;
+  
   // Everything checks out.  Create a fakse body that checks the predicate,
   // sets it, and calls the block.  Basically, an AST dump of:
   //
@@ -207,8 +196,8 @@ static Stmt *create_dispatch_once(ASTContext &C, const FunctionDecl *D) {
   // (1) Create the call.
   DeclRefExpr *DR = M.makeDeclRefExpr(Block);
   ImplicitCastExpr *ICE = M.makeLvalueToRvalue(DR, Ty);
-  CallExpr *CE = new (C) CallExpr(C, ICE, None, C.VoidTy, VK_RValue,
-                                  SourceLocation());
+  CallExpr *CE = new (C) CallExpr(C, ICE, ArrayRef<Expr*>(), C.VoidTy,
+                                  VK_RValue, SourceLocation());
 
   // (2) Create the assignment to the predicate.
   IntegerLiteral *IL =
@@ -224,8 +213,10 @@ static Stmt *create_dispatch_once(ASTContext &C, const FunctionDecl *D) {
        PredicateTy);
   
   // (3) Create the compound statement.
-  Stmt *Stmts[] = { B, CE };
-  CompoundStmt *CS = M.makeCompound(Stmts);
+  Stmt *Stmts[2];
+  Stmts[0] = B;
+  Stmts[1] = CE;
+  CompoundStmt *CS = M.makeCompound(ArrayRef<Stmt*>(Stmts, 2));
   
   // (4) Create the 'if' condition.
   ImplicitCastExpr *LValToRval =
@@ -242,7 +233,7 @@ static Stmt *create_dispatch_once(ASTContext &C, const FunctionDecl *D) {
                                            SourceLocation());
   
   // (5) Create the 'if' statement.
-  IfStmt *If = new (C) IfStmt(C, SourceLocation(), nullptr, UO, CS);
+  IfStmt *If = new (C) IfStmt(C, SourceLocation(), 0, UO, CS);
   return If;
 }
 
@@ -250,14 +241,14 @@ static Stmt *create_dispatch_once(ASTContext &C, const FunctionDecl *D) {
 static Stmt *create_dispatch_sync(ASTContext &C, const FunctionDecl *D) {
   // Check if we have at least two parameters.
   if (D->param_size() != 2)
-    return nullptr;
-
+    return 0;
+  
   // Check if the second parameter is a block.
   const ParmVarDecl *PV = D->getParamDecl(1);
   QualType Ty = PV->getType();
   if (!isDispatchBlock(Ty))
-    return nullptr;
-
+    return 0;
+  
   // Everything checks out.  Create a fake body that just calls the block.
   // This is basically just an AST dump of:
   //
@@ -268,8 +259,8 @@ static Stmt *create_dispatch_sync(ASTContext &C, const FunctionDecl *D) {
   ASTMaker M(C);
   DeclRefExpr *DR = M.makeDeclRefExpr(PV);
   ImplicitCastExpr *ICE = M.makeLvalueToRvalue(DR, Ty);
-  CallExpr *CE = new (C) CallExpr(C, ICE, None, C.VoidTy, VK_RValue,
-                                  SourceLocation());
+  CallExpr *CE = new (C) CallExpr(C, ICE, ArrayRef<Expr*>(), C.VoidTy,
+                                  VK_RValue, SourceLocation());
   return CE;
 }
 
@@ -277,24 +268,20 @@ static Stmt *create_OSAtomicCompareAndSwap(ASTContext &C, const FunctionDecl *D)
 {
   // There are exactly 3 arguments.
   if (D->param_size() != 3)
-    return nullptr;
-
-  // Signature:
-  // _Bool OSAtomicCompareAndSwapPtr(void *__oldValue,
-  //                                 void *__newValue,
-  //                                 void * volatile *__theValue)
-  // Generate body:
+    return 0;
+  
+  // Body for:
   //   if (oldValue == *theValue) {
   //    *theValue = newValue;
   //    return YES;
   //   }
   //   else return NO;
-
-  QualType ResultTy = D->getReturnType();
+  
+  QualType ResultTy = D->getResultType();
   bool isBoolean = ResultTy->isBooleanType();
   if (!isBoolean && !ResultTy->isIntegralType(C))
-    return nullptr;
-
+    return 0;
+  
   const ParmVarDecl *OldValue = D->getParamDecl(0);
   QualType OldValueTy = OldValue->getType();
 
@@ -307,7 +294,7 @@ static Stmt *create_OSAtomicCompareAndSwap(ASTContext &C, const FunctionDecl *D)
   QualType TheValueTy = TheValue->getType();
   const PointerType *PT = TheValueTy->getAs<PointerType>();
   if (!PT)
-    return nullptr;
+    return 0;
   QualType PointeeTy = PT->getPointeeType();
   
   ASTMaker M(C);
@@ -336,7 +323,7 @@ static Stmt *create_OSAtomicCompareAndSwap(ASTContext &C, const FunctionDecl *D)
   Expr *RetVal = isBoolean ? M.makeIntegralCastToBoolean(BoolVal)
                            : M.makeIntegralCast(BoolVal, ResultTy);
   Stmts[1] = M.makeReturn(RetVal);
-  CompoundStmt *Body = M.makeCompound(Stmts);
+  CompoundStmt *Body = M.makeCompound(ArrayRef<Stmt*>(Stmts, 2));
   
   // Construct the else clause.
   BoolVal = M.makeObjCBool(false);
@@ -346,27 +333,27 @@ static Stmt *create_OSAtomicCompareAndSwap(ASTContext &C, const FunctionDecl *D)
   
   /// Construct the If.
   Stmt *If =
-    new (C) IfStmt(C, SourceLocation(), nullptr, Comparison, Body,
+    new (C) IfStmt(C, SourceLocation(), 0, Comparison, Body,
                    SourceLocation(), Else);
-
+  
   return If;  
 }
 
 Stmt *BodyFarm::getBody(const FunctionDecl *D) {
   D = D->getCanonicalDecl();
   
-  Optional<Stmt *> &Val = Bodies[D];
+  llvm::Optional<Stmt *> &Val = Bodies[D];
   if (Val.hasValue())
     return Val.getValue();
-
-  Val = nullptr;
-
-  if (D->getIdentifier() == nullptr)
-    return nullptr;
+  
+  Val = 0;
+  
+  if (D->getIdentifier() == 0)
+    return 0;
 
   StringRef Name = D->getName();
   if (Name.empty())
-    return nullptr;
+    return 0;
 
   FunctionFarmer FF;
 
@@ -378,95 +365,10 @@ Stmt *BodyFarm::getBody(const FunctionDecl *D) {
     FF = llvm::StringSwitch<FunctionFarmer>(Name)
           .Case("dispatch_sync", create_dispatch_sync)
           .Case("dispatch_once", create_dispatch_once)
-          .Default(nullptr);
+        .Default(NULL);
   }
   
   if (FF) { Val = FF(C, D); }
-  else if (Injector) { Val = Injector->getBody(D); }
-  return Val.getValue();
-}
-
-static Stmt *createObjCPropertyGetter(ASTContext &Ctx,
-                                      const ObjCPropertyDecl *Prop) {
-  // First, find the backing ivar.
-  const ObjCIvarDecl *IVar = Prop->getPropertyIvarDecl();
-  if (!IVar)
-    return nullptr;
-
-  // Ignore weak variables, which have special behavior.
-  if (Prop->getPropertyAttributes() & ObjCPropertyDecl::OBJC_PR_weak)
-    return nullptr;
-
-  // Look to see if Sema has synthesized a body for us. This happens in
-  // Objective-C++ because the return value may be a C++ class type with a
-  // non-trivial copy constructor. We can only do this if we can find the
-  // @synthesize for this property, though (or if we know it's been auto-
-  // synthesized).
-  const ObjCImplementationDecl *ImplDecl =
-    IVar->getContainingInterface()->getImplementation();
-  if (ImplDecl) {
-    for (const auto *I : ImplDecl->property_impls()) {
-      if (I->getPropertyDecl() != Prop)
-        continue;
-
-      if (I->getGetterCXXConstructor()) {
-        ASTMaker M(Ctx);
-        return M.makeReturn(I->getGetterCXXConstructor());
-      }
-    }
-  }
-
-  // Sanity check that the property is the same type as the ivar, or a
-  // reference to it, and that it is either an object pointer or trivially
-  // copyable.
-  if (!Ctx.hasSameUnqualifiedType(IVar->getType(),
-                                  Prop->getType().getNonReferenceType()))
-    return nullptr;
-  if (!IVar->getType()->isObjCLifetimeType() &&
-      !IVar->getType().isTriviallyCopyableType(Ctx))
-    return nullptr;
-
-  // Generate our body:
-  //   return self->_ivar;
-  ASTMaker M(Ctx);
-
-  const VarDecl *selfVar = Prop->getGetterMethodDecl()->getSelfDecl();
-
-  Expr *loadedIVar =
-    M.makeObjCIvarRef(
-      M.makeLvalueToRvalue(
-        M.makeDeclRefExpr(selfVar),
-        selfVar->getType()),
-      IVar);
-
-  if (!Prop->getType()->isReferenceType())
-    loadedIVar = M.makeLvalueToRvalue(loadedIVar, IVar->getType());
-
-  return M.makeReturn(loadedIVar);
-}
-
-Stmt *BodyFarm::getBody(const ObjCMethodDecl *D) {
-  // We currently only know how to synthesize property accessors.
-  if (!D->isPropertyAccessor())
-    return nullptr;
-
-  D = D->getCanonicalDecl();
-
-  Optional<Stmt *> &Val = Bodies[D];
-  if (Val.hasValue())
-    return Val.getValue();
-  Val = nullptr;
-
-  const ObjCPropertyDecl *Prop = D->findPropertyDecl();
-  if (!Prop)
-    return nullptr;
-
-  // For now, we only synthesize getters.
-  if (D->param_size() != 0)
-    return nullptr;
-
-  Val = createObjCPropertyGetter(C, Prop);
-
   return Val.getValue();
 }
 

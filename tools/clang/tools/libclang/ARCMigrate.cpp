@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang-c/Index.h"
+
 #include "CXString.h"
 #include "clang/ARCMigrate/ARCMT.h"
 #include "clang/Frontend/TextDiagnosticBuffer.h"
@@ -35,29 +36,27 @@ struct Remap {
 extern "C" {
 
 CXRemapping clang_getRemappings(const char *migrate_dir_path) {
-#ifndef CLANG_ENABLE_ARCMT
-  llvm::errs() << "error: feature not enabled in this build\n";
-  return nullptr;
-#else
   bool Logging = ::getenv("LIBCLANG_LOGGING");
 
   if (!migrate_dir_path) {
     if (Logging)
       llvm::errs() << "clang_getRemappings was called with NULL parameter\n";
-    return nullptr;
+    return 0;
   }
 
-  if (!llvm::sys::fs::exists(migrate_dir_path)) {
+  bool exists = false;
+  llvm::sys::fs::exists(migrate_dir_path, exists);
+  if (!exists) {
     if (Logging) {
       llvm::errs() << "Error by clang_getRemappings(\"" << migrate_dir_path
                    << "\")\n";
       llvm::errs() << "\"" << migrate_dir_path << "\" does not exist\n";
     }
-    return nullptr;
+    return 0;
   }
 
   TextDiagnosticBuffer diagBuffer;
-  std::unique_ptr<Remap> remap(new Remap());
+  OwningPtr<Remap> remap(new Remap());
 
   bool err = arcmt::getFileRemappings(remap->Vec, migrate_dir_path,&diagBuffer);
 
@@ -69,35 +68,30 @@ CXRemapping clang_getRemappings(const char *migrate_dir_path) {
              I = diagBuffer.err_begin(), E = diagBuffer.err_end(); I != E; ++I)
         llvm::errs() << I->second << '\n';
     }
-    return nullptr;
+    return 0;
   }
 
-  return remap.release();
-#endif
+  return remap.take();
 }
 
 CXRemapping clang_getRemappingsFromFileList(const char **filePaths,
                                             unsigned numFiles) {
-#ifndef CLANG_ENABLE_ARCMT
-  llvm::errs() << "error: feature not enabled in this build\n";
-  return nullptr;
-#else
   bool Logging = ::getenv("LIBCLANG_LOGGING");
 
-  std::unique_ptr<Remap> remap(new Remap());
+  OwningPtr<Remap> remap(new Remap());
 
   if (numFiles == 0) {
     if (Logging)
       llvm::errs() << "clang_getRemappingsFromFileList was called with "
                       "numFiles=0\n";
-    return remap.release();
+    return remap.take();
   }
 
   if (!filePaths) {
     if (Logging)
       llvm::errs() << "clang_getRemappingsFromFileList was called with "
                       "NULL filePaths\n";
-    return nullptr;
+    return 0;
   }
 
   TextDiagnosticBuffer diagBuffer;
@@ -115,11 +109,10 @@ CXRemapping clang_getRemappingsFromFileList(const char **filePaths,
              I = diagBuffer.err_begin(), E = diagBuffer.err_end(); I != E; ++I)
         llvm::errs() << I->second << '\n';
     }
-    return remap.release();
+    return remap.take();
   }
 
-  return remap.release();
-#endif
+  return remap.take();
 }
 
 unsigned clang_remap_getNumFiles(CXRemapping map) {
@@ -130,11 +123,13 @@ unsigned clang_remap_getNumFiles(CXRemapping map) {
 void clang_remap_getFilenames(CXRemapping map, unsigned index,
                               CXString *original, CXString *transformed) {
   if (original)
-    *original = cxstring::createDup(
-                    static_cast<Remap *>(map)->Vec[index].first);
+    *original = cxstring::createCXString(
+                                    static_cast<Remap *>(map)->Vec[index].first,
+                                        /*DupString =*/ true);
   if (transformed)
-    *transformed = cxstring::createDup(
-                    static_cast<Remap *>(map)->Vec[index].second);
+    *transformed = cxstring::createCXString(
+                                   static_cast<Remap *>(map)->Vec[index].second,
+                                  /*DupString =*/ true);
 }
 
 void clang_remap_dispose(CXRemapping map) {

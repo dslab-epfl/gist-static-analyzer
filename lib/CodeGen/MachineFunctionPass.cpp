@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/IR/Function.h"
+#include "llvm/Function.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/CodeGen/MachineFunctionAnalysis.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -51,7 +51,6 @@ void MachineFunctionPass::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addPreserved("domfrontier");
   AU.addPreserved("loops");
   AU.addPreserved("lda");
-  AU.addPreserved("stack-protector");
 
   FunctionPass::getAnalysisUsage(AU);
 }

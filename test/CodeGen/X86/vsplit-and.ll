@@ -1,4 +1,4 @@
-; RUN: llc < %s -mtriple=x86_64-linux -mcpu=penryn |  FileCheck %s
+; RUN: llc < %s -mtriple=x86_64-linux |  FileCheck %s
 
 define void @t0(<2 x i64>* %dst, <2 x i64> %src1, <2 x i64> %src2) nounwind readonly {
 ; CHECK: t0
@@ -14,7 +14,7 @@ define void @t0(<2 x i64>* %dst, <2 x i64> %src1, <2 x i64> %src2) nounwind read
 
 define void @t2(<3 x i64>* %dst, <3 x i64> %src1, <3 x i64> %src2) nounwind readonly {
 ; CHECK: t2
-; CHECK: pand
+; CHECK-NOT: pand
 ; CHECK: ret
   %cmp1 = icmp ne <3 x i64> %src1, zeroinitializer
   %cmp2 = icmp ne <3 x i64> %src2, zeroinitializer

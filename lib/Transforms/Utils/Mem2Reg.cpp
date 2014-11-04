@@ -12,17 +12,15 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "mem2reg"
 #include "llvm/Transforms/Scalar.h"
-#include "llvm/ADT/Statistic.h"
-#include "llvm/Analysis/AssumptionTracker.h"
-#include "llvm/IR/Dominators.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/Instructions.h"
 #include "llvm/Transforms/Utils/PromoteMemToReg.h"
 #include "llvm/Transforms/Utils/UnifyFunctionExitNodes.h"
+#include "llvm/Analysis/Dominators.h"
+#include "llvm/Instructions.h"
+#include "llvm/Function.h"
+#include "llvm/ADT/Statistic.h"
 using namespace llvm;
-
-#define DEBUG_TYPE "mem2reg"
 
 STATISTIC(NumPromoted, "Number of alloca's promoted");
 
@@ -36,11 +34,10 @@ namespace {
     // runOnFunction - To run this pass, first we calculate the alloca
     // instructions that are safe for promotion, then we promote each one.
     //
-    bool runOnFunction(Function &F) override;
+    virtual bool runOnFunction(Function &F);
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
-      AU.addRequired<AssumptionTracker>();
-      AU.addRequired<DominatorTreeWrapperPass>();
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+      AU.addRequired<DominatorTree>();
       AU.setPreservesCFG();
       // This is a cluster of orthogonal Transforms
       AU.addPreserved<UnifyFunctionExitNodes>();
@@ -53,8 +50,7 @@ namespace {
 char PromotePass::ID = 0;
 INITIALIZE_PASS_BEGIN(PromotePass, "mem2reg", "Promote Memory to Register",
                 false, false)
-INITIALIZE_PASS_DEPENDENCY(AssumptionTracker)
-INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(DominatorTree)
 INITIALIZE_PASS_END(PromotePass, "mem2reg", "Promote Memory to Register",
                 false, false)
 
@@ -65,8 +61,7 @@ bool PromotePass::runOnFunction(Function &F) {
 
   bool Changed  = false;
 
-  DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
-  AssumptionTracker *AT = &getAnalysis<AssumptionTracker>();
+  DominatorTree &DT = getAnalysis<DominatorTree>();
 
   while (1) {
     Allocas.clear();
@@ -80,7 +75,7 @@ bool PromotePass::runOnFunction(Function &F) {
 
     if (Allocas.empty()) break;
 
-    PromoteMemToReg(Allocas, DT, nullptr, AT);
+    PromoteMemToReg(Allocas, DT);
     NumPromoted += Allocas.size();
     Changed = true;
   }

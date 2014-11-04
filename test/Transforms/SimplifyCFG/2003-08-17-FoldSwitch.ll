@@ -1,6 +1,5 @@
-; RUN: opt < %s -simplifycfg -S | FileCheck %s
-
-; CHECK-NOT: switch
+; RUN: opt < %s -simplifycfg -S | \
+; RUN:   not grep switch
 
 ; Test normal folding
 define i32 @test1() {

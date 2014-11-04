@@ -1,6 +1,5 @@
-; RUN: llc < %s -march=x86 -mattr=+sse2 | FileCheck %s
-
-; CHECK-NOT: punpckhwd
+; RUN: llc < %s -march=x86 -mattr=+sse2
+; RUN: llc < %s -march=x86 -mattr=+sse2 | not grep punpckhwd
 
 declare <16 x i8> @llvm.x86.sse2.packuswb.128(<8 x i16>, <8 x i16>)
 

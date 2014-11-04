@@ -1,5 +1,4 @@
-; RUN: llc -mtriple=arm-eabi -float-abi=soft -mattr=+neon,+v6t2 -no-integrated-as %s -o - \
-; RUN:  | FileCheck %s
+; RUN: llc < %s -march=arm -mattr=+neon,+v6t2 | FileCheck %s
 
 ; Radar 7449043
 %struct.int32x4_t = type { <4 x i32> }
@@ -31,7 +30,7 @@ entry:
 
 define hidden void @conv4_8_E() nounwind {
 entry:
-%asmtmp31 = call %0 asm "vld1.u8  {$0}, [$1:128]!\0A", "=w,=r,1"(<16 x i8>* undef) nounwind
+%asmtmp31 = call %0 asm "vld1.u8  {$0}, [$1, :128]!\0A", "=w,=r,1"(<16 x i8>* undef) nounwind
 unreachable
 }
 

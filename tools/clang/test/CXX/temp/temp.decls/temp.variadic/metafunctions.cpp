@@ -243,7 +243,7 @@ namespace FunctionTypes {
   };
 
   template<typename R, typename ...Types>
-  struct Arity<R(Types......)> { // expected-warning {{varargs}} expected-note {{pack}} expected-note {{insert ','}}
+  struct Arity<R(Types......)> {
     static const unsigned value = sizeof...(Types);
   };
 

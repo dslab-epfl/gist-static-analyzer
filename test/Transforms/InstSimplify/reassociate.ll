@@ -1,7 +1,7 @@
 ; RUN: opt < %s -instsimplify -S | FileCheck %s
 
 define i32 @add1(i32 %x) {
-; CHECK-LABEL: @add1(
+; CHECK: @add1
 ; (X + -1) + 1 -> X
   %l = add i32 %x, -1
   %r = add i32 %l, 1
@@ -10,7 +10,7 @@ define i32 @add1(i32 %x) {
 }
 
 define i32 @and1(i32 %x, i32 %y) {
-; CHECK-LABEL: @and1(
+; CHECK: @and1
 ; (X & Y) & X -> X & Y
   %l = and i32 %x, %y
   %r = and i32 %l, %x
@@ -19,7 +19,7 @@ define i32 @and1(i32 %x, i32 %y) {
 }
 
 define i32 @and2(i32 %x, i32 %y) {
-; CHECK-LABEL: @and2(
+; CHECK: @and2
 ; X & (X & Y) -> X & Y
   %r = and i32 %x, %y
   %l = and i32 %x, %r
@@ -28,7 +28,7 @@ define i32 @and2(i32 %x, i32 %y) {
 }
 
 define i32 @or1(i32 %x, i32 %y) {
-; CHECK-LABEL: @or1(
+; CHECK: @or1
 ; (X | Y) | X -> X | Y
   %l = or i32 %x, %y
   %r = or i32 %l, %x
@@ -37,7 +37,7 @@ define i32 @or1(i32 %x, i32 %y) {
 }
 
 define i32 @or2(i32 %x, i32 %y) {
-; CHECK-LABEL: @or2(
+; CHECK: @or2
 ; X | (X | Y) -> X | Y
   %r = or i32 %x, %y
   %l = or i32 %x, %r
@@ -46,7 +46,7 @@ define i32 @or2(i32 %x, i32 %y) {
 }
 
 define i32 @xor1(i32 %x, i32 %y) {
-; CHECK-LABEL: @xor1(
+; CHECK: @xor1
 ; (X ^ Y) ^ X = Y
   %l = xor i32 %x, %y
   %r = xor i32 %l, %x
@@ -55,7 +55,7 @@ define i32 @xor1(i32 %x, i32 %y) {
 }
 
 define i32 @xor2(i32 %x, i32 %y) {
-; CHECK-LABEL: @xor2(
+; CHECK: @xor2
 ; X ^ (X ^ Y) = Y
   %r = xor i32 %x, %y
   %l = xor i32 %x, %r
@@ -64,7 +64,7 @@ define i32 @xor2(i32 %x, i32 %y) {
 }
 
 define i32 @sub1(i32 %x, i32 %y) {
-; CHECK-LABEL: @sub1(
+; CHECK: @sub1
   %d = sub i32 %x, %y
   %r = sub i32 %x, %d
   ret i32 %r
@@ -72,7 +72,7 @@ define i32 @sub1(i32 %x, i32 %y) {
 }
 
 define i32 @sub2(i32 %x) {
-; CHECK-LABEL: @sub2(
+; CHECK: @sub2
 ; X - (X + 1) -> -1
   %xp1 = add i32 %x, 1
   %r = sub i32 %x, %xp1
@@ -81,7 +81,7 @@ define i32 @sub2(i32 %x) {
 }
 
 define i32 @sub3(i32 %x, i32 %y) {
-; CHECK-LABEL: @sub3(
+; CHECK: @sub3
 ; ((X + 1) + Y) - (Y + 1) -> X
   %xp1 = add i32 %x, 1
   %lhs = add i32 %xp1, %y
@@ -92,7 +92,7 @@ define i32 @sub3(i32 %x, i32 %y) {
 }
 
 define i32 @sdiv1(i32 %x, i32 %y) {
-; CHECK-LABEL: @sdiv1(
+; CHECK: @sdiv1
 ; (no overflow X * Y) / Y -> X
   %mul = mul nsw i32 %x, %y
   %r = sdiv i32 %mul, %y
@@ -101,7 +101,7 @@ define i32 @sdiv1(i32 %x, i32 %y) {
 }
 
 define i32 @sdiv2(i32 %x, i32 %y) {
-; CHECK-LABEL: @sdiv2(
+; CHECK: @sdiv2
 ; (((X / Y) * Y) / Y) -> X / Y
   %div = sdiv i32 %x, %y
   %mul = mul i32 %div, %y
@@ -111,7 +111,7 @@ define i32 @sdiv2(i32 %x, i32 %y) {
 }
 
 define i32 @sdiv3(i32 %x, i32 %y) {
-; CHECK-LABEL: @sdiv3(
+; CHECK: @sdiv3
 ; (X rem Y) / Y -> 0
   %rem = srem i32 %x, %y
   %div = sdiv i32 %rem, %y
@@ -120,7 +120,7 @@ define i32 @sdiv3(i32 %x, i32 %y) {
 }
 
 define i32 @sdiv4(i32 %x, i32 %y) {
-; CHECK-LABEL: @sdiv4(
+; CHECK: @sdiv4
 ; (X / Y) * Y -> X if the division is exact
   %div = sdiv exact i32 %x, %y
   %mul = mul i32 %div, %y
@@ -129,7 +129,7 @@ define i32 @sdiv4(i32 %x, i32 %y) {
 }
 
 define i32 @sdiv5(i32 %x, i32 %y) {
-; CHECK-LABEL: @sdiv5(
+; CHECK: @sdiv5
 ; Y * (X / Y) -> X if the division is exact
   %div = sdiv exact i32 %x, %y
   %mul = mul i32 %y, %div
@@ -139,7 +139,7 @@ define i32 @sdiv5(i32 %x, i32 %y) {
 
 
 define i32 @udiv1(i32 %x, i32 %y) {
-; CHECK-LABEL: @udiv1(
+; CHECK: @udiv1
 ; (no overflow X * Y) / Y -> X
   %mul = mul nuw i32 %x, %y
   %r = udiv i32 %mul, %y
@@ -148,7 +148,7 @@ define i32 @udiv1(i32 %x, i32 %y) {
 }
 
 define i32 @udiv2(i32 %x, i32 %y) {
-; CHECK-LABEL: @udiv2(
+; CHECK: @udiv2
 ; (((X / Y) * Y) / Y) -> X / Y
   %div = udiv i32 %x, %y
   %mul = mul i32 %div, %y
@@ -158,7 +158,7 @@ define i32 @udiv2(i32 %x, i32 %y) {
 }
 
 define i32 @udiv3(i32 %x, i32 %y) {
-; CHECK-LABEL: @udiv3(
+; CHECK: @udiv3
 ; (X rem Y) / Y -> 0
   %rem = urem i32 %x, %y
   %div = udiv i32 %rem, %y
@@ -167,7 +167,7 @@ define i32 @udiv3(i32 %x, i32 %y) {
 }
 
 define i32 @udiv4(i32 %x, i32 %y) {
-; CHECK-LABEL: @udiv4(
+; CHECK: @udiv4
 ; (X / Y) * Y -> X if the division is exact
   %div = udiv exact i32 %x, %y
   %mul = mul i32 %div, %y
@@ -176,7 +176,7 @@ define i32 @udiv4(i32 %x, i32 %y) {
 }
 
 define i32 @udiv5(i32 %x, i32 %y) {
-; CHECK-LABEL: @udiv5(
+; CHECK: @udiv5
 ; Y * (X / Y) -> X if the division is exact
   %div = udiv exact i32 %x, %y
   %mul = mul i32 %y, %div
@@ -185,7 +185,7 @@ define i32 @udiv5(i32 %x, i32 %y) {
 }
 
 define i16 @trunc1(i32 %x) {
-; CHECK-LABEL: @trunc1(
+; CHECK: @trunc1
   %y = add i32 %x, 1
   %tx = trunc i32 %x to i16
   %ty = trunc i32 %y to i16

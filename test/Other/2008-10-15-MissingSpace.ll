@@ -1,12 +1,8 @@
-; RUN: llvm-as < %s | llvm-dis | FileCheck %s
+; RUN: llvm-as < %s | llvm-dis | not grep "void@"
 ; PR2894
 declare void @g()
 define void @f() {
-; CHECK:  invoke void @g()
-; CHECK:           to label %d unwind label %c
-  invoke void @g() to label %d unwind label %c
-d:
-  ret void
+  invoke void @g() to label %c unwind label %c
 c:
   %exn = landingpad {i8*, i32} personality i32 (...)* @__gxx_personality_v0
             cleanup

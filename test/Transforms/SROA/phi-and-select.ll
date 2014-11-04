@@ -2,7 +2,7 @@
 target datalayout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:32:64-f32:32:32-f64:64:64-v64:64:64-v128:128:128-a0:0:64-n8:16:32:64"
 
 define i32 @test1() {
-; CHECK-LABEL: @test1(
+; CHECK: @test1
 entry:
 	%a = alloca [2 x i32]
 ; CHECK-NOT: alloca
@@ -31,7 +31,7 @@ exit:
 }
 
 define i32 @test2() {
-; CHECK-LABEL: @test2(
+; CHECK: @test2
 entry:
 	%a = alloca [2 x i32]
 ; CHECK-NOT: alloca
@@ -54,7 +54,7 @@ entry:
 }
 
 define i32 @test3(i32 %x) {
-; CHECK-LABEL: @test3(
+; CHECK: @test3
 entry:
 	%a = alloca [2 x i32]
 ; CHECK-NOT: alloca
@@ -105,7 +105,7 @@ exit:
 }
 
 define i32 @test4() {
-; CHECK-LABEL: @test4(
+; CHECK: @test4
 entry:
 	%a = alloca [2 x i32]
 ; CHECK-NOT: alloca
@@ -129,7 +129,7 @@ entry:
 }
 
 define i32 @test5(i32* %b) {
-; CHECK-LABEL: @test5(
+; CHECK: @test5
 entry:
 	%a = alloca [2 x i32]
 ; CHECK-NOT: alloca
@@ -151,7 +151,7 @@ entry:
 declare void @f(i32*, i32*)
 
 define i32 @test6(i32* %b) {
-; CHECK-LABEL: @test6(
+; CHECK: @test6
 entry:
 	%a = alloca [2 x i32]
   %c = alloca i32
@@ -182,7 +182,7 @@ entry:
 }
 
 define i32 @test7() {
-; CHECK-LABEL: @test7(
+; CHECK: @test7
 ; CHECK-NOT: alloca
 
 entry:
@@ -210,7 +210,7 @@ exit:
 define i32 @test8(i32 %b, i32* %ptr) {
 ; Ensure that we rewrite allocas to the used type when that use is hidden by
 ; a PHI that can be speculated.
-; CHECK-LABEL: @test8(
+; CHECK: @test8
 ; CHECK-NOT: alloca
 ; CHECK-NOT: load
 ; CHECK: %[[value:.*]] = load i32* %ptr
@@ -238,7 +238,7 @@ exit:
 
 define i32 @test9(i32 %b, i32* %ptr) {
 ; Same as @test8 but for a select rather than a PHI node.
-; CHECK-LABEL: @test9(
+; CHECK: @test9
 ; CHECK-NOT: alloca
 ; CHECK-NOT: load
 ; CHECK: %[[value:.*]] = load i32* %ptr
@@ -260,7 +260,7 @@ define float @test10(i32 %b, float* %ptr) {
 ; Don't try to promote allocas which are not elligible for it even after
 ; rewriting due to the necessity of inserting bitcasts when speculating a PHI
 ; node.
-; CHECK-LABEL: @test10(
+; CHECK: @test10
 ; CHECK: %[[alloca:.*]] = alloca
 ; CHECK: %[[argvalue:.*]] = load float* %ptr
 ; CHECK: %[[cast:.*]] = bitcast double* %[[alloca]] to float*
@@ -289,7 +289,7 @@ exit:
 
 define float @test11(i32 %b, float* %ptr) {
 ; Same as @test10 but for a select rather than a PHI node.
-; CHECK-LABEL: @test11(
+; CHECK: @test11
 ; CHECK: %[[alloca:.*]] = alloca
 ; CHECK: %[[cast:.*]] = bitcast double* %[[alloca]] to float*
 ; CHECK: %[[allocavalue:.*]] = load float* %[[cast]]
@@ -311,7 +311,7 @@ entry:
 define i32 @test12(i32 %x, i32* %p) {
 ; Ensure we don't crash or fail to nuke dead selects of allocas if no load is
 ; never found.
-; CHECK-LABEL: @test12(
+; CHECK: @test12
 ; CHECK-NOT: alloca
 ; CHECK-NOT: select
 ; CHECK: ret i32 %x
@@ -327,7 +327,7 @@ entry:
 define i32 @test13(i32 %x, i32* %p) {
 ; Ensure we don't crash or fail to nuke dead phis of allocas if no load is ever
 ; found.
-; CHECK-LABEL: @test13(
+; CHECK: @test13
 ; CHECK-NOT: alloca
 ; CHECK-NOT: phi
 ; CHECK: ret i32 %x
@@ -346,47 +346,10 @@ exit:
   ret i32 %load
 }
 
-define i32 @test14(i1 %b1, i1 %b2, i32* %ptr) {
-; Check for problems when there are both selects and phis and one is
-; speculatable toward promotion but the other is not. That should block all of
-; the speculation.
-; CHECK-LABEL: @test14(
-; CHECK: alloca
-; CHECK: alloca
-; CHECK: select
-; CHECK: phi
-; CHECK: phi
-; CHECK: select
-; CHECK: ret i32
-
-entry:
-  %f = alloca i32
-  %g = alloca i32
-  store i32 0, i32* %f
-  store i32 0, i32* %g
-  %f.select = select i1 %b1, i32* %f, i32* %ptr
-  br i1 %b2, label %then, label %else
-
-then:
-  br label %exit
-
-else:
-  br label %exit
-
-exit:
-  %f.phi = phi i32* [ %f, %then ], [ %f.select, %else ]
-  %g.phi = phi i32* [ %g, %then ], [ %ptr, %else ]
-  %f.loaded = load i32* %f.phi
-  %g.select = select i1 %b1, i32* %g, i32* %g.phi
-  %g.loaded = load i32* %g.select
-  %result = add i32 %f.loaded, %g.loaded
-  ret i32 %result
-}
-
 define i32 @PR13905() {
 ; Check a pattern where we have a chain of dead phi nodes to ensure they are
 ; deleted and promotion can proceed.
-; CHECK-LABEL: @PR13905(
+; CHECK: @PR13905
 ; CHECK-NOT: alloca i32
 ; CHECK: ret i32 undef
 
@@ -411,7 +374,7 @@ define i32 @PR13906() {
 ; Another pattern which can lead to crashes due to failing to clear out dead
 ; PHI nodes or select nodes. This triggers subtly differently from the above
 ; cases because the PHI node is (recursively) alive, but the select is dead.
-; CHECK-LABEL: @PR13906(
+; CHECK: @PR13906
 ; CHECK-NOT: alloca
 
 entry:
@@ -429,14 +392,13 @@ if.then:
 }
 
 define i64 @PR14132(i1 %flag) {
-; CHECK-LABEL: @PR14132(
+; CHECK: @PR14132
 ; Here we form a PHI-node by promoting the pointer alloca first, and then in
 ; order to promote the other two allocas, we speculate the load of the
 ; now-phi-node-pointer. In doing so we end up loading a 64-bit value from an i8
-; alloca. While this is a bit dubious, we were asserting on trying to
-; rewrite it. The trick is that the code using the value may carefully take
-; steps to only use the not-undef bits, and so we need to at least loosely
-; support this..
+; alloca, which is completely bogus. However, we were asserting on trying to
+; rewrite it. Now it is replaced with undef. Eventually we may replace it with
+; unrechable and even the CFG will go away here.
 entry:
   %a = alloca i64
   %b = alloca i8
@@ -452,151 +414,14 @@ entry:
 if.then:
   store i8* %b, i8** %ptr.cast
   br label %if.end
-; CHECK-NOT: store
-; CHECK: %[[ext:.*]] = zext i8 1 to i64
 
 if.end:
   %tmp = load i64** %ptr
   %result = load i64* %tmp
+; CHECK-NOT: store
 ; CHECK-NOT: load
-; CHECK: %[[result:.*]] = phi i64 [ %[[ext]], %if.then ], [ 0, %entry ]
+; CHECK: %[[result:.*]] = phi i64 [ undef, %if.then ], [ 0, %entry ]
 
   ret i64 %result
 ; CHECK-NEXT: ret i64 %[[result]]
-}
-
-define float @PR16687(i64 %x, i1 %flag) {
-; CHECK-LABEL: @PR16687(
-; Check that even when we try to speculate the same phi twice (in two slices)
-; on an otherwise promotable construct, we don't get ahead of ourselves and try
-; to promote one of the slices prior to speculating it.
-
-entry:
-  %a = alloca i64, align 8
-  store i64 %x, i64* %a
-  br i1 %flag, label %then, label %else
-; CHECK-NOT: alloca
-; CHECK-NOT: store
-; CHECK: %[[lo:.*]] = trunc i64 %x to i32
-; CHECK: %[[shift:.*]] = lshr i64 %x, 32
-; CHECK: %[[hi:.*]] = trunc i64 %[[shift]] to i32
-
-then:
-  %a.f = bitcast i64* %a to float*
-  br label %end
-; CHECK: %[[lo_cast:.*]] = bitcast i32 %[[lo]] to float
-
-else:
-  %a.raw = bitcast i64* %a to i8*
-  %a.raw.4 = getelementptr i8* %a.raw, i64 4
-  %a.raw.4.f = bitcast i8* %a.raw.4 to float*
-  br label %end
-; CHECK: %[[hi_cast:.*]] = bitcast i32 %[[hi]] to float
-
-end:
-  %a.phi.f = phi float* [ %a.f, %then ], [ %a.raw.4.f, %else ]
-  %f = load float* %a.phi.f
-  ret float %f
-; CHECK: %[[phi:.*]] = phi float [ %[[lo_cast]], %then ], [ %[[hi_cast]], %else ]
-; CHECK-NOT: load
-; CHECK: ret float %[[phi]]
-}
-
-; Verifies we fixed PR20425. We should be able to promote all alloca's to
-; registers in this test.
-;
-; %0 = slice
-; %1 = slice
-; %2 = phi(%0, %1) // == slice
-define float @simplify_phi_nodes_that_equal_slice(i1 %cond, float* %temp) {
-; CHECK-LABEL: @simplify_phi_nodes_that_equal_slice(
-entry:
-  %arr = alloca [4 x float], align 4
-; CHECK-NOT: alloca
-  br i1 %cond, label %then, label %else
-
-then:
-  %0 = getelementptr inbounds [4 x float]* %arr, i64 0, i64 3
-  store float 1.000000e+00, float* %0, align 4
-  br label %merge
-
-else:
-  %1 = getelementptr inbounds [4 x float]* %arr, i64 0, i64 3
-  store float 2.000000e+00, float* %1, align 4
-  br label %merge
-
-merge:
-  %2 = phi float* [ %0, %then ], [ %1, %else ]
-  store float 0.000000e+00, float* %temp, align 4
-  %3 = load float* %2, align 4
-  ret float %3
-}
-
-; A slightly complicated example for PR20425.
-;
-; %0 = slice
-; %1 = phi(%0) // == slice
-; %2 = slice
-; %3 = phi(%1, %2) // == slice
-define float @simplify_phi_nodes_that_equal_slice_2(i1 %cond, float* %temp) {
-; CHECK-LABEL: @simplify_phi_nodes_that_equal_slice_2(
-entry:
-  %arr = alloca [4 x float], align 4
-; CHECK-NOT: alloca
-  br i1 %cond, label %then, label %else
-
-then:
-  %0 = getelementptr inbounds [4 x float]* %arr, i64 0, i64 3
-  store float 1.000000e+00, float* %0, align 4
-  br label %then2
-
-then2:
-  %1 = phi float* [ %0, %then ]
-  store float 2.000000e+00, float* %1, align 4
-  br label %merge
-
-else:
-  %2 = getelementptr inbounds [4 x float]* %arr, i64 0, i64 3
-  store float 3.000000e+00, float* %2, align 4
-  br label %merge
-
-merge:
-  %3 = phi float* [ %1, %then2 ], [ %2, %else ]
-  store float 0.000000e+00, float* %temp, align 4
-  %4 = load float* %3, align 4
-  ret float %4
-}
-
-%struct.S = type { i32 }
-
-; Verifies we fixed PR20822. We have a foldable PHI feeding a speculatable PHI
-; which requires the rewriting of the speculated PHI to handle insertion
-; when the incoming pointer is itself from a PHI node. We would previously
-; insert a bitcast instruction *before* a PHI, producing an invalid module;
-; make sure we insert *after* the first non-PHI instruction.
-define void @PR20822() {
-; CHECK-LABEL: @PR20822(
-entry:
-  %f = alloca %struct.S, align 4
-; CHECK: %[[alloca:.*]] = alloca
-  br i1 undef, label %if.end, label %for.cond
-
-for.cond:                                         ; preds = %for.cond, %entry
-  br label %if.end
-
-if.end:                                           ; preds = %for.cond, %entry
-  %f2 = phi %struct.S* [ %f, %entry ], [ %f, %for.cond ]
-; CHECK: phi i32
-; CHECK: %[[cast:.*]] = bitcast i32* %[[alloca]] to %struct.S*
-  phi i32 [ undef, %entry ], [ undef, %for.cond ]
-  br i1 undef, label %if.then5, label %if.then2
-
-if.then2:                                         ; preds = %if.end
-  br label %if.then5
-
-if.then5:                                         ; preds = %if.then2, %if.end
-  %f1 = phi %struct.S* [ undef, %if.then2 ], [ %f2, %if.end ]
-; CHECK: phi {{.*}} %[[cast]]
-  store %struct.S undef, %struct.S* %f1, align 4
-  ret void
 }

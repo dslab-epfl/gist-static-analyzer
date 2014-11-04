@@ -1,4 +1,5 @@
-; RUN: opt < %s -analyze -scalar-evolution | FileCheck %s
+; RUN: opt < %s -analyze -scalar-evolution \
+; RUN:  | FileCheck %s
 ; PR4569
 
 define i16 @main() nounwind {

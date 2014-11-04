@@ -44,27 +44,21 @@ ARMHazardRecognizer::getHazardType(SUnit *SU, int Stalls) {
     if (LastMI && (MCID.TSFlags & ARMII::DomainMask) != ARMII::DomainGeneral) {
       MachineInstr *DefMI = LastMI;
       const MCInstrDesc &LastMCID = LastMI->getDesc();
-      const TargetMachine &TM =
-        MI->getParent()->getParent()->getTarget();
-      const ARMBaseInstrInfo &TII = *static_cast<const ARMBaseInstrInfo *>(
-                                        TM.getSubtargetImpl()->getInstrInfo());
-
       // Skip over one non-VFP / NEON instruction.
       if (!LastMI->isBarrier() &&
           // On A9, AGU and NEON/FPU are muxed.
-          !(TII.getSubtarget().isLikeA9() &&
-            (LastMI->mayLoad() || LastMI->mayStore())) &&
+          !(STI.isLikeA9() && (LastMI->mayLoad() || LastMI->mayStore())) &&
           (LastMCID.TSFlags & ARMII::DomainMask) == ARMII::DomainGeneral) {
         MachineBasicBlock::iterator I = LastMI;
         if (I != LastMI->getParent()->begin()) {
-          I = std::prev(I);
+          I = llvm::prior(I);
           DefMI = &*I;
         }
       }
 
       if (TII.isFpMLxInstruction(DefMI->getOpcode()) &&
           (TII.canCauseFpMLxStall(MI->getOpcode()) ||
-           hasRAWHazard(DefMI, MI, TII.getRegisterInfo()))) {
+           hasRAWHazard(DefMI, MI, TRI))) {
         // Try to schedule another instruction for the next 4 cycles.
         if (FpMLxStalls == 0)
           FpMLxStalls = 4;
@@ -77,7 +71,7 @@ ARMHazardRecognizer::getHazardType(SUnit *SU, int Stalls) {
 }
 
 void ARMHazardRecognizer::Reset() {
-  LastMI = nullptr;
+  LastMI = 0;
   FpMLxStalls = 0;
   ScoreboardHazardRecognizer::Reset();
 }
@@ -95,7 +89,7 @@ void ARMHazardRecognizer::EmitInstruction(SUnit *SU) {
 void ARMHazardRecognizer::AdvanceCycle() {
   if (FpMLxStalls && --FpMLxStalls == 0)
     // Stalled for 4 cycles but still can't schedule any other instructions.
-    LastMI = nullptr;
+    LastMI = 0;
   ScoreboardHazardRecognizer::AdvanceCycle();
 }
 

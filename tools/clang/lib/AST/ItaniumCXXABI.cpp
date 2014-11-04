@@ -19,83 +19,33 @@
 
 #include "CXXABI.h"
 #include "clang/AST/ASTContext.h"
-#include "clang/AST/DeclCXX.h"
-#include "clang/AST/MangleNumberingContext.h"
 #include "clang/AST/RecordLayout.h"
+#include "clang/AST/DeclCXX.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/TargetInfo.h"
 
 using namespace clang;
 
 namespace {
-
-/// \brief Keeps track of the mangled names of lambda expressions and block
-/// literals within a particular context.
-class ItaniumNumberingContext : public MangleNumberingContext {
-  llvm::DenseMap<const Type *, unsigned> ManglingNumbers;
-  llvm::DenseMap<IdentifierInfo *, unsigned> VarManglingNumbers;
-  llvm::DenseMap<IdentifierInfo *, unsigned> TagManglingNumbers;
-
-public:
-  unsigned getManglingNumber(const CXXMethodDecl *CallOperator) override {
-    const FunctionProtoType *Proto =
-        CallOperator->getType()->getAs<FunctionProtoType>();
-    ASTContext &Context = CallOperator->getASTContext();
-
-    QualType Key =
-        Context.getFunctionType(Context.VoidTy, Proto->getParamTypes(),
-                                FunctionProtoType::ExtProtoInfo());
-    Key = Context.getCanonicalType(Key);
-    return ++ManglingNumbers[Key->castAs<FunctionProtoType>()];
-  }
-
-  unsigned getManglingNumber(const BlockDecl *BD) override {
-    const Type *Ty = nullptr;
-    return ++ManglingNumbers[Ty];
-  }
-
-  unsigned getStaticLocalNumber(const VarDecl *VD) override {
-    return 0;
-  }
-
-  /// Variable decls are numbered by identifier.
-  unsigned getManglingNumber(const VarDecl *VD, unsigned) override {
-    return ++VarManglingNumbers[VD->getIdentifier()];
-  }
-
-  unsigned getManglingNumber(const TagDecl *TD, unsigned) override {
-    return ++TagManglingNumbers[TD->getIdentifier()];
-  }
-};
-
 class ItaniumCXXABI : public CXXABI {
 protected:
   ASTContext &Context;
 public:
   ItaniumCXXABI(ASTContext &Ctx) : Context(Ctx) { }
 
-  std::pair<uint64_t, unsigned>
-  getMemberPointerWidthAndAlign(const MemberPointerType *MPT) const override {
-    const TargetInfo &Target = Context.getTargetInfo();
-    TargetInfo::IntType PtrDiff = Target.getPtrDiffType(0);
-    uint64_t Width = Target.getTypeWidth(PtrDiff);
-    unsigned Align = Target.getTypeAlign(PtrDiff);
-    if (MPT->getPointeeType()->isFunctionType())
-      Width = 2 * Width;
-    return std::make_pair(Width, Align);
+  unsigned getMemberPointerSize(const MemberPointerType *MPT) const {
+    QualType Pointee = MPT->getPointeeType();
+    if (Pointee->isFunctionType()) return 2;
+    return 1;
   }
 
-  CallingConv getDefaultMethodCallConv(bool isVariadic) const override {
-    const llvm::Triple &T = Context.getTargetInfo().getTriple();
-    if (!isVariadic && T.isWindowsGNUEnvironment() &&
-        T.getArch() == llvm::Triple::x86)
-      return CC_X86ThisCall;
+  CallingConv getDefaultMethodCallConv(bool isVariadic) const {
     return CC_C;
   }
 
   // We cheat and just check that the class has a vtable pointer, and that it's
   // only big enough to have a vtable pointer and nothing more (or less).
-  bool isNearlyEmpty(const CXXRecordDecl *RD) const override {
+  bool isNearlyEmpty(const CXXRecordDecl *RD) const {
 
     // Check that the class has a vtable pointer.
     if (!RD->isDynamicClass())
@@ -106,13 +56,18 @@ public:
       Context.toCharUnitsFromBits(Context.getTargetInfo().getPointerWidth(0));
     return Layout.getNonVirtualSize() == PointerSize;
   }
+};
 
-  MangleNumberingContext *createMangleNumberingContext() const override {
-    return new ItaniumNumberingContext();
-  }
+class ARMCXXABI : public ItaniumCXXABI {
+public:
+  ARMCXXABI(ASTContext &Ctx) : ItaniumCXXABI(Ctx) { }
 };
 }
 
 CXXABI *clang::CreateItaniumCXXABI(ASTContext &Ctx) {
   return new ItaniumCXXABI(Ctx);
+}
+
+CXXABI *clang::CreateARMCXXABI(ASTContext &Ctx) {
+  return new ARMCXXABI(Ctx);
 }

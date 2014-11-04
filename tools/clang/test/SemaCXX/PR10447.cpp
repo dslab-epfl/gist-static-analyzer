@@ -4,7 +4,7 @@
 // PR12223
 namespace test1 {
   namespace N {
-    extern "C" void f_test1(struct S*);
+    extern "C" void f(struct S*);
     void g(S*);
   }
   namespace N {
@@ -17,7 +17,7 @@ namespace test1 {
 // PR10447
 namespace test2 {
   extern "C" {
-    void f_test2(struct Bar*) { }
+    void f(struct Bar*) { }
     test2::Bar *ptr;
   }
 }

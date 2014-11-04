@@ -157,7 +157,7 @@ namespace llvm {
     // don't support specifying the backing type for an enum
     /// LHSKind - The NodeKind of the left hand side, \see getLHSKind().
     unsigned char LHSKind;
-    /// RHSKind - The NodeKind of the right hand side, \see getRHSKind().
+    /// RHSKind - The NodeKind of the left hand side, \see getLHSKind().
     unsigned char RHSKind;
 
   private:
@@ -181,10 +181,6 @@ namespace llvm {
       : LHS(_LHS), RHS(_RHS), LHSKind(_LHSKind), RHSKind(_RHSKind) {
       assert(isValid() && "Invalid twine!");
     }
-
-    /// Since the intended use of twines is as temporary objects, assignments
-    /// when concatenating might cause undefined behavior or stack corruptions
-    Twine &operator=(const Twine &Other) LLVM_DELETED_FUNCTION;
 
     /// isNull - Check for the null twine.
     bool isNull() const {
@@ -240,7 +236,7 @@ namespace llvm {
     /// getLHSKind - Get the NodeKind of the left-hand side.
     NodeKind getLHSKind() const { return (NodeKind) LHSKind; }
 
-    /// getRHSKind - Get the NodeKind of the right-hand side.
+    /// getRHSKind - Get the NodeKind of the left-hand side.
     NodeKind getRHSKind() const { return (NodeKind) RHSKind; }
 
     /// printOneChild - Print one child from a twine.
@@ -378,7 +374,7 @@ namespace llvm {
     static Twine utohexstr(const uint64_t &Val) {
       Child LHS, RHS;
       LHS.uHex = &Val;
-      RHS.twine = nullptr;
+      RHS.twine = 0;
       return Twine(LHS, UHexKind, RHS, EmptyKind);
     }
 

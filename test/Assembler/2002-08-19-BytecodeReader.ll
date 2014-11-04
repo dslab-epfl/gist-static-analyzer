@@ -2,7 +2,6 @@
 ; "crafty" spec benchmark.
 ;
 ; RUN: opt < %s -instcombine | llvm-dis
-; RUN: verify-uselistorder %s
 	
 %CHESS_POSITION = type { i32, i32 }
 @pawn_probes = external global i32		; <i32*> [#uses=0]

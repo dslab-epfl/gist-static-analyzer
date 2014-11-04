@@ -1,12 +1,12 @@
-#include <llvm/IR/Function.h>
+//#include <llvm/Function.h>
 
 namespace llvm{
   class DebugInfoManager : public ModulePass {
   public:
     DebugInfoManager();
 
-    const char *getPassName() const override;
-    virtual void getAnalysisUsage(AnalysisUsage& au) const override;
+    const char *getPassName() const;
+    virtual void getAnalysisUsage(AnalysisUsage& au) const;
     void printDebugInfo(Instruction& instr);
 
     void trackUseDefChain(Value& value);

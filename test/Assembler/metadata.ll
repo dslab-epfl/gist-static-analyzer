@@ -1,5 +1,4 @@
 ; RUN: llvm-as < %s | llvm-dis | llvm-as | llvm-dis | FileCheck %s
-; RUN: verify-uselistorder %s
 
 ; CHECK: @test
 ; CHECK: ret void, !bar !1, !foo !0

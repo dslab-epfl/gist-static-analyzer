@@ -17,44 +17,35 @@
 #ifndef __STDIO_H__
 #define __STDIO_H__
 
-#if defined(__cplusplus)
-extern "C" {
-#endif
-
 typedef struct __sFILE FILE;
 typedef __SIZE_TYPE__ size_t;
 
-/* Determine the appropriate fdopen, fopen(), and fwrite() functions. */
+/* Determine the appropriate fopen() and fwrite() functions. */
 #if defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__)
 #  if defined(__i386)
-#    define __FDOPEN_NAME  "_fdopen$UNIX2003"
 #    define __FOPEN_NAME "_fopen$UNIX2003"
 #    define __FWRITE_NAME "_fwrite$UNIX2003"
 #  elif defined(__x86_64__)
-#    define __FDOPEN_NAME  "_fdopen"
 #    define __FOPEN_NAME "_fopen"
 #    define __FWRITE_NAME "_fwrite"
-#  elif defined(__arm) || defined(__arm64)
-#    define __FDOPEN_NAME  "_fdopen"
+#  elif defined(__arm)
 #    define __FOPEN_NAME "_fopen"
 #    define __FWRITE_NAME "_fwrite"
 #  else
-#    error "unrecognized architecture for targeting OS X"
+#    error "unrecognized architecture for targetting OS X"
 #  endif
 #elif defined(__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__)
 #  if defined(__i386) || defined (__x86_64)
-#    define __FDOPEN_NAME  "_fdopen"
 #    define __FOPEN_NAME "_fopen"
 #    define __FWRITE_NAME "_fwrite"
-#  elif defined(__arm) || defined(__arm64)
-#    define __FDOPEN_NAME  "_fdopen"
+#  elif defined(__arm)
 #    define __FOPEN_NAME "_fopen"
 #    define __FWRITE_NAME "_fwrite"
 #  else
-#    error "unrecognized architecture for targeting iOS"
+#    error "unrecognized architecture for targetting iOS"
 #  endif
 #else
-#  error "unrecognized architecture for targeting Darwin"
+#  error "unrecognized architecture for targetting Darwin"
 #endif
 
 #    define stderr __stderrp
@@ -72,19 +63,12 @@ extern FILE *__stderrp;
 
 int fclose(FILE *);
 int fflush(FILE *);
-FILE *fopen(const char * __restrict, const char * __restrict) __asm(__FOPEN_NAME);
-FILE *fdopen(int, const char *) __asm(__FDOPEN_NAME);
-int fprintf(FILE * __restrict, const char * __restrict, ...);
-int fputc(int, FILE *);
-size_t fwrite(const void * __restrict, size_t, size_t, FILE * __restrict)
+FILE *fopen(const char * restrict, const char * restrict) __asm(__FOPEN_NAME);
+int fprintf(FILE * restrict, const char * restrict, ...);
+size_t fwrite(const void * restrict, size_t, size_t, FILE * restrict)
   __asm(__FWRITE_NAME);
 size_t fread(void * __restrict, size_t, size_t, FILE * __restrict);
 long ftell(FILE *);
 int fseek(FILE *, long, int);
-int snprintf(char * __restrict, size_t, const char * __restrict, ...);
-
-#if defined(__cplusplus)
-}
-#endif
 
 #endif /* __STDIO_H__ */

@@ -6,7 +6,7 @@
 @G = internal global i8** null
 
 define i32 @main(i32 %argc, i8** %argv) {
-; CHECK-LABEL: @main(
+; CHECK: @main
 ; CHECK: %G = alloca
   store i8** %argv, i8*** @G
   ret i32 0

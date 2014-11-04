@@ -12,15 +12,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/Basic/CharInfo.h"
 #include "clang/Basic/IdentifierTable.h"
 #include "clang/Basic/LangOptions.h"
-#include "clang/Basic/OperatorKinds.h"
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/FoldingSet.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallString.h"
-#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/ErrorHandling.h"
+#include <cctype>
 #include <cstdio>
 
 using namespace clang;
@@ -44,8 +43,8 @@ IdentifierInfo::IdentifierInfo() {
   RevertedTokenID = false;
   OutOfDate = false;
   IsModulesImport = false;
-  FETokenInfo = nullptr;
-  Entry = nullptr;
+  FETokenInfo = 0;
+  Entry = 0;
 }
 
 //===----------------------------------------------------------------------===//
@@ -62,11 +61,11 @@ namespace {
   class EmptyLookupIterator : public IdentifierIterator
   {
   public:
-    StringRef Next() override { return StringRef(); }
+    virtual StringRef Next() { return StringRef(); }
   };
 }
 
-IdentifierIterator *IdentifierInfoLookup::getIdentifiers() {
+IdentifierIterator *IdentifierInfoLookup::getIdentifiers() const {
   return new EmptyLookupIterator();
 }
 
@@ -83,7 +82,7 @@ IdentifierTable::IdentifierTable(const LangOptions &LangOpts,
       
 
   // Add the '_experimental_modules_import' contextual keyword.
-  get("import").setModulesImport(true);
+  get("__experimental_modules_import").setModulesImport(true);
 }
 
 //===----------------------------------------------------------------------===//
@@ -95,7 +94,7 @@ namespace {
   enum {
     KEYC99 = 0x1,
     KEYCXX = 0x2,
-    KEYCXX11 = 0x4,
+    KEYCXX0X = 0x4,
     KEYGNU = 0x8,
     KEYMS = 0x10,
     BOOLSUPPORT = 0x20,
@@ -107,7 +106,6 @@ namespace {
     KEYARC = 0x800,
     KEYNOMS = 0x01000,
     WCHARSUPPORT = 0x02000,
-    HALFSUPPORT = 0x04000,
     KEYALL = (0xffff & ~KEYNOMS) // Because KEYNOMS is used to exclude.
   };
 }
@@ -126,13 +124,12 @@ static void AddKeyword(StringRef Keyword,
   unsigned AddResult = 0;
   if (Flags == KEYALL) AddResult = 2;
   else if (LangOpts.CPlusPlus && (Flags & KEYCXX)) AddResult = 2;
-  else if (LangOpts.CPlusPlus11 && (Flags & KEYCXX11)) AddResult = 2;
+  else if (LangOpts.CPlusPlus0x && (Flags & KEYCXX0X)) AddResult = 2;
   else if (LangOpts.C99 && (Flags & KEYC99)) AddResult = 2;
   else if (LangOpts.GNUKeywords && (Flags & KEYGNU)) AddResult = 1;
   else if (LangOpts.MicrosoftExt && (Flags & KEYMS)) AddResult = 1;
   else if (LangOpts.Borland && (Flags & KEYBORLAND)) AddResult = 1;
   else if (LangOpts.Bool && (Flags & BOOLSUPPORT)) AddResult = 2;
-  else if (LangOpts.Half && (Flags & HALFSUPPORT)) AddResult = 2;
   else if (LangOpts.WChar && (Flags & WCHARSUPPORT)) AddResult = 2;
   else if (LangOpts.AltiVec && (Flags & KEYALTIVEC)) AddResult = 2;
   else if (LangOpts.OpenCL && (Flags & KEYOPENCL)) AddResult = 2;
@@ -141,10 +138,10 @@ static void AddKeyword(StringRef Keyword,
   // We treat bridge casts as objective-C keywords so we can warn on them
   // in non-arc mode.
   else if (LangOpts.ObjC2 && (Flags & KEYARC)) AddResult = 2;
-  else if (LangOpts.CPlusPlus && (Flags & KEYCXX11)) AddResult = 3;
+  else if (LangOpts.CPlusPlus && (Flags & KEYCXX0X)) AddResult = 3;
 
-  // Don't add this keyword under MSVCCompat.
-  if (LangOpts.MSVCCompat && (Flags & KEYNOMS))
+  // Don't add this keyword under MicrosoftMode.
+  if (LangOpts.MicrosoftMode && (Flags & KEYNOMS))
      return;
   // Don't add this keyword if disabled in this language.
   if (AddResult == 0) return;
@@ -402,17 +399,14 @@ std::string Selector::getAsString() const {
   return getMultiKeywordSelector()->getName();
 }
 
-void Selector::print(llvm::raw_ostream &OS) const {
-  OS << getAsString();
-}
-
 /// Interpreting the given string using the normal CamelCase
 /// conventions, determine whether the given string starts with the
 /// given "word", which is assumed to end in a lowercase letter.
 static bool startsWithWord(StringRef name, StringRef word) {
   if (name.size() < word.size()) return false;
-  return ((name.size() == word.size() || !isLowercase(name[word.size()])) &&
-          name.startswith(word));
+  return ((name.size() == word.size() ||
+           !islower(name[word.size()]))
+          && name.startswith(word));
 }
 
 ObjCMethodFamily Selector::getMethodFamilyImpl(Selector sel) {
@@ -428,7 +422,6 @@ ObjCMethodFamily Selector::getMethodFamilyImpl(Selector sel) {
     if (name == "retain") return OMF_retain;
     if (name == "retainCount") return OMF_retainCount;
     if (name == "self") return OMF_self;
-    if (name == "initialize") return OMF_initialize;
   }
  
   if (name == "performSelector") return OMF_performSelector;
@@ -461,59 +454,6 @@ ObjCMethodFamily Selector::getMethodFamilyImpl(Selector sel) {
   return OMF_None;
 }
 
-ObjCInstanceTypeFamily Selector::getInstTypeMethodFamily(Selector sel) {
-  IdentifierInfo *first = sel.getIdentifierInfoForSlot(0);
-  if (!first) return OIT_None;
-  
-  StringRef name = first->getName();
-  
-  if (name.empty()) return OIT_None;
-  switch (name.front()) {
-    case 'a':
-      if (startsWithWord(name, "array")) return OIT_Array;
-      break;
-    case 'd':
-      if (startsWithWord(name, "default")) return OIT_ReturnsSelf;
-      if (startsWithWord(name, "dictionary")) return OIT_Dictionary;
-      break;
-    case 's':
-      if (startsWithWord(name, "shared")) return OIT_ReturnsSelf;
-      if (startsWithWord(name, "standard")) return OIT_Singleton;
-    case 'i':
-      if (startsWithWord(name, "init")) return OIT_Init;
-    default:
-      break;
-  }
-  return OIT_None;
-}
-
-ObjCStringFormatFamily Selector::getStringFormatFamilyImpl(Selector sel) {
-  IdentifierInfo *first = sel.getIdentifierInfoForSlot(0);
-  if (!first) return SFF_None;
-  
-  StringRef name = first->getName();
-  
-  switch (name.front()) {
-    case 'a':
-      if (name == "appendFormat") return SFF_NSString;
-      break;
-      
-    case 'i':
-      if (name == "initWithFormat") return SFF_NSString;
-      break;
-      
-    case 'l':
-      if (name == "localizedStringWithFormat") return SFF_NSString;
-      break;
-      
-    case 's':
-      if (name == "stringByAppendingFormat" ||
-          name == "stringWithFormat") return SFF_NSString;
-      break;
-  }
-  return SFF_None;
-}
-
 namespace {
   struct SelectorTableImpl {
     llvm::FoldingSet<MultiKeywordSelector> Table;
@@ -525,20 +465,15 @@ static SelectorTableImpl &getSelectorTableImpl(void *P) {
   return *static_cast<SelectorTableImpl*>(P);
 }
 
-SmallString<64>
-SelectorTable::constructSetterName(StringRef Name) {
-  SmallString<64> SetterName("set");
-  SetterName += Name;
-  SetterName[3] = toUppercase(SetterName[3]);
-  return SetterName;
-}
-
-Selector
-SelectorTable::constructSetterSelector(IdentifierTable &Idents,
-                                       SelectorTable &SelTable,
-                                       const IdentifierInfo *Name) {
-  IdentifierInfo *SetterName =
-    &Idents.get(constructSetterName(Name->getName()));
+/*static*/ Selector
+SelectorTable::constructSetterName(IdentifierTable &Idents,
+                                   SelectorTable &SelTable,
+                                   const IdentifierInfo *Name) {
+  SmallString<100> SelectorName;
+  SelectorName = "set";
+  SelectorName += Name->getName();
+  SelectorName[3] = toupper(SelectorName[3]);
+  IdentifierInfo *SetterName = &Idents.get(SelectorName);
   return SelTable.getUnarySelector(SetterName);
 }
 
@@ -557,7 +492,7 @@ Selector SelectorTable::getSelector(unsigned nKeys, IdentifierInfo **IIV) {
   llvm::FoldingSetNodeID ID;
   MultiKeywordSelector::Profile(ID, IIV, nKeys);
 
-  void *InsertPos = nullptr;
+  void *InsertPos = 0;
   if (MultiKeywordSelector *SI =
         SelTabImpl.Table.FindNodeOrInsertPos(ID, InsertPos))
     return Selector(SI);
@@ -585,7 +520,7 @@ const char *clang::getOperatorSpelling(OverloadedOperatorKind Operator) {
   switch (Operator) {
   case OO_None:
   case NUM_OVERLOADED_OPERATORS:
-    return nullptr;
+    return 0;
 
 #define OVERLOADED_OPERATOR(Name,Spelling,Token,Unary,Binary,MemberOnly) \
   case OO_##Name: return Spelling;

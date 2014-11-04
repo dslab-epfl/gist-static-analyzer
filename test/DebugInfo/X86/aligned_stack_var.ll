@@ -1,5 +1,5 @@
 ; RUN: llc %s -mtriple=x86_64-pc-linux-gnu -O0 -filetype=obj -o %t
-; RUN: llvm-dwarfdump -debug-dump=info %t | FileCheck %s
+; RUN: llvm-dwarfdump %t | FileCheck %s
 
 ; If stack is realigned, we shouldn't describe locations of local
 ; variables by giving offset from the frame pointer (%rbp):
@@ -18,26 +18,25 @@
 define void @_Z3runv() nounwind uwtable {
 entry:
   %x = alloca i32, align 32
-  call void @llvm.dbg.declare(metadata !{i32* %x}, metadata !9, metadata !{metadata !"0x102"}), !dbg !12
+  call void @llvm.dbg.declare(metadata !{i32* %x}, metadata !9), !dbg !12
   ret void, !dbg !13
 }
 
-declare void @llvm.dbg.declare(metadata, metadata, metadata) nounwind readnone
+declare void @llvm.dbg.declare(metadata, metadata) nounwind readnone
 
 !llvm.dbg.cu = !{!0}
-!llvm.module.flags = !{!15}
 
-!0 = metadata !{metadata !"0x11\004\00clang version 3.2 (trunk 155696:155697) (llvm/trunk 155696)\000\00\000\00\000", metadata !14, metadata !1, metadata !1, metadata !3, metadata !1,  metadata !1} ; [ DW_TAG_compile_unit ]
-!1 = metadata !{}
-!3 = metadata !{metadata !5}
-!5 = metadata !{metadata !"0x2e\00run\00run\00_Z3runv\001\000\001\000\006\00256\000\001", metadata !14, metadata !6, metadata !7, null, void ()* @_Z3runv, null, null, metadata !1} ; [ DW_TAG_subprogram ]
-!6 = metadata !{metadata !"0x29", metadata !14} ; [ DW_TAG_file_type ]
-!7 = metadata !{metadata !"0x15\00\000\000\000\000\000\000", i32 0, null, null, metadata !8, null, null, null} ; [ DW_TAG_subroutine_type ] [line 0, size 0, align 0, offset 0] [from ]
+!0 = metadata !{i32 786449, i32 0, i32 4, metadata !"test.cc", metadata !"/home/samsonov/debuginfo", metadata !"clang version 3.2 (trunk 155696:155697) (llvm/trunk 155696)", i1 true, i1 false, metadata !"", i32 0, metadata !1, metadata !1, metadata !3, metadata !1} ; [ DW_TAG_compile_unit ]
+!1 = metadata !{metadata !2}
+!2 = metadata !{i32 0}
+!3 = metadata !{metadata !4}
+!4 = metadata !{metadata !5}
+!5 = metadata !{i32 786478, i32 0, metadata !6, metadata !"run", metadata !"run", metadata !"_Z3runv", metadata !6, i32 1, metadata !7, i1 false, i1 true, i32 0, i32 0, null, i32 256, i1 false, void ()* @_Z3runv, null, null, metadata !1, i32 1} ; [ DW_TAG_subprogram ]
+!6 = metadata !{i32 786473, metadata !"test.cc", metadata !"/home/samsonov/debuginfo", null} ; [ DW_TAG_file_type ]
+!7 = metadata !{i32 786453, i32 0, metadata !"", i32 0, i32 0, i64 0, i64 0, i64 0, i32 0, null, metadata !8, i32 0, i32 0} ; [ DW_TAG_subroutine_type ]
 !8 = metadata !{null}
-!9 = metadata !{metadata !"0x100\00x\002\000", metadata !10, metadata !6, metadata !11} ; [ DW_TAG_auto_variable ]
-!10 = metadata !{metadata !"0xb\001\0012\000", metadata !14, metadata !5} ; [ DW_TAG_lexical_block ]
-!11 = metadata !{metadata !"0x24\00int\000\0032\0032\000\000\005", null, null} ; [ DW_TAG_base_type ]
+!9 = metadata !{i32 786688, metadata !10, metadata !"x", metadata !6, i32 2, metadata !11, i32 0, i32 0} ; [ DW_TAG_auto_variable ]
+!10 = metadata !{i32 786443, metadata !5, i32 1, i32 12, metadata !6, i32 0} ; [ DW_TAG_lexical_block ]
+!11 = metadata !{i32 786468, null, metadata !"int", null, i32 0, i64 32, i64 32, i64 0, i32 0, i32 5} ; [ DW_TAG_base_type ]
 !12 = metadata !{i32 2, i32 7, metadata !10, null}
 !13 = metadata !{i32 3, i32 1, metadata !10, null}
-!14 = metadata !{metadata !"test.cc", metadata !"/home/samsonov/debuginfo"}
-!15 = metadata !{i32 1, metadata !"Debug Info Version", i32 2}

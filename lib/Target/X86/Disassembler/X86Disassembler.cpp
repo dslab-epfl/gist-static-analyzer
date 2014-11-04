@@ -16,9 +16,11 @@
 
 #include "X86Disassembler.h"
 #include "X86DisassemblerDecoder.h"
+
+#include "llvm/MC/EDInstInfo.h"
+#include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCDisassembler.h"
-#include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
@@ -27,30 +29,27 @@
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/raw_ostream.h"
 
-using namespace llvm;
-using namespace llvm::X86Disassembler;
-
-#define DEBUG_TYPE "x86-disassembler"
-
 #define GET_REGINFO_ENUM
 #include "X86GenRegisterInfo.inc"
 #define GET_INSTRINFO_ENUM
 #include "X86GenInstrInfo.inc"
-#define GET_SUBTARGETINFO_ENUM
-#include "X86GenSubtargetInfo.inc"
+#include "X86GenEDInfo.inc"
 
-void llvm::X86Disassembler::Debug(const char *file, unsigned line,
-                                  const char *s) {
+using namespace llvm;
+using namespace llvm::X86Disassembler;
+
+void x86DisassemblerDebug(const char *file,
+                          unsigned line,
+                          const char *s) {
   dbgs() << file << ":" << line << ": " << s;
 }
 
-const char *llvm::X86Disassembler::GetInstrName(unsigned Opcode,
-                                                const void *mii) {
+const char *x86DisassemblerGetInstrName(unsigned Opcode, const void *mii) {
   const MCInstrInfo *MII = static_cast<const MCInstrInfo *>(mii);
   return MII->getName(Opcode);
 }
 
-#define debug(s) DEBUG(Debug(__FILE__, __LINE__, s));
+#define debug(s) DEBUG(x86DisassemblerDebug(__FILE__, __LINE__, s));
 
 namespace llvm {  
   
@@ -76,25 +75,17 @@ static bool translateInstruction(MCInst &target,
                                 InternalInstruction &source,
                                 const MCDisassembler *Dis);
 
-X86GenericDisassembler::X86GenericDisassembler(
-                                         const MCSubtargetInfo &STI,
-                                         MCContext &Ctx,
-                                         std::unique_ptr<const MCInstrInfo> MII)
-  : MCDisassembler(STI, Ctx), MII(std::move(MII)) {
-  switch (STI.getFeatureBits() &
-          (X86::Mode16Bit | X86::Mode32Bit | X86::Mode64Bit)) {
-  case X86::Mode16Bit:
-    fMode = MODE_16BIT;
-    break;
-  case X86::Mode32Bit:
-    fMode = MODE_32BIT;
-    break;
-  case X86::Mode64Bit:
-    fMode = MODE_64BIT;
-    break;
-  default:
-    llvm_unreachable("Invalid CPU mode");
-  }
+X86GenericDisassembler::X86GenericDisassembler(const MCSubtargetInfo &STI,
+                                               DisassemblerMode mode,
+                                               const MCInstrInfo *MII)
+  : MCDisassembler(STI), MII(MII), fMode(mode) {}
+
+X86GenericDisassembler::~X86GenericDisassembler() {
+  delete MII;
+}
+
+const EDInstInfo *X86GenericDisassembler::getEDInfo() const {
+  return instInfoX86;
 }
 
 /// regionReader - a callback function that wraps the readByte method from
@@ -140,14 +131,14 @@ X86GenericDisassembler::getInstruction(MCInst &instr,
 
   dlog_t loggerFn = logger;
   if (&vStream == &nulls())
-    loggerFn = nullptr; // Disable logging completely if it's going to nulls().
+    loggerFn = 0; // Disable logging completely if it's going to nulls().
   
   int ret = decodeInstruction(&internalInstr,
                               regionReader,
                               (const void*)&region,
                               loggerFn,
                               (void*)&vStream,
-                              (const void*)MII.get(),
+                              (const void*)MII,
                               address,
                               fMode);
 
@@ -206,8 +197,94 @@ static bool tryAddingSymbolicOperand(int64_t Value, bool isBranch,
                                      uint64_t Address, uint64_t Offset,
                                      uint64_t Width, MCInst &MI, 
                                      const MCDisassembler *Dis) {  
-  return Dis->tryAddingSymbolicOperand(MI, Value, Address, isBranch,
-                                       Offset, Width);
+  LLVMOpInfoCallback getOpInfo = Dis->getLLVMOpInfoCallback();
+  struct LLVMOpInfo1 SymbolicOp;
+  memset(&SymbolicOp, '\0', sizeof(struct LLVMOpInfo1));
+  SymbolicOp.Value = Value;
+  void *DisInfo = Dis->getDisInfoBlock();
+
+  if (!getOpInfo ||
+      !getOpInfo(DisInfo, Address, Offset, Width, 1, &SymbolicOp)) {
+    // Clear SymbolicOp.Value from above and also all other fields.
+    memset(&SymbolicOp, '\0', sizeof(struct LLVMOpInfo1));
+    LLVMSymbolLookupCallback SymbolLookUp = Dis->getLLVMSymbolLookupCallback();
+    if (!SymbolLookUp)
+      return false;
+    uint64_t ReferenceType;
+    if (isBranch)
+       ReferenceType = LLVMDisassembler_ReferenceType_In_Branch;
+    else
+       ReferenceType = LLVMDisassembler_ReferenceType_InOut_None;
+    const char *ReferenceName;
+    const char *Name = SymbolLookUp(DisInfo, Value, &ReferenceType, Address,
+                                    &ReferenceName);
+    if (Name) {
+      SymbolicOp.AddSymbol.Name = Name;
+      SymbolicOp.AddSymbol.Present = true;
+    }
+    // For branches always create an MCExpr so it gets printed as hex address.
+    else if (isBranch) {
+      SymbolicOp.Value = Value;
+    }
+    if(ReferenceType == LLVMDisassembler_ReferenceType_Out_SymbolStub)
+      (*Dis->CommentStream) << "symbol stub for: " << ReferenceName;
+    if (!Name && !isBranch)
+      return false;
+  }
+
+  MCContext *Ctx = Dis->getMCContext();
+  const MCExpr *Add = NULL;
+  if (SymbolicOp.AddSymbol.Present) {
+    if (SymbolicOp.AddSymbol.Name) {
+      StringRef Name(SymbolicOp.AddSymbol.Name);
+      MCSymbol *Sym = Ctx->GetOrCreateSymbol(Name);
+      Add = MCSymbolRefExpr::Create(Sym, *Ctx);
+    } else {
+      Add = MCConstantExpr::Create((int)SymbolicOp.AddSymbol.Value, *Ctx);
+    }
+  }
+
+  const MCExpr *Sub = NULL;
+  if (SymbolicOp.SubtractSymbol.Present) {
+      if (SymbolicOp.SubtractSymbol.Name) {
+      StringRef Name(SymbolicOp.SubtractSymbol.Name);
+      MCSymbol *Sym = Ctx->GetOrCreateSymbol(Name);
+      Sub = MCSymbolRefExpr::Create(Sym, *Ctx);
+    } else {
+      Sub = MCConstantExpr::Create((int)SymbolicOp.SubtractSymbol.Value, *Ctx);
+    }
+  }
+
+  const MCExpr *Off = NULL;
+  if (SymbolicOp.Value != 0)
+    Off = MCConstantExpr::Create(SymbolicOp.Value, *Ctx);
+
+  const MCExpr *Expr;
+  if (Sub) {
+    const MCExpr *LHS;
+    if (Add)
+      LHS = MCBinaryExpr::CreateSub(Add, Sub, *Ctx);
+    else
+      LHS = MCUnaryExpr::CreateMinus(Sub, *Ctx);
+    if (Off != 0)
+      Expr = MCBinaryExpr::CreateAdd(LHS, Off, *Ctx);
+    else
+      Expr = LHS;
+  } else if (Add) {
+    if (Off != 0)
+      Expr = MCBinaryExpr::CreateAdd(Add, Off, *Ctx);
+    else
+      Expr = Add;
+  } else {
+    if (Off != 0)
+      Expr = Off;
+    else
+      Expr = MCConstantExpr::Create(0, *Ctx);
+  }
+
+  MI.addOperand(MCOperand::CreateExpr(Expr));
+
+  return true;
 }
 
 /// tryAddingPcLoadReferenceComment - trys to add a comment as to what is being
@@ -220,62 +297,15 @@ static bool tryAddingSymbolicOperand(int64_t Value, bool isBranch,
 static void tryAddingPcLoadReferenceComment(uint64_t Address, uint64_t Value,
                                             const void *Decoder) {
   const MCDisassembler *Dis = static_cast<const MCDisassembler*>(Decoder);
-  Dis->tryAddingPcLoadReferenceComment(Value, Address);
-}
-
-static const uint8_t segmentRegnums[SEG_OVERRIDE_max] = {
-  0,        // SEG_OVERRIDE_NONE
-  X86::CS,
-  X86::SS,
-  X86::DS,
-  X86::ES,
-  X86::FS,
-  X86::GS
-};
-
-/// translateSrcIndex   - Appends a source index operand to an MCInst.
-///
-/// @param mcInst       - The MCInst to append to.
-/// @param insn         - The internal instruction.
-static bool translateSrcIndex(MCInst &mcInst, InternalInstruction &insn) {
-  unsigned baseRegNo;
-
-  if (insn.mode == MODE_64BIT)
-    baseRegNo = insn.prefixPresent[0x67] ? X86::ESI : X86::RSI;
-  else if (insn.mode == MODE_32BIT)
-    baseRegNo = insn.prefixPresent[0x67] ? X86::SI : X86::ESI;
-  else {
-    assert(insn.mode == MODE_16BIT);
-    baseRegNo = insn.prefixPresent[0x67] ? X86::ESI : X86::SI;
+  LLVMSymbolLookupCallback SymbolLookUp = Dis->getLLVMSymbolLookupCallback();
+  if (SymbolLookUp) {
+    void *DisInfo = Dis->getDisInfoBlock();
+    uint64_t ReferenceType = LLVMDisassembler_ReferenceType_In_PCrel_Load;
+    const char *ReferenceName;
+    (void)SymbolLookUp(DisInfo, Value, &ReferenceType, Address, &ReferenceName);
+    if(ReferenceType == LLVMDisassembler_ReferenceType_Out_LitPool_CstrAddr)
+      (*Dis->CommentStream) << "literal pool for: " << ReferenceName;
   }
-  MCOperand baseReg = MCOperand::CreateReg(baseRegNo);
-  mcInst.addOperand(baseReg);
-
-  MCOperand segmentReg;
-  segmentReg = MCOperand::CreateReg(segmentRegnums[insn.segmentOverride]);
-  mcInst.addOperand(segmentReg);
-  return false;
-}
-
-/// translateDstIndex   - Appends a destination index operand to an MCInst.
-///
-/// @param mcInst       - The MCInst to append to.
-/// @param insn         - The internal instruction.
-
-static bool translateDstIndex(MCInst &mcInst, InternalInstruction &insn) {
-  unsigned baseRegNo;
-
-  if (insn.mode == MODE_64BIT)
-    baseRegNo = insn.prefixPresent[0x67] ? X86::EDI : X86::RDI;
-  else if (insn.mode == MODE_32BIT)
-    baseRegNo = insn.prefixPresent[0x67] ? X86::DI : X86::EDI;
-  else {
-    assert(insn.mode == MODE_16BIT);
-    baseRegNo = insn.prefixPresent[0x67] ? X86::EDI : X86::DI;
-  }
-  MCOperand baseReg = MCOperand::CreateReg(baseRegNo);
-  mcInst.addOperand(baseReg);
-  return false;
 }
 
 /// translateImmediate  - Appends an immediate operand to an MCInst.
@@ -302,24 +332,22 @@ static void translateImmediate(MCInst &mcInst, uint64_t immediate,
     default:
       break;
     case 1:
-      if(immediate & 0x80)
-        immediate |= ~(0xffull);
+      type = TYPE_MOFFS8;
       break;
     case 2:
-      if(immediate & 0x8000)
-        immediate |= ~(0xffffull);
+      type = TYPE_MOFFS16;
       break;
     case 4:
-      if(immediate & 0x80000000)
-        immediate |= ~(0xffffffffull);
+      type = TYPE_MOFFS32;
       break;
     case 8:
+      type = TYPE_MOFFS64;
       break;
     }
   }
   // By default sign-extend all X86 immediates based on their encoding.
   else if (type == TYPE_IMM8 || type == TYPE_IMM16 || type == TYPE_IMM32 ||
-           type == TYPE_IMM64 || type == TYPE_IMMv) {
+           type == TYPE_IMM64) {
     uint32_t Opcode = mcInst.getOpcode();
     switch (operand.encoding) {
     default:
@@ -336,18 +364,16 @@ static void translateImmediate(MCInst &mcInst, uint64_t immediate,
           Opcode != X86::VMPSADBWrri && Opcode != X86::VDPPSYrri &&
           Opcode != X86::VDPPSYrmi && Opcode != X86::VDPPDrri &&
           Opcode != X86::VINSERTPSrr)
-        if(immediate & 0x80)
-          immediate |= ~(0xffull);
+        type = TYPE_MOFFS8;
       break;
     case ENCODING_IW:
-      if(immediate & 0x8000)
-        immediate |= ~(0xffffull);
+      type = TYPE_MOFFS16;
       break;
     case ENCODING_ID:
-      if(immediate & 0x80000000)
-        immediate |= ~(0xffffffffull);
+      type = TYPE_MOFFS32;
       break;
     case ENCODING_IO:
+      type = TYPE_MOFFS64;
       break;
     }
   }
@@ -361,38 +387,37 @@ static void translateImmediate(MCInst &mcInst, uint64_t immediate,
   case TYPE_XMM256:
     mcInst.addOperand(MCOperand::CreateReg(X86::YMM0 + (immediate >> 4)));
     return;
-  case TYPE_XMM512:
-    mcInst.addOperand(MCOperand::CreateReg(X86::ZMM0 + (immediate >> 4)));
-    return;
   case TYPE_REL8:
     isBranch = true;
     pcrel = insn.startLocation + insn.immediateOffset + insn.immediateSize;
+    // fall through to sign extend the immediate if needed.
+  case TYPE_MOFFS8:
     if(immediate & 0x80)
       immediate |= ~(0xffull);
+    break;
+  case TYPE_MOFFS16:
+    if(immediate & 0x8000)
+      immediate |= ~(0xffffull);
     break;
   case TYPE_REL32:
   case TYPE_REL64:
     isBranch = true;
     pcrel = insn.startLocation + insn.immediateOffset + insn.immediateSize;
+    // fall through to sign extend the immediate if needed.
+  case TYPE_MOFFS32:
     if(immediate & 0x80000000)
       immediate |= ~(0xffffffffull);
     break;
+  case TYPE_MOFFS64:
   default:
     // operand is 64 bits wide.  Do nothing.
     break;
   }
-
+    
   if(!tryAddingSymbolicOperand(immediate + pcrel, isBranch, insn.startLocation,
                                insn.immediateOffset, insn.immediateSize,
                                mcInst, Dis))
     mcInst.addOperand(MCOperand::CreateImm(immediate));
-
-  if (type == TYPE_MOFFS8 || type == TYPE_MOFFS16 ||
-      type == TYPE_MOFFS32 || type == TYPE_MOFFS64) {
-    MCOperand segmentReg;
-    segmentReg = MCOperand::CreateReg(segmentRegnums[insn.segmentOverride]);
-    mcInst.addOperand(segmentReg);
-  }
 }
 
 /// translateRMRegister - Translates a register stored in the R/M field of the
@@ -496,22 +521,13 @@ static bool translateRMMemory(MCInst &mcInst, InternalInstruction &insn,
     bool IndexIs256 = (Opcode == X86::VGATHERQPDYrm ||
                        Opcode == X86::VGATHERDPSYrm ||
                        Opcode == X86::VGATHERQPSYrm ||
-                       Opcode == X86::VGATHERDPDZrm ||
-                       Opcode == X86::VPGATHERDQZrm ||
                        Opcode == X86::VPGATHERQQYrm ||
                        Opcode == X86::VPGATHERDDYrm ||
                        Opcode == X86::VPGATHERQDYrm);
-    bool IndexIs512 = (Opcode == X86::VGATHERQPDZrm ||
-                       Opcode == X86::VGATHERDPSZrm ||
-                       Opcode == X86::VGATHERQPSZrm ||
-                       Opcode == X86::VPGATHERQQZrm ||
-                       Opcode == X86::VPGATHERDDZrm ||
-                       Opcode == X86::VPGATHERQDZrm);
-    if (IndexIs128 || IndexIs256 || IndexIs512) {
+    if (IndexIs128 || IndexIs256) {
       unsigned IndexOffset = insn.sibIndex -
                          (insn.addressSize == 8 ? SIB_INDEX_RAX:SIB_INDEX_EAX);
-      SIBIndex IndexBase = IndexIs512 ? SIB_INDEX_ZMM0 :
-                           IndexIs256 ? SIB_INDEX_YMM0 : SIB_INDEX_XMM0;
+      SIBIndex IndexBase = IndexIs256 ? SIB_INDEX_YMM0 : SIB_INDEX_XMM0;
       insn.sibIndex = (SIBIndex)(IndexBase + 
                            (insn.sibIndex == SIB_INDEX_NONE ? 4 : IndexOffset));
     }
@@ -528,7 +544,6 @@ static bool translateRMMemory(MCInst &mcInst, InternalInstruction &insn,
       EA_BASES_64BIT
       REGS_XMM
       REGS_YMM
-      REGS_ZMM
 #undef ENTRY
       }
     } else {
@@ -600,7 +615,17 @@ static bool translateRMMemory(MCInst &mcInst, InternalInstruction &insn,
   }
   
   displacement = MCOperand::CreateImm(insn.displacement);
-
+  
+  static const uint8_t segmentRegnums[SEG_OVERRIDE_max] = {
+    0,        // SEG_OVERRIDE_NONE
+    X86::CS,
+    X86::SS,
+    X86::DS,
+    X86::ES,
+    X86::FS,
+    X86::GS
+  };
+  
   segmentReg = MCOperand::CreateReg(segmentRegnums[insn.segmentOverride]);
   
   mcInst.addOperand(baseReg);
@@ -641,10 +666,6 @@ static bool translateRM(MCInst &mcInst, const OperandSpecifier &operand,
   case TYPE_XMM64:
   case TYPE_XMM128:
   case TYPE_XMM256:
-  case TYPE_XMM512:
-  case TYPE_VK1:
-  case TYPE_VK8:
-  case TYPE_VK16:
   case TYPE_DEBUGREG:
   case TYPE_CONTROLREG:
     return translateRMRegister(mcInst, insn);
@@ -676,25 +697,16 @@ static bool translateRM(MCInst &mcInst, const OperandSpecifier &operand,
 ///
 /// @param mcInst       - The MCInst to append to.
 /// @param stackPos     - The stack position to translate.
-static void translateFPRegister(MCInst &mcInst,
-                                uint8_t stackPos) {
-  mcInst.addOperand(MCOperand::CreateReg(X86::ST0 + stackPos));
-}
-
-/// translateMaskRegister - Translates a 3-bit mask register number to
-///   LLVM form, and appends it to an MCInst.
-///
-/// @param mcInst       - The MCInst to append to.
-/// @param maskRegNum   - Number of mask register from 0 to 7.
-/// @return             - false on success; true otherwise.
-static bool translateMaskRegister(MCInst &mcInst,
-                                uint8_t maskRegNum) {
-  if (maskRegNum >= 8) {
-    debug("Invalid mask register number");
+/// @return             - 0 on success; nonzero otherwise.
+static bool translateFPRegister(MCInst &mcInst,
+                               uint8_t stackPos) {
+  if (stackPos >= 8) {
+    debug("Invalid FP stack position");
     return true;
   }
+  
+  mcInst.addOperand(MCOperand::CreateReg(X86::ST0 + stackPos));
 
-  mcInst.addOperand(MCOperand::CreateReg(X86::K0 + maskRegNum));
   return false;
 }
 
@@ -715,9 +727,7 @@ static bool translateOperand(MCInst &mcInst, const OperandSpecifier &operand,
   case ENCODING_REG:
     translateRegister(mcInst, insn.reg);
     return false;
-  case ENCODING_WRITEMASK:
-    return translateMaskRegister(mcInst, insn.writemask);
-  CASE_ENCODING_RM:
+  case ENCODING_RM:
     return translateRM(mcInst, operand, insn, Dis);
   case ENCODING_CB:
   case ENCODING_CW:
@@ -739,19 +749,16 @@ static bool translateOperand(MCInst &mcInst, const OperandSpecifier &operand,
                        insn,
                        Dis);
     return false;
-  case ENCODING_SI:
-    return translateSrcIndex(mcInst, insn);
-  case ENCODING_DI:
-    return translateDstIndex(mcInst, insn);
   case ENCODING_RB:
   case ENCODING_RW:
   case ENCODING_RD:
   case ENCODING_RO:
-  case ENCODING_Rv:
     translateRegister(mcInst, insn.opcodeRegister);
     return false;
-  case ENCODING_FP:
-    translateFPRegister(mcInst, insn.modRM & 7);
+  case ENCODING_I:
+    return translateFPRegister(mcInst, insn.opcodeModifier);
+  case ENCODING_Rv:
+    translateRegister(mcInst, insn.opcodeRegister);
     return false;
   case ENCODING_VVVV:
     translateRegister(mcInst, insn.vvvv);
@@ -777,21 +784,14 @@ static bool translateInstruction(MCInst &mcInst,
   }
   
   mcInst.setOpcode(insn.instructionID);
-  // If when reading the prefix bytes we determined the overlapping 0xf2 or 0xf3
-  // prefix bytes should be disassembled as xrelease and xacquire then set the
-  // opcode to those instead of the rep and repne opcodes.
-  if (insn.xAcquireRelease) {
-    if(mcInst.getOpcode() == X86::REP_PREFIX)
-      mcInst.setOpcode(X86::XRELEASE_PREFIX);
-    else if(mcInst.getOpcode() == X86::REPNE_PREFIX)
-      mcInst.setOpcode(X86::XACQUIRE_PREFIX);
-  }
+  
+  int index;
   
   insn.numImmediatesTranslated = 0;
   
-  for (const auto &Op : insn.operands) {
-    if (Op.encoding != ENCODING_NONE) {
-      if (translateOperand(mcInst, Op, insn, Dis)) {
+  for (index = 0; index < X86_MAX_OPERANDS; ++index) {
+    if (insn.operands[index].encoding != ENCODING_NONE) {
+      if (translateOperand(mcInst, insn.operands[index], insn, Dis)) {
         return true;
       }
     }
@@ -800,17 +800,22 @@ static bool translateInstruction(MCInst &mcInst,
   return false;
 }
 
-static MCDisassembler *createX86Disassembler(const Target &T,
-                                             const MCSubtargetInfo &STI,
-                                             MCContext &Ctx) {
-  std::unique_ptr<const MCInstrInfo> MII(T.createMCInstrInfo());
-  return new X86Disassembler::X86GenericDisassembler(STI, Ctx, std::move(MII));
+static MCDisassembler *createX86_32Disassembler(const Target &T,
+                                                const MCSubtargetInfo &STI) {
+  return new X86Disassembler::X86GenericDisassembler(STI, MODE_32BIT,
+                                                     T.createMCInstrInfo());
+}
+
+static MCDisassembler *createX86_64Disassembler(const Target &T,
+                                                const MCSubtargetInfo &STI) {
+  return new X86Disassembler::X86GenericDisassembler(STI, MODE_64BIT,
+                                                     T.createMCInstrInfo());
 }
 
 extern "C" void LLVMInitializeX86Disassembler() { 
   // Register the disassembler.
   TargetRegistry::RegisterMCDisassembler(TheX86_32Target, 
-                                         createX86Disassembler);
+                                         createX86_32Disassembler);
   TargetRegistry::RegisterMCDisassembler(TheX86_64Target,
-                                         createX86Disassembler);
+                                         createX86_64Disassembler);
 }

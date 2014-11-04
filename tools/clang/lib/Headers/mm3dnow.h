@@ -25,7 +25,6 @@
 #define _MM3DNOW_H_INCLUDED
 
 #include <mmintrin.h>
-#include <prfchwintrin.h>
 
 typedef float __v2sf __attribute__((__vector_size__(8)));
 

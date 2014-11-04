@@ -1,5 +1,5 @@
 // RUN: %clang_cc1 -triple=x86_64-apple-darwin10 -emit-llvm -fexceptions %s -o - |FileCheck %s
-// RUN: %clang_cc1 -triple=x86_64-apple-darwin10 -emit-llvm %s -o - |FileCheck -check-prefix CHECK-NOEXC %s
+// RUN: %clang_cc1 -triple=x86_64-apple-darwin10 -emit-llvm %s -o - |FileCheck -check-prefix NOEXC %s
 
 struct A {
   A();
@@ -12,7 +12,7 @@ struct C { void *field; };
 
 struct D { ~D(); };
 
-// CHECK: @__dso_handle = external global i8
+// CHECK: @__dso_handle = external unnamed_addr global i8
 // CHECK: @c = global %struct.C zeroinitializer, align 8
 
 // It's okay if we ever implement the IR-generation optimization to remove this.
@@ -45,7 +45,7 @@ namespace test1 {
   const int y = x - 1; // This gets deferred.
   const int z = ~y;    // This also gets deferred, but gets "undeferred" before y.
   int test() { return z; }
-// CHECK-LABEL:      define i32 @_ZN5test14testEv()
+// CHECK:      define i32 @_ZN5test14testEv()
 
   // All of these initializers end up delayed, so we check them later.
 }
@@ -195,11 +195,9 @@ namespace test7 {
 // CHECK-NEXT:   sub
 // CHECK-NEXT:   store i32 {{.*}}, i32* @_ZN5test1L1yE
 
-// CHECK: define internal void @_GLOBAL__sub_I_global_init.cpp() section "__TEXT,__StaticInit,regular,pure_instructions" {
+// CHECK: define internal void @_GLOBAL__I_a() section "__TEXT,__StaticInit,regular,pure_instructions" {
 // CHECK:   call void [[TEST1_Y_INIT]]
 // CHECK:   call void [[TEST1_Z_INIT]]
 
 // rdar://problem/8090834: this should be nounwind
-// CHECK-NOEXC: define internal void @_GLOBAL__sub_I_global_init.cpp() [[NUW:#[0-9]+]] section "__TEXT,__StaticInit,regular,pure_instructions" {
-
-// CHECK-NOEXC: attributes [[NUW]] = { nounwind }
+// CHECK-NOEXC: define internal void @_GLOBAL__I_a() nounwind section "__TEXT,__StaticInit,regular,pure_instructions" {

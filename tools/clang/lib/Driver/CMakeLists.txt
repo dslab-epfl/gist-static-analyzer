@@ -1,27 +1,31 @@
-set(LLVM_LINK_COMPONENTS
-  Option
-  Support
-  )
-
 add_clang_library(clangDriver
   Action.cpp
+  Arg.cpp
+  ArgList.cpp
+  CC1AsOptions.cpp
   Compilation.cpp
   Driver.cpp
   DriverOptions.cpp
   Job.cpp
-  Multilib.cpp
+  Option.cpp
+  OptTable.cpp
   Phases.cpp
-  SanitizerArgs.cpp
   Tool.cpp
   ToolChain.cpp
   ToolChains.cpp
   WindowsToolChain.cpp
   Tools.cpp
   Types.cpp
+  )
 
-  DEPENDS
+add_dependencies(clangDriver
+  ClangAttrList
+  ClangCC1AsOptions
+  ClangDiagnosticCommon
+  ClangDiagnosticDriver
   ClangDriverOptions
+  )
 
-  LINK_LIBS
+target_link_libraries(clangDriver
   clangBasic
   )

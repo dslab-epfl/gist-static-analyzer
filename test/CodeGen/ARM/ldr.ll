@@ -1,7 +1,7 @@
-; RUN: llc -mtriple=arm-eabi %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm | FileCheck %s
 
 define i32 @f1(i32* %v) {
-; CHECK-LABEL: f1:
+; CHECK: f1:
 ; CHECK: ldr r0
 entry:
         %tmp = load i32* %v
@@ -9,7 +9,7 @@ entry:
 }
 
 define i32 @f2(i32* %v) {
-; CHECK-LABEL: f2:
+; CHECK: f2:
 ; CHECK: ldr r0
 entry:
         %tmp2 = getelementptr i32* %v, i32 1023
@@ -18,7 +18,7 @@ entry:
 }
 
 define i32 @f3(i32* %v) {
-; CHECK-LABEL: f3:
+; CHECK: f3:
 ; CHECK: mov
 ; CHECK: ldr r0
 entry:
@@ -28,7 +28,7 @@ entry:
 }
 
 define i32 @f4(i32 %base) {
-; CHECK-LABEL: f4:
+; CHECK: f4:
 ; CHECK-NOT: mvn
 ; CHECK: ldr r0
 entry:
@@ -39,7 +39,7 @@ entry:
 }
 
 define i32 @f5(i32 %base, i32 %offset) {
-; CHECK-LABEL: f5:
+; CHECK: f5:
 ; CHECK: ldr r0
 entry:
         %tmp1 = add i32 %base, %offset
@@ -49,7 +49,7 @@ entry:
 }
 
 define i32 @f6(i32 %base, i32 %offset) {
-; CHECK-LABEL: f6:
+; CHECK: f6:
 ; CHECK: ldr r0{{.*}}lsl{{.*}}
 entry:
         %tmp1 = shl i32 %offset, 2
@@ -60,7 +60,7 @@ entry:
 }
 
 define i32 @f7(i32 %base, i32 %offset) {
-; CHECK-LABEL: f7:
+; CHECK: f7:
 ; CHECK: ldr r0{{.*}}lsr{{.*}}
 entry:
         %tmp1 = lshr i32 %offset, 2

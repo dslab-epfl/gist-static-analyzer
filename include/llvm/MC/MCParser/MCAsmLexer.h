@@ -7,10 +7,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_MC_MCPARSER_MCASMLEXER_H
-#define LLVM_MC_MCPARSER_MCASMLEXER_H
+#ifndef LLVM_MC_MCASMLEXER_H
+#define LLVM_MC_MCASMLEXER_H
 
-#include "llvm/ADT/APInt.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/DataTypes.h"
@@ -31,10 +30,12 @@ public:
 
     // Integer values.
     Integer,
-    BigNum, // larger than 64 bits
 
     // Real values.
     Real,
+
+    // Register values (stored in IntVal).  Only used by MCTargetAsmLexer.
+    Register,
 
     // No-value.
     EndOfStatement,
@@ -59,14 +60,12 @@ private:
   /// a memory buffer owned by the source manager.
   StringRef Str;
 
-  APInt IntVal;
+  int64_t IntVal;
 
 public:
   AsmToken() {}
-  AsmToken(TokenKind _Kind, StringRef _Str, APInt _IntVal)
-    : Kind(_Kind), Str(_Str), IntVal(_IntVal) {}
   AsmToken(TokenKind _Kind, StringRef _Str, int64_t _IntVal = 0)
-    : Kind(_Kind), Str(_Str), IntVal(64, _IntVal, true) {}
+    : Kind(_Kind), Str(_Str), IntVal(_IntVal) {}
 
   TokenKind getKind() const { return Kind; }
   bool is(TokenKind K) const { return Kind == K; }
@@ -74,7 +73,6 @@ public:
 
   SMLoc getLoc() const;
   SMLoc getEndLoc() const;
-  SMRange getLocRange() const;
 
   /// getStringContents - Get the contents of a string token (without quotes).
   StringRef getStringContents() const {
@@ -104,13 +102,14 @@ public:
   // as a single token, then diagnose as an invalid number).
   int64_t getIntVal() const {
     assert(Kind == Integer && "This token isn't an integer!");
-    return IntVal.getZExtValue();
+    return IntVal;
   }
 
-  APInt getAPIntVal() const {
-    assert((Kind == Integer || Kind == BigNum) &&
-           "This token isn't an integer!");
-    return IntVal;
+  /// getRegVal - Get the register number for the current token, which should
+  /// be a register.
+  unsigned getRegVal() const {
+    assert(Kind == Register && "This token isn't a register!");
+    return static_cast<unsigned>(IntVal);
   }
 };
 
@@ -129,7 +128,6 @@ class MCAsmLexer {
 protected: // Can only create subclasses.
   const char *TokStart;
   bool SkipSpace;
-  bool AllowAtInIdentifier;
 
   MCAsmLexer();
 
@@ -161,9 +159,6 @@ public:
     return CurTok;
   }
 
-  /// peekTok - Look ahead at the next token to be lexed.
-  virtual const AsmToken peekTok(bool ShouldSkipSpace = true) = 0;
-
   /// getErrLoc - Get the current error location
   const SMLoc &getErrLoc() {
     return ErrLoc;
@@ -185,9 +180,6 @@ public:
 
   /// setSkipSpace - Set whether spaces should be ignored by the lexer
   void setSkipSpace(bool val) { SkipSpace = val; }
-
-  bool getAllowAtInIdentifier() { return AllowAtInIdentifier; }
-  void setAllowAtInIdentifier(bool v) { AllowAtInIdentifier = v; }
 };
 
 } // End llvm namespace

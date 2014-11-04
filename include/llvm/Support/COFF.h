@@ -20,8 +20,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_SUPPORT_COFF_H
-#define LLVM_SUPPORT_COFF_H
+#ifndef LLVM_SUPPORT_WIN_COFF_H
+#define LLVM_SUPPORT_WIN_COFF_H
 
 #include "llvm/Support/DataTypes.h"
 #include <cassert>
@@ -30,54 +30,23 @@
 namespace llvm {
 namespace COFF {
 
-  // The maximum number of sections that a COFF object can have (inclusive).
-  const int32_t MaxNumberOfSections16 = 65279;
-
-  // The PE signature bytes that follows the DOS stub header.
-  static const char PEMagic[] = { 'P', 'E', '\0', '\0' };
-
-  static const char BigObjMagic[] = {
-      '\xc7', '\xa1', '\xba', '\xd1', '\xee', '\xba', '\xa9', '\x4b',
-      '\xaf', '\x20', '\xfa', '\xf6', '\x6a', '\xa4', '\xdc', '\xb8',
-  };
-
   // Sizes in bytes of various things in the COFF format.
   enum {
-    Header16Size   = 20,
-    Header32Size   = 56,
+    HeaderSize     = 20,
     NameSize       = 8,
-    Symbol16Size   = 18,
-    Symbol32Size   = 20,
+    SymbolSize     = 18,
     SectionSize    = 40,
     RelocationSize = 10
   };
 
   struct header {
     uint16_t Machine;
-    int32_t  NumberOfSections;
+    uint16_t NumberOfSections;
     uint32_t TimeDateStamp;
     uint32_t PointerToSymbolTable;
     uint32_t NumberOfSymbols;
     uint16_t SizeOfOptionalHeader;
     uint16_t Characteristics;
-  };
-
-  struct BigObjHeader {
-    enum : uint16_t { MinBigObjectVersion = 2 };
-
-    uint16_t Sig1; ///< Must be IMAGE_FILE_MACHINE_UNKNOWN (0).
-    uint16_t Sig2; ///< Must be 0xFFFF.
-    uint16_t Version;
-    uint16_t Machine;
-    uint32_t TimeDateStamp;
-    uint8_t  UUID[16];
-    uint32_t unused1;
-    uint32_t unused2;
-    uint32_t unused3;
-    uint32_t unused4;
-    uint32_t NumberOfSections;
-    uint32_t PointerToSymbolTable;
-    uint32_t NumberOfSymbols;
   };
 
   enum MachineTypes {
@@ -87,7 +56,7 @@ namespace COFF {
     IMAGE_FILE_MACHINE_AM33      = 0x13,
     IMAGE_FILE_MACHINE_AMD64     = 0x8664,
     IMAGE_FILE_MACHINE_ARM       = 0x1C0,
-    IMAGE_FILE_MACHINE_ARMNT     = 0x1C4,
+    IMAGE_FILE_MACHINE_ARMV7     = 0x1C4,
     IMAGE_FILE_MACHINE_EBC       = 0xEBC,
     IMAGE_FILE_MACHINE_I386      = 0x14C,
     IMAGE_FILE_MACHINE_IA64      = 0x200,
@@ -149,7 +118,7 @@ namespace COFF {
   struct symbol {
     char     Name[NameSize];
     uint32_t Value;
-    int32_t  SectionNumber;
+    uint16_t SectionNumber;
     uint16_t Type;
     uint8_t  StorageClass;
     uint8_t  NumberOfAuxSymbols;
@@ -165,7 +134,7 @@ namespace COFF {
     SF_WeakExternal = 0x01000000
   };
 
-  enum SymbolSectionNumber : int32_t {
+  enum SymbolSectionNumber {
     IMAGE_SYM_DEBUG     = -2,
     IMAGE_SYM_ABSOLUTE  = -1,
     IMAGE_SYM_UNDEFINED = 0
@@ -237,10 +206,6 @@ namespace COFF {
     SCT_COMPLEX_TYPE_SHIFT   = 4
   };
 
-  enum AuxSymbolType {
-    IMAGE_AUX_SYMBOL_TYPE_TOKEN_DEF = 1
-  };
-
   struct section {
     char     Name[NameSize];
     uint32_t VirtualSize;
@@ -254,7 +219,7 @@ namespace COFF {
     uint32_t Characteristics;
   };
 
-  enum SectionCharacteristics : uint32_t {
+  enum SectionCharacteristics {
     SC_Invalid = 0xffffffff,
 
     IMAGE_SCN_TYPE_NO_PAD            = 0x00000008,
@@ -300,7 +265,7 @@ namespace COFF {
     uint16_t Type;
   };
 
-  enum RelocationTypeI386 {
+  enum RelocationTypeX86 {
     IMAGE_REL_I386_ABSOLUTE = 0x0000,
     IMAGE_REL_I386_DIR16    = 0x0001,
     IMAGE_REL_I386_REL16    = 0x0002,
@@ -311,10 +276,8 @@ namespace COFF {
     IMAGE_REL_I386_SECREL   = 0x000B,
     IMAGE_REL_I386_TOKEN    = 0x000C,
     IMAGE_REL_I386_SECREL7  = 0x000D,
-    IMAGE_REL_I386_REL32    = 0x0014
-  };
+    IMAGE_REL_I386_REL32    = 0x0014,
 
-  enum RelocationTypeAMD64 {
     IMAGE_REL_AMD64_ABSOLUTE  = 0x0000,
     IMAGE_REL_AMD64_ADDR64    = 0x0001,
     IMAGE_REL_AMD64_ADDR32    = 0x0002,
@@ -358,8 +321,7 @@ namespace COFF {
     IMAGE_COMDAT_SELECT_SAME_SIZE,
     IMAGE_COMDAT_SELECT_EXACT_MATCH,
     IMAGE_COMDAT_SELECT_ASSOCIATIVE,
-    IMAGE_COMDAT_SELECT_LARGEST,
-    IMAGE_COMDAT_SELECT_NEWEST
+    IMAGE_COMDAT_SELECT_LARGEST
   };
 
   // Auxiliary Symbol Formats
@@ -368,7 +330,7 @@ namespace COFF {
     uint32_t TotalSize;
     uint32_t PointerToLinenumber;
     uint32_t PointerToNextFunction;
-    char     unused[2];
+    uint8_t  unused[2];
   };
 
   struct AuxiliarybfAndefSymbol {
@@ -392,27 +354,25 @@ namespace COFF {
     IMAGE_WEAK_EXTERN_SEARCH_ALIAS     = 3
   };
 
+  struct AuxiliaryFile {
+    uint8_t FileName[18];
+  };
+
   struct AuxiliarySectionDefinition {
     uint32_t Length;
     uint16_t NumberOfRelocations;
     uint16_t NumberOfLinenumbers;
     uint32_t CheckSum;
-    uint32_t Number;
+    uint16_t Number;
     uint8_t  Selection;
-    char     unused;
-  };
-
-  struct AuxiliaryCLRToken {
-    uint8_t  AuxType;
-    uint8_t  unused1;
-    uint32_t SymbolTableIndex;
-    char     unused2[12];
+    uint8_t  unused[3];
   };
 
   union Auxiliary {
     AuxiliaryFunctionDefinition FunctionDefinition;
     AuxiliarybfAndefSymbol      bfAndefSymbol;
     AuxiliaryWeakExternal       WeakExternal;
+    AuxiliaryFile               File;
     AuxiliarySectionDefinition  SectionDefinition;
   };
 
@@ -486,12 +446,9 @@ namespace COFF {
     uint32_t AddressOfNewExeHeader;
   };
 
-  struct PE32Header {
-    enum {
-      PE32 = 0x10b,
-      PE32_PLUS = 0x20b
-    };
-
+  struct PEHeader {
+    uint32_t Signature;
+    header COFFHeader;
     uint16_t Magic;
     uint8_t  MajorLinkerVersion;
     uint8_t  MinorLinkerVersion;
@@ -501,7 +458,7 @@ namespace COFF {
     uint32_t AddressOfEntryPoint; // RVA
     uint32_t BaseOfCode; // RVA
     uint32_t BaseOfData; // RVA
-    uint32_t ImageBase;
+    uint64_t ImageBase;
     uint32_t SectionAlignment;
     uint32_t FileAlignment;
     uint16_t MajorOperatingSystemVersion;
@@ -516,10 +473,10 @@ namespace COFF {
     uint32_t CheckSum;
     uint16_t Subsystem;
     uint16_t DLLCharacteristics;
-    uint32_t SizeOfStackReserve;
-    uint32_t SizeOfStackCommit;
-    uint32_t SizeOfHeapReserve;
-    uint32_t SizeOfHeapCommit;
+    uint64_t SizeOfStackReserve;
+    uint64_t SizeOfStackCommit;
+    uint64_t SizeOfHeapReserve;
+    uint64_t SizeOfHeapCommit;
     uint32_t LoaderFlags;
     uint32_t NumberOfRvaAndSize;
   };
@@ -529,32 +486,12 @@ namespace COFF {
     uint32_t Size;
   };
 
-  enum DataDirectoryIndex {
-    EXPORT_TABLE = 0,
-    IMPORT_TABLE,
-    RESOURCE_TABLE,
-    EXCEPTION_TABLE,
-    CERTIFICATE_TABLE,
-    BASE_RELOCATION_TABLE,
-    DEBUG,
-    ARCHITECTURE,
-    GLOBAL_PTR,
-    TLS_TABLE,
-    LOAD_CONFIG_TABLE,
-    BOUND_IMPORT,
-    IAT,
-    DELAY_IMPORT_DESCRIPTOR,
-    CLR_RUNTIME_HEADER
-  };
-
   enum WindowsSubsystem {
     IMAGE_SUBSYSTEM_UNKNOWN = 0, ///< An unknown subsystem.
     IMAGE_SUBSYSTEM_NATIVE = 1, ///< Device drivers and native Windows processes
     IMAGE_SUBSYSTEM_WINDOWS_GUI = 2, ///< The Windows GUI subsystem.
     IMAGE_SUBSYSTEM_WINDOWS_CUI = 3, ///< The Windows character subsystem.
-    IMAGE_SUBSYSTEM_OS2_CUI = 5, ///< The OS/2 character subsytem.
     IMAGE_SUBSYSTEM_POSIX_CUI = 7, ///< The POSIX character subsystem.
-    IMAGE_SUBSYSTEM_NATIVE_WINDOWS = 8, ///< Native Windows 9x driver.
     IMAGE_SUBSYSTEM_WINDOWS_CE_GUI = 9, ///< Windows CE.
     IMAGE_SUBSYSTEM_EFI_APPLICATION = 10, ///< An EFI application.
     IMAGE_SUBSYSTEM_EFI_BOOT_SERVICE_DRIVER = 11, ///< An EFI driver with boot
@@ -562,19 +499,15 @@ namespace COFF {
     IMAGE_SUBSYSTEM_EFI_RUNTIME_DRIVER = 12, ///< An EFI driver with run-time
                                              ///  services.
     IMAGE_SUBSYSTEM_EFI_ROM = 13, ///< An EFI ROM image.
-    IMAGE_SUBSYSTEM_XBOX = 14, ///< XBOX.
-    IMAGE_SUBSYSTEM_WINDOWS_BOOT_APPLICATION = 16 ///< A BCD application.
+    IMAGE_SUBSYSTEM_XBOX = 14 ///< XBOX.
   };
 
   enum DLLCharacteristics {
-    /// ASLR with 64 bit address space.
-    IMAGE_DLL_CHARACTERISTICS_HIGH_ENTROPY_VA = 0x0020,
     /// DLL can be relocated at load time.
     IMAGE_DLL_CHARACTERISTICS_DYNAMIC_BASE = 0x0040,
     /// Code integrity checks are enforced.
     IMAGE_DLL_CHARACTERISTICS_FORCE_INTEGRITY = 0x0080,
-    ///< Image is NX compatible.
-    IMAGE_DLL_CHARACTERISTICS_NX_COMPAT = 0x0100,
+    IMAGE_DLL_CHARACTERISTICS_NX_COMPAT = 0x0100, ///< Image is NX compatible.
     /// Isolation aware, but do not isolate the image.
     IMAGE_DLL_CHARACTERISTICS_NO_ISOLATION = 0x0200,
     /// Does not use structured exception handling (SEH). No SEH handler may be
@@ -582,12 +515,7 @@ namespace COFF {
     IMAGE_DLL_CHARACTERISTICS_NO_SEH = 0x0400,
     /// Do not bind the image.
     IMAGE_DLL_CHARACTERISTICS_NO_BIND = 0x0800,
-    ///< Image should execute in an AppContainer.
-    IMAGE_DLL_CHARACTERISTICS_APPCONTAINER = 0x1000,
-    ///< A WDM driver.
-    IMAGE_DLL_CHARACTERISTICS_WDM_DRIVER = 0x2000,
-    ///< Image supports Control Flow Guard.
-    IMAGE_DLL_CHARACTERISTICS_GUARD_CF = 0x4000,
+    IMAGE_DLL_CHARACTERISTICS_WDM_DRIVER = 0x2000, ///< A WDM driver.
     /// Terminal Server aware.
     IMAGE_DLL_CHARACTERISTICS_TERMINAL_SERVER_AWARE = 0x8000
   };
@@ -659,17 +587,6 @@ namespace COFF {
       return static_cast<ImportNameType>((TypeInfo & 0x1C) >> 3);
     }
   };
-
-  enum CodeViewLineTableIdentifiers {
-    DEBUG_SECTION_MAGIC           = 0x4,
-    DEBUG_LINE_TABLE_SUBSECTION   = 0xF2,
-    DEBUG_STRING_TABLE_SUBSECTION = 0xF3,
-    DEBUG_INDEX_SUBSECTION        = 0xF4
-  };
-
-  inline bool isReservedSectionNumber(int32_t SectionNumber) {
-    return SectionNumber <= 0;
-  }
 
 } // End namespace COFF.
 } // End namespace llvm.

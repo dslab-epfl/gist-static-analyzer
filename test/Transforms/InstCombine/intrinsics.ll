@@ -1,9 +1,8 @@
-; RUN: opt -instcombine -S < %s | FileCheck %s
+; RUN: opt %s -instcombine -S | FileCheck %s
 
 %overflow.result = type {i8, i1}
 
 declare %overflow.result @llvm.uadd.with.overflow.i8(i8, i8)
-declare { i32, i1 } @llvm.sadd.with.overflow.i32(i32, i32)
 declare %overflow.result @llvm.umul.with.overflow.i8(i8, i8)
 declare double @llvm.powi.f64(double, i32) nounwind readonly
 declare i32 @llvm.cttz.i32(i32, i1) nounwind readnone
@@ -15,7 +14,7 @@ define i8 @uaddtest1(i8 %A, i8 %B) {
   %x = call %overflow.result @llvm.uadd.with.overflow.i8(i8 %A, i8 %B)
   %y = extractvalue %overflow.result %x, 0
   ret i8 %y
-; CHECK-LABEL: @uaddtest1(
+; CHECK: @uaddtest1
 ; CHECK-NEXT: %y = add i8 %A, %B
 ; CHECK-NEXT: ret i8 %y
 }
@@ -28,7 +27,7 @@ define i8 @uaddtest2(i8 %A, i8 %B, i1* %overflowPtr) {
   %z = extractvalue %overflow.result %x, 1
   store i1 %z, i1* %overflowPtr
   ret i8 %y
-; CHECK-LABEL: @uaddtest2(
+; CHECK: @uaddtest2
 ; CHECK-NEXT: %and.A = and i8 %A, 127
 ; CHECK-NEXT: %and.B = and i8 %B, 127
 ; CHECK-NEXT: %x = add nuw i8 %and.A, %and.B
@@ -44,7 +43,7 @@ define i8 @uaddtest3(i8 %A, i8 %B, i1* %overflowPtr) {
   %z = extractvalue %overflow.result %x, 1
   store i1 %z, i1* %overflowPtr
   ret i8 %y
-; CHECK-LABEL: @uaddtest3(
+; CHECK: @uaddtest3
 ; CHECK-NEXT: %or.A = or i8 %A, -128
 ; CHECK-NEXT: %or.B = or i8 %B, -128
 ; CHECK-NEXT: %x = add i8 %or.A, %or.B
@@ -58,7 +57,7 @@ define i8 @uaddtest4(i8 %A, i1* %overflowPtr) {
   %z = extractvalue %overflow.result %x, 1
   store i1 %z, i1* %overflowPtr
   ret i8 %y
-; CHECK-LABEL: @uaddtest4(
+; CHECK: @uaddtest4
 ; CHECK-NEXT: ret i8 undef
 }
 
@@ -68,7 +67,7 @@ define i8 @uaddtest5(i8 %A, i1* %overflowPtr) {
   %z = extractvalue %overflow.result %x, 1
   store i1 %z, i1* %overflowPtr
   ret i8 %y
-; CHECK-LABEL: @uaddtest5(
+; CHECK: @uaddtest5
 ; CHECK: ret i8 %A
 }
 
@@ -76,7 +75,7 @@ define i1 @uaddtest6(i8 %A, i8 %B) {
   %x = call %overflow.result @llvm.uadd.with.overflow.i8(i8 %A, i8 -4)
   %z = extractvalue %overflow.result %x, 1
   ret i1 %z
-; CHECK-LABEL: @uaddtest6(
+; CHECK: @uaddtest6
 ; CHECK-NEXT: %z = icmp ugt i8 %A, 3
 ; CHECK-NEXT: ret i1 %z
 }
@@ -85,21 +84,9 @@ define i8 @uaddtest7(i8 %A, i8 %B) {
   %x = call %overflow.result @llvm.uadd.with.overflow.i8(i8 %A, i8 %B)
   %z = extractvalue %overflow.result %x, 0
   ret i8 %z
-; CHECK-LABEL: @uaddtest7(
+; CHECK: @uaddtest7
 ; CHECK-NEXT: %z = add i8 %A, %B
 ; CHECK-NEXT: ret i8 %z
-}
-
-; PR20194
-define { i32, i1 } @saddtest1(i8 %a, i8 %b) {
-  %A = sext i8 %a to i32
-  %B = sext i8 %b to i32
-  %x = call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 %A, i32 %B)
-  ret { i32, i1 } %x
-; CHECK-LABEL: @saddtest1
-; CHECK: %x = add nsw i32 %A, %B
-; CHECK-NEXT: %1 = insertvalue { i32, i1 } { i32 undef, i1 false }, i32 %x, 0
-; CHECK-NEXT:  ret { i32, i1 } %1
 }
 
 
@@ -109,7 +96,7 @@ define i8 @umultest1(i8 %A, i1* %overflowPtr) {
   %z = extractvalue %overflow.result %x, 1
   store i1 %z, i1* %overflowPtr
   ret i8 %y
-; CHECK-LABEL: @umultest1(
+; CHECK: @umultest1
 ; CHECK-NEXT: store i1 false, i1* %overflowPtr
 ; CHECK-NEXT: ret i8 0
 }
@@ -120,7 +107,7 @@ define i8 @umultest2(i8 %A, i1* %overflowPtr) {
   %z = extractvalue %overflow.result %x, 1
   store i1 %z, i1* %overflowPtr
   ret i8 %y
-; CHECK-LABEL: @umultest2(
+; CHECK: @umultest2
 ; CHECK-NEXT: store i1 false, i1* %overflowPtr
 ; CHECK-NEXT: ret i8 %A
 }
@@ -135,7 +122,7 @@ define i32 @umultest3(i32 %n) nounwind {
   %res = extractvalue %ov.result.32 %mul, 0
   %ret = select i1 %ov, i32 -1, i32 %res
   ret i32 %ret
-; CHECK-LABEL: @umultest3(
+; CHECK: @umultest3
 ; CHECK-NEXT: shr
 ; CHECK-NEXT: mul nuw
 ; CHECK-NEXT: ret
@@ -148,7 +135,7 @@ define i32 @umultest4(i32 %n) nounwind {
   %res = extractvalue %ov.result.32 %mul, 0
   %ret = select i1 %ov, i32 -1, i32 %res
   ret i32 %ret
-; CHECK-LABEL: @umultest4(
+; CHECK: @umultest4
 ; CHECK: umul.with.overflow
 }
 
@@ -163,7 +150,7 @@ entry:
   %C = tail call double @llvm.powi.f64(double %V, i32 1) nounwind
   store volatile double %C, double* %P
   ret void
-; CHECK-LABEL: @powi(
+; CHECK: @powi
 ; CHECK: %A = fdiv double 1.0{{.*}}, %V
 ; CHECK: store volatile double %A, 
 ; CHECK: store volatile double 1.0 
@@ -176,7 +163,7 @@ entry:
   %and = and i32 %or, -8
   %count = tail call i32 @llvm.cttz.i32(i32 %and, i1 true) nounwind readnone
   ret i32 %count
-; CHECK-LABEL: @cttz(
+; CHECK: @cttz
 ; CHECK-NEXT: entry:
 ; CHECK-NEXT: ret i32 3
 }
@@ -187,7 +174,7 @@ entry:
   %and = and i8 %or, 63
   %count = tail call i8 @llvm.ctlz.i8(i8 %and, i1 true) nounwind readnone
   ret i8 %count
-; CHECK-LABEL: @ctlz(
+; CHECK: @ctlz
 ; CHECK-NEXT: entry:
 ; CHECK-NEXT: ret i8 2
 }
@@ -219,7 +206,7 @@ define i32 @cttz_simplify1a(i32 %x) nounwind readnone ssp {
   %shr3 = lshr i32 %tmp1, 5
   ret i32 %shr3
 
-; CHECK-LABEL: @cttz_simplify1a(
+; CHECK: @cttz_simplify1a
 ; CHECK: icmp eq i32 %x, 0
 ; CHECK-NEXT: zext i1
 ; CHECK-NEXT: ret i32
@@ -230,42 +217,6 @@ define i32 @cttz_simplify1b(i32 %x) nounwind readnone ssp {
   %shr3 = lshr i32 %tmp1, 5
   ret i32 %shr3
 
-; CHECK-LABEL: @cttz_simplify1b(
+; CHECK: @cttz_simplify1b
 ; CHECK-NEXT: ret i32 0
-}
-
-define i32 @ctlz_undef(i32 %Value) nounwind {
-  %ctlz = call i32 @llvm.ctlz.i32(i32 0, i1 true)
-  ret i32 %ctlz
-
-; CHECK-LABEL: @ctlz_undef(
-; CHECK-NEXT: ret i32 undef
-}
-
-define i32 @cttz_undef(i32 %Value) nounwind {
-  %cttz = call i32 @llvm.cttz.i32(i32 0, i1 true)
-  ret i32 %cttz
-
-; CHECK-LABEL: @cttz_undef(
-; CHECK-NEXT: ret i32 undef
-}
-
-define i32 @ctlz_select(i32 %Value) nounwind {
-  %tobool = icmp ne i32 %Value, 0
-  %ctlz = call i32 @llvm.ctlz.i32(i32 %Value, i1 true)
-  %s = select i1 %tobool, i32 %ctlz, i32 32
-  ret i32 %s
-
-; CHECK-LABEL: @ctlz_select(
-; CHECK: select i1 %tobool, i32 %ctlz, i32 32
-}
-
-define i32 @cttz_select(i32 %Value) nounwind {
-  %tobool = icmp ne i32 %Value, 0
-  %cttz = call i32 @llvm.cttz.i32(i32 %Value, i1 true)
-  %s = select i1 %tobool, i32 %cttz, i32 32
-  ret i32 %s
-
-; CHECK-LABEL: @cttz_select(
-; CHECK: select i1 %tobool, i32 %cttz, i32 32
 }

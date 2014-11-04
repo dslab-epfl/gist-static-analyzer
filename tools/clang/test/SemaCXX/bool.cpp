@@ -1,6 +1,4 @@
 // RUN: %clang_cc1 -fsyntax-only -verify -Wno-constant-conversion %s
-// RUN: %clang_cc1 -fsyntax-only -verify -Wno-constant-conversion \
-// RUN:     -Wno-deprecated -Wdeprecated-increment-bool %s
 
 // Bool literals can be enum values.
 enum {

@@ -11,19 +11,17 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "toolrunner"
 #include "ToolRunner.h"
-#include "llvm/Config/config.h"   // for HAVE_LINK_R
+#include "llvm/Support/Program.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
-#include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Config/config.h"   // for HAVE_LINK_R
 #include <fstream>
 #include <sstream>
 using namespace llvm;
-
-#define DEBUG_TYPE "toolrunner"
 
 namespace llvm {
   cl::opt<bool>
@@ -55,15 +53,18 @@ namespace {
 /// RunProgramWithTimeout - This function provides an alternate interface
 /// to the sys::Program::ExecuteAndWait interface.
 /// @see sys::Program::ExecuteAndWait
-static int RunProgramWithTimeout(StringRef ProgramPath,
+static int RunProgramWithTimeout(const sys::Path &ProgramPath,
                                  const char **Args,
-                                 StringRef StdInFile,
-                                 StringRef StdOutFile,
-                                 StringRef StdErrFile,
+                                 const sys::Path &StdInFile,
+                                 const sys::Path &StdOutFile,
+                                 const sys::Path &StdErrFile,
                                  unsigned NumSeconds = 0,
                                  unsigned MemoryLimit = 0,
-                                 std::string *ErrMsg = nullptr) {
-  const StringRef *Redirects[3] = { &StdInFile, &StdOutFile, &StdErrFile };
+                                 std::string *ErrMsg = 0) {
+  const sys::Path* redirects[3];
+  redirects[0] = &StdInFile;
+  redirects[1] = &StdOutFile;
+  redirects[2] = &StdErrFile;
 
 #if 0 // For debug purposes
   {
@@ -74,8 +75,9 @@ static int RunProgramWithTimeout(StringRef ProgramPath,
   }
 #endif
 
-  return sys::ExecuteAndWait(ProgramPath, Args, nullptr, Redirects,
-                             NumSeconds, MemoryLimit, ErrMsg);
+  return
+    sys::Program::ExecuteAndWait(ProgramPath, Args, 0, redirects,
+                                 NumSeconds, MemoryLimit, ErrMsg);
 }
 
 /// RunProgramRemotelyWithTimeout - This function runs the given program
@@ -84,14 +86,17 @@ static int RunProgramWithTimeout(StringRef ProgramPath,
 /// fails. Remote client is required to return 255 if it failed or program exit
 /// code otherwise.
 /// @see sys::Program::ExecuteAndWait
-static int RunProgramRemotelyWithTimeout(StringRef RemoteClientPath,
+static int RunProgramRemotelyWithTimeout(const sys::Path &RemoteClientPath,
                                          const char **Args,
-                                         StringRef StdInFile,
-                                         StringRef StdOutFile,
-                                         StringRef StdErrFile,
+                                         const sys::Path &StdInFile,
+                                         const sys::Path &StdOutFile,
+                                         const sys::Path &StdErrFile,
                                          unsigned NumSeconds = 0,
                                          unsigned MemoryLimit = 0) {
-  const StringRef *Redirects[3] = { &StdInFile, &StdOutFile, &StdErrFile };
+  const sys::Path* redirects[3];
+  redirects[0] = &StdInFile;
+  redirects[1] = &StdOutFile;
+  redirects[2] = &StdErrFile;
 
 #if 0 // For debug purposes
   {
@@ -103,8 +108,8 @@ static int RunProgramRemotelyWithTimeout(StringRef RemoteClientPath,
 #endif
 
   // Run the program remotely with the remote client
-  int ReturnCode = sys::ExecuteAndWait(RemoteClientPath, Args, nullptr,
-                                       Redirects, NumSeconds, MemoryLimit);
+  int ReturnCode = sys::Program::ExecuteAndWait(RemoteClientPath, Args,
+                                 0, redirects, NumSeconds, MemoryLimit);
 
   // Has the remote client fail?
   if (255 == ReturnCode) {
@@ -115,8 +120,7 @@ static int RunProgramRemotelyWithTimeout(StringRef RemoteClientPath,
     OS << "\n";
 
     // The error message is in the output file, let's print it out from there.
-    std::string StdOutFileName = StdOutFile.str();
-    std::ifstream ErrorFile(StdOutFileName.c_str());
+    std::ifstream ErrorFile(StdOutFile.c_str());
     if (ErrorFile) {
       std::copy(std::istreambuf_iterator<char>(ErrorFile),
                 std::istreambuf_iterator<char>(),
@@ -130,7 +134,7 @@ static int RunProgramRemotelyWithTimeout(StringRef RemoteClientPath,
   return ReturnCode;
 }
 
-static std::string ProcessFailure(StringRef ProgPath, const char** Args,
+static std::string ProcessFailure(sys::Path ProgPath, const char** Args,
                                   unsigned Timeout = 0,
                                   unsigned MemoryLimit = 0) {
   std::ostringstream OS;
@@ -140,16 +144,14 @@ static std::string ProcessFailure(StringRef ProgPath, const char** Args,
   OS << "\n";
 
   // Rerun the compiler, capturing any error messages to print them.
-  SmallString<128> ErrorFilename;
-  std::error_code EC = sys::fs::createTemporaryFile(
-      "bugpoint.program_error_messages", "", ErrorFilename);
-  if (EC) {
-    errs() << "Error making unique filename: " << EC.message() << "\n";
+  sys::Path ErrorFilename("bugpoint.program_error_messages");
+  std::string ErrMsg;
+  if (ErrorFilename.makeUnique(true, &ErrMsg)) {
+    errs() << "Error making unique filename: " << ErrMsg << "\n";
     exit(1);
   }
-
-  RunProgramWithTimeout(ProgPath, Args, "", ErrorFilename.str(),
-                        ErrorFilename.str(), Timeout, MemoryLimit);
+  RunProgramWithTimeout(ProgPath, Args, sys::Path(""), ErrorFilename,
+                        ErrorFilename, Timeout, MemoryLimit);
   // FIXME: check return code ?
 
   // Print out the error messages generated by GCC if possible...
@@ -161,7 +163,7 @@ static std::string ProcessFailure(StringRef ProgPath, const char** Args,
     ErrorFile.close();
   }
 
-  sys::fs::remove(ErrorFilename.c_str());
+  ErrorFilename.eraseFromDisk();
   return OS.str();
 }
 
@@ -179,16 +181,16 @@ namespace {
       if (Args) { ToolArgs = *Args; }
     }
 
-    int ExecuteProgram(const std::string &Bitcode,
-                       const std::vector<std::string> &Args,
-                       const std::string &InputFile,
-                       const std::string &OutputFile,
-                       std::string *Error,
-                       const std::vector<std::string> &GCCArgs,
-                       const std::vector<std::string> &SharedLibs =
-                       std::vector<std::string>(),
-                       unsigned Timeout = 0,
-                       unsigned MemoryLimit = 0) override;
+    virtual int ExecuteProgram(const std::string &Bitcode,
+                               const std::vector<std::string> &Args,
+                               const std::string &InputFile,
+                               const std::string &OutputFile,
+                               std::string *Error,
+                               const std::vector<std::string> &GCCArgs,
+                               const std::vector<std::string> &SharedLibs =
+                               std::vector<std::string>(),
+                               unsigned Timeout = 0,
+                               unsigned MemoryLimit = 0);
   };
 }
 
@@ -219,7 +221,7 @@ int LLI::ExecuteProgram(const std::string &Bitcode,
   // Add optional parameters to the running program from Argv
   for (unsigned i=0, e = Args.size(); i != e; ++i)
     LLIArgs.push_back(Args[i].c_str());
-  LLIArgs.push_back(nullptr);
+  LLIArgs.push_back(0);
 
   outs() << "<lli>"; outs().flush();
   DEBUG(errs() << "\nAbout to run:\t";
@@ -227,57 +229,26 @@ int LLI::ExecuteProgram(const std::string &Bitcode,
           errs() << " " << LLIArgs[i];
         errs() << "\n";
         );
-  return RunProgramWithTimeout(LLIPath, &LLIArgs[0],
-      InputFile, OutputFile, OutputFile,
+  return RunProgramWithTimeout(sys::Path(LLIPath), &LLIArgs[0],
+      sys::Path(InputFile), sys::Path(OutputFile), sys::Path(OutputFile),
       Timeout, MemoryLimit, Error);
 }
 
 void AbstractInterpreter::anchor() { }
-
-#if defined(LLVM_ON_UNIX)
-const char EXESuffix[] = "";
-#elif defined (LLVM_ON_WIN32)
-const char EXESuffix[] = "exe";
-#endif
-
-/// Prepend the path to the program being executed
-/// to \p ExeName, given the value of argv[0] and the address of main()
-/// itself. This allows us to find another LLVM tool if it is built in the same
-/// directory. An empty string is returned on error; note that this function
-/// just mainpulates the path and doesn't check for executability.
-/// @brief Find a named executable.
-static std::string PrependMainExecutablePath(const std::string &ExeName,
-                                             const char *Argv0,
-                                             void *MainAddr) {
-  // Check the directory that the calling program is in.  We can do
-  // this if ProgramPath contains at least one / character, indicating that it
-  // is a relative path to the executable itself.
-  std::string Main = sys::fs::getMainExecutable(Argv0, MainAddr);
-  StringRef Result = sys::path::parent_path(Main);
-
-  if (!Result.empty()) {
-    SmallString<128> Storage = Result;
-    sys::path::append(Storage, ExeName);
-    sys::path::replace_extension(Storage, EXESuffix);
-    return Storage.str();
-  }
-
-  return Result.str();
-}
 
 // LLI create method - Try to find the LLI executable
 AbstractInterpreter *AbstractInterpreter::createLLI(const char *Argv0,
                                                     std::string &Message,
                                      const std::vector<std::string> *ToolArgs) {
   std::string LLIPath =
-      PrependMainExecutablePath("lli", Argv0, (void *)(intptr_t) & createLLI);
+    PrependMainExecutablePath("lli", Argv0, (void *)(intptr_t)&createLLI).str();
   if (!LLIPath.empty()) {
     Message = "Found lli: " + LLIPath + "\n";
     return new LLI(LLIPath, ToolArgs);
   }
 
   Message = "Cannot find `lli' in executable directory!\n";
-  return nullptr;
+  return 0;
 }
 
 //===---------------------------------------------------------------------===//
@@ -295,22 +266,22 @@ namespace {
       const std::string &CompilerCmd, std::vector<std::string> CompArgs) :
       CompilerCommand(CompilerCmd), CompilerArgs(CompArgs) {}
 
-    void compileProgram(const std::string &Bitcode,
-                        std::string *Error,
-                        unsigned Timeout = 0,
-                        unsigned MemoryLimit = 0) override;
+    virtual void compileProgram(const std::string &Bitcode,
+                                std::string *Error,
+                                unsigned Timeout = 0,
+                                unsigned MemoryLimit = 0);
 
-    int ExecuteProgram(const std::string &Bitcode,
-                       const std::vector<std::string> &Args,
-                       const std::string &InputFile,
-                       const std::string &OutputFile,
-                       std::string *Error,
-                       const std::vector<std::string> &GCCArgs =
-                       std::vector<std::string>(),
-                       const std::vector<std::string> &SharedLibs =
-                       std::vector<std::string>(),
-                       unsigned Timeout = 0,
-                       unsigned MemoryLimit = 0) override {
+    virtual int ExecuteProgram(const std::string &Bitcode,
+                               const std::vector<std::string> &Args,
+                               const std::string &InputFile,
+                               const std::string &OutputFile,
+                               std::string *Error,
+                               const std::vector<std::string> &GCCArgs =
+                               std::vector<std::string>(),
+                               const std::vector<std::string> &SharedLibs =
+                               std::vector<std::string>(),
+                               unsigned Timeout = 0,
+                               unsigned MemoryLimit = 0) {
       *Error = "Execution not supported with -compile-custom";
       return -1;
     }
@@ -328,16 +299,16 @@ void CustomCompiler::compileProgram(const std::string &Bitcode,
   for (std::size_t i = 0; i < CompilerArgs.size(); ++i)
     ProgramArgs.push_back(CompilerArgs.at(i).c_str());
   ProgramArgs.push_back(Bitcode.c_str());
-  ProgramArgs.push_back(nullptr);
+  ProgramArgs.push_back(0);
 
   // Add optional parameters to the running program from Argv
   for (unsigned i = 0, e = CompilerArgs.size(); i != e; ++i)
     ProgramArgs.push_back(CompilerArgs[i].c_str());
 
-  if (RunProgramWithTimeout(CompilerCommand, &ProgramArgs[0],
-                             "", "", "",
+  if (RunProgramWithTimeout( sys::Path(CompilerCommand), &ProgramArgs[0],
+                             sys::Path(), sys::Path(), sys::Path(),
                              Timeout, MemoryLimit, Error))
-    *Error = ProcessFailure(CompilerCommand, &ProgramArgs[0],
+    *Error = ProcessFailure(sys::Path(CompilerCommand), &ProgramArgs[0],
                            Timeout, MemoryLimit);
 }
 
@@ -356,16 +327,16 @@ namespace {
       const std::string &ExecutionCmd, std::vector<std::string> ExecArgs) :
       ExecutionCommand(ExecutionCmd), ExecutorArgs(ExecArgs) {}
 
-    int ExecuteProgram(const std::string &Bitcode,
-                       const std::vector<std::string> &Args,
-                       const std::string &InputFile,
-                       const std::string &OutputFile,
-                       std::string *Error,
-                       const std::vector<std::string> &GCCArgs,
-                       const std::vector<std::string> &SharedLibs =
-                         std::vector<std::string>(),
-                       unsigned Timeout = 0,
-                       unsigned MemoryLimit = 0) override;
+    virtual int ExecuteProgram(const std::string &Bitcode,
+                               const std::vector<std::string> &Args,
+                               const std::string &InputFile,
+                               const std::string &OutputFile,
+                               std::string *Error,
+                               const std::vector<std::string> &GCCArgs,
+                               const std::vector<std::string> &SharedLibs =
+                                 std::vector<std::string>(),
+                               unsigned Timeout = 0,
+                               unsigned MemoryLimit = 0);
   };
 }
 
@@ -385,16 +356,16 @@ int CustomExecutor::ExecuteProgram(const std::string &Bitcode,
   for (std::size_t i = 0; i < ExecutorArgs.size(); ++i)
     ProgramArgs.push_back(ExecutorArgs.at(i).c_str());
   ProgramArgs.push_back(Bitcode.c_str());
-  ProgramArgs.push_back(nullptr);
+  ProgramArgs.push_back(0);
 
   // Add optional parameters to the running program from Argv
   for (unsigned i = 0, e = Args.size(); i != e; ++i)
     ProgramArgs.push_back(Args[i].c_str());
 
   return RunProgramWithTimeout(
-    ExecutionCommand,
-    &ProgramArgs[0], InputFile, OutputFile,
-    OutputFile, Timeout, MemoryLimit, Error);
+    sys::Path(ExecutionCommand),
+    &ProgramArgs[0], sys::Path(InputFile), sys::Path(OutputFile),
+    sys::Path(OutputFile), Timeout, MemoryLimit, Error);
 }
 
 // Tokenize the CommandLine to the command and the args to allow
@@ -407,7 +378,7 @@ int CustomExecutor::ExecuteProgram(const std::string &Bitcode,
 // code borrowed from:
 // http://oopweb.com/CPP/Documents/CPPHOWTO/Volume/C++Programming-HOWTO-7.html
 static void lexCommand(std::string &Message, const std::string &CommandLine,
-                       std::string &CmdPath, std::vector<std::string> &Args) {
+                       std::string &CmdPath, std::vector<std::string> Args) {
 
   std::string Command = "";
   std::string delimiters = " ";
@@ -427,7 +398,7 @@ static void lexCommand(std::string &Message, const std::string &CommandLine,
     pos = CommandLine.find_first_of(delimiters, lastPos);
   }
 
-  CmdPath = sys::FindProgramByName(Command);
+  CmdPath = sys::Program::FindProgramByName(Command).str();
   if (CmdPath.empty()) {
     Message =
       std::string("Cannot find '") + Command +
@@ -448,7 +419,7 @@ AbstractInterpreter *AbstractInterpreter::createCustomCompiler(
   std::vector<std::string> Args;
   lexCommand(Message, CompileCommandLine, CmdPath, Args);
   if (CmdPath.empty())
-    return nullptr;
+    return 0;
 
   return new CustomCompiler(CmdPath, Args);
 }
@@ -464,7 +435,7 @@ AbstractInterpreter *AbstractInterpreter::createCustomExecutor(
   std::vector<std::string> Args;
   lexCommand(Message, ExecCommandLine, CmdPath, Args);
   if (CmdPath.empty())
-    return nullptr;
+    return 0;
 
   return new CustomExecutor(CmdPath, Args);
 }
@@ -473,18 +444,16 @@ AbstractInterpreter *AbstractInterpreter::createCustomExecutor(
 // LLC Implementation of AbstractIntepreter interface
 //
 GCC::FileType LLC::OutputCode(const std::string &Bitcode,
-                              std::string &OutputAsmFile, std::string &Error,
+                              sys::Path &OutputAsmFile, std::string &Error,
                               unsigned Timeout, unsigned MemoryLimit) {
   const char *Suffix = (UseIntegratedAssembler ? ".llc.o" : ".llc.s");
-
-  SmallString<128> UniqueFile;
-  std::error_code EC =
-      sys::fs::createUniqueFile(Bitcode + "-%%%%%%%" + Suffix, UniqueFile);
-  if (EC) {
-    errs() << "Error making unique filename: " << EC.message() << "\n";
+  sys::Path uniqueFile(Bitcode + Suffix);
+  std::string ErrMsg;
+  if (uniqueFile.makeUnique(true, &ErrMsg)) {
+    errs() << "Error making unique filename: " << ErrMsg << "\n";
     exit(1);
   }
-  OutputAsmFile = UniqueFile.str();
+  OutputAsmFile = uniqueFile;
   std::vector<const char *> LLCArgs;
   LLCArgs.push_back(LLCPath.c_str());
 
@@ -499,7 +468,7 @@ GCC::FileType LLC::OutputCode(const std::string &Bitcode,
   if (UseIntegratedAssembler)
     LLCArgs.push_back("-filetype=obj");
 
-  LLCArgs.push_back (nullptr);
+  LLCArgs.push_back (0);
 
   outs() << (UseIntegratedAssembler ? "<llc-ia>" : "<llc>");
   outs().flush();
@@ -508,19 +477,19 @@ GCC::FileType LLC::OutputCode(const std::string &Bitcode,
           errs() << " " << LLCArgs[i];
         errs() << "\n";
         );
-  if (RunProgramWithTimeout(LLCPath, &LLCArgs[0],
-                            "", "", "",
+  if (RunProgramWithTimeout(sys::Path(LLCPath), &LLCArgs[0],
+                            sys::Path(), sys::Path(), sys::Path(),
                             Timeout, MemoryLimit))
-    Error = ProcessFailure(LLCPath, &LLCArgs[0],
+    Error = ProcessFailure(sys::Path(LLCPath), &LLCArgs[0],
                            Timeout, MemoryLimit);
   return UseIntegratedAssembler ? GCC::ObjectFile : GCC::AsmFile;
 }
 
 void LLC::compileProgram(const std::string &Bitcode, std::string *Error,
                          unsigned Timeout, unsigned MemoryLimit) {
-  std::string OutputAsmFile;
+  sys::Path OutputAsmFile;
   OutputCode(Bitcode, OutputAsmFile, *Error, Timeout, MemoryLimit);
-  sys::fs::remove(OutputAsmFile);
+  OutputAsmFile.eraseFromDisk();
 }
 
 int LLC::ExecuteProgram(const std::string &Bitcode,
@@ -533,16 +502,16 @@ int LLC::ExecuteProgram(const std::string &Bitcode,
                         unsigned Timeout,
                         unsigned MemoryLimit) {
 
-  std::string OutputAsmFile;
+  sys::Path OutputAsmFile;
   GCC::FileType FileKind = OutputCode(Bitcode, OutputAsmFile, *Error, Timeout,
                                       MemoryLimit);
-  FileRemover OutFileRemover(OutputAsmFile, !SaveTemps);
+  FileRemover OutFileRemover(OutputAsmFile.str(), !SaveTemps);
 
   std::vector<std::string> GCCArgs(ArgsForGCC);
   GCCArgs.insert(GCCArgs.end(), SharedLibs.begin(), SharedLibs.end());
 
   // Assuming LLC worked, compile the result with GCC and run it.
-  return gcc->ExecuteProgram(OutputAsmFile, Args, FileKind,
+  return gcc->ExecuteProgram(OutputAsmFile.str(), Args, FileKind,
                              InputFile, OutputFile, Error, GCCArgs,
                              Timeout, MemoryLimit);
 }
@@ -556,18 +525,18 @@ LLC *AbstractInterpreter::createLLC(const char *Argv0,
                                     const std::vector<std::string> *GCCArgs,
                                     bool UseIntegratedAssembler) {
   std::string LLCPath =
-      PrependMainExecutablePath("llc", Argv0, (void *)(intptr_t) & createLLC);
+    PrependMainExecutablePath("llc", Argv0, (void *)(intptr_t)&createLLC).str();
   if (LLCPath.empty()) {
     Message = "Cannot find `llc' in executable directory!\n";
-    return nullptr;
+    return 0;
   }
 
+  Message = "Found llc: " + LLCPath + "\n";
   GCC *gcc = GCC::create(Message, GCCBinary, GCCArgs);
   if (!gcc) {
     errs() << Message << "\n";
     exit(1);
   }
-  Message = "Found llc: " + LLCPath + "\n";
   return new LLC(LLCPath, gcc, Args, UseIntegratedAssembler);
 }
 
@@ -585,17 +554,17 @@ namespace {
       if (Args) { ToolArgs = *Args; }
     }
 
-    int ExecuteProgram(const std::string &Bitcode,
-                       const std::vector<std::string> &Args,
-                       const std::string &InputFile,
-                       const std::string &OutputFile,
-                       std::string *Error,
-                       const std::vector<std::string> &GCCArgs =
-                         std::vector<std::string>(),
-                       const std::vector<std::string> &SharedLibs =
-                         std::vector<std::string>(),
-                       unsigned Timeout = 0,
-                       unsigned MemoryLimit = 0) override;
+    virtual int ExecuteProgram(const std::string &Bitcode,
+                               const std::vector<std::string> &Args,
+                               const std::string &InputFile,
+                               const std::string &OutputFile,
+                               std::string *Error,
+                               const std::vector<std::string> &GCCArgs =
+                                 std::vector<std::string>(),
+                               const std::vector<std::string> &SharedLibs =
+                                 std::vector<std::string>(),
+                               unsigned Timeout = 0,
+                               unsigned MemoryLimit = 0);
   };
 }
 
@@ -625,7 +594,7 @@ int JIT::ExecuteProgram(const std::string &Bitcode,
   // Add optional parameters to the running program from Argv
   for (unsigned i=0, e = Args.size(); i != e; ++i)
     JITArgs.push_back(Args[i].c_str());
-  JITArgs.push_back(nullptr);
+  JITArgs.push_back(0);
 
   outs() << "<jit>"; outs().flush();
   DEBUG(errs() << "\nAbout to run:\t";
@@ -634,8 +603,8 @@ int JIT::ExecuteProgram(const std::string &Bitcode,
         errs() << "\n";
         );
   DEBUG(errs() << "\nSending output to " << OutputFile << "\n");
-  return RunProgramWithTimeout(LLIPath, &JITArgs[0],
-      InputFile, OutputFile, OutputFile,
+  return RunProgramWithTimeout(sys::Path(LLIPath), &JITArgs[0],
+      sys::Path(InputFile), sys::Path(OutputFile), sys::Path(OutputFile),
       Timeout, MemoryLimit, Error);
 }
 
@@ -644,14 +613,14 @@ int JIT::ExecuteProgram(const std::string &Bitcode,
 AbstractInterpreter *AbstractInterpreter::createJIT(const char *Argv0,
                    std::string &Message, const std::vector<std::string> *Args) {
   std::string LLIPath =
-      PrependMainExecutablePath("lli", Argv0, (void *)(intptr_t) & createJIT);
+    PrependMainExecutablePath("lli", Argv0, (void *)(intptr_t)&createJIT).str();
   if (!LLIPath.empty()) {
     Message = "Found lli: " + LLIPath + "\n";
     return new JIT(LLIPath, Args);
   }
 
   Message = "Cannot find `lli' in executable directory!\n";
-  return nullptr;
+  return 0;
 }
 
 //===---------------------------------------------------------------------===//
@@ -663,7 +632,7 @@ static bool IsARMArchitecture(std::vector<const char*> Args) {
          I = Args.begin(), E = Args.end(); I != E; ++I) {
     if (StringRef(*I).equals_lower("-arch")) {
       ++I;
-      if (I != E && StringRef(*I).startswith_lower("arm"))
+      if (I != E && StringRef(*I).substr(0, strlen("arm")).equals_lower("arm"))
         return true;
     }
   }
@@ -713,12 +682,10 @@ int GCC::ExecuteProgram(const std::string &ProgramFile,
   GCCArgs.push_back("-x");
   GCCArgs.push_back("none");
   GCCArgs.push_back("-o");
-
-  SmallString<128> OutputBinary;
-  std::error_code EC =
-      sys::fs::createUniqueFile(ProgramFile + "-%%%%%%%.gcc.exe", OutputBinary);
-  if (EC) {
-    errs() << "Error making unique filename: " << EC.message() << "\n";
+  sys::Path OutputBinary (ProgramFile+".gcc.exe");
+  std::string ErrMsg;
+  if (OutputBinary.makeUnique(true, &ErrMsg)) {
+    errs() << "Error making unique filename: " << ErrMsg << "\n";
     exit(1);
   }
   GCCArgs.push_back(OutputBinary.c_str()); // Output to the right file...
@@ -737,7 +704,7 @@ int GCC::ExecuteProgram(const std::string &ProgramFile,
 #endif
   if (TargetTriple.getArch() == Triple::sparc)
     GCCArgs.push_back("-mcpu=v9");
-  GCCArgs.push_back(nullptr);                    // NULL terminator
+  GCCArgs.push_back(0);                    // NULL terminator
 
   outs() << "<gcc>"; outs().flush();
   DEBUG(errs() << "\nAbout to run:\t";
@@ -745,7 +712,8 @@ int GCC::ExecuteProgram(const std::string &ProgramFile,
           errs() << " " << GCCArgs[i];
         errs() << "\n";
         );
-  if (RunProgramWithTimeout(GCCPath, &GCCArgs[0], "", "", "")) {
+  if (RunProgramWithTimeout(GCCPath, &GCCArgs[0], sys::Path(), sys::Path(),
+        sys::Path())) {
     *Error = ProcessFailure(GCCPath, &GCCArgs[0]);
     return -1;
   }
@@ -756,7 +724,7 @@ int GCC::ExecuteProgram(const std::string &ProgramFile,
   // ProgramArgs is used.
   std::string Exec;
 
-  if (RemoteClientPath.empty())
+  if (RemoteClientPath.isEmpty())
     ProgramArgs.push_back(OutputBinary.c_str());
   else {
     ProgramArgs.push_back(RemoteClientPath.c_str());
@@ -786,7 +754,7 @@ int GCC::ExecuteProgram(const std::string &ProgramFile,
   // Add optional parameters to the running program from Argv
   for (unsigned i = 0, e = Args.size(); i != e; ++i)
     ProgramArgs.push_back(Args[i].c_str());
-  ProgramArgs.push_back(nullptr);                // NULL terminator
+  ProgramArgs.push_back(0);                // NULL terminator
 
   // Now that we have a binary, run it!
   outs() << "<program>"; outs().flush();
@@ -798,11 +766,11 @@ int GCC::ExecuteProgram(const std::string &ProgramFile,
 
   FileRemover OutputBinaryRemover(OutputBinary.str(), !SaveTemps);
 
-  if (RemoteClientPath.empty()) {
+  if (RemoteClientPath.isEmpty()) {
     DEBUG(errs() << "<run locally>");
-    int ExitCode = RunProgramWithTimeout(OutputBinary.str(), &ProgramArgs[0],
-                                         InputFile, OutputFile, OutputFile,
-                                         Timeout, MemoryLimit, Error);
+    int ExitCode = RunProgramWithTimeout(OutputBinary, &ProgramArgs[0],
+        sys::Path(InputFile), sys::Path(OutputFile), sys::Path(OutputFile),
+        Timeout, MemoryLimit, Error);
     // Treat a signal (usually SIGSEGV) or timeout as part of the program output
     // so that crash-causing miscompilation is handled seamlessly.
     if (ExitCode < -1) {
@@ -814,9 +782,9 @@ int GCC::ExecuteProgram(const std::string &ProgramFile,
     return ExitCode;
   } else {
     outs() << "<run remotely>"; outs().flush();
-    return RunProgramRemotelyWithTimeout(RemoteClientPath,
-        &ProgramArgs[0], InputFile, OutputFile,
-        OutputFile, Timeout, MemoryLimit);
+    return RunProgramRemotelyWithTimeout(sys::Path(RemoteClientPath),
+        &ProgramArgs[0], sys::Path(InputFile), sys::Path(OutputFile),
+        sys::Path(OutputFile), Timeout, MemoryLimit);
   }
 }
 
@@ -824,14 +792,13 @@ int GCC::MakeSharedObject(const std::string &InputFile, FileType fileType,
                           std::string &OutputFile,
                           const std::vector<std::string> &ArgsForGCC,
                           std::string &Error) {
-  SmallString<128> UniqueFilename;
-  std::error_code EC = sys::fs::createUniqueFile(
-      InputFile + "-%%%%%%%" + LTDL_SHLIB_EXT, UniqueFilename);
-  if (EC) {
-    errs() << "Error making unique filename: " << EC.message() << "\n";
+  sys::Path uniqueFilename(InputFile+LTDL_SHLIB_EXT);
+  std::string ErrMsg;
+  if (uniqueFilename.makeUnique(true, &ErrMsg)) {
+    errs() << "Error making unique filename: " << ErrMsg << "\n";
     exit(1);
   }
-  OutputFile = UniqueFilename.str();
+  OutputFile = uniqueFilename.str();
 
   std::vector<const char*> GCCArgs;
 
@@ -885,7 +852,7 @@ int GCC::MakeSharedObject(const std::string &InputFile, FileType fileType,
   // command line, so this should be safe.
   for (unsigned i = 0, e = ArgsForGCC.size(); i != e; ++i)
     GCCArgs.push_back(ArgsForGCC[i].c_str());
-  GCCArgs.push_back(nullptr);                    // NULL terminator
+  GCCArgs.push_back(0);                    // NULL terminator
 
 
 
@@ -895,7 +862,8 @@ int GCC::MakeSharedObject(const std::string &InputFile, FileType fileType,
           errs() << " " << GCCArgs[i];
         errs() << "\n";
         );
-  if (RunProgramWithTimeout(GCCPath, &GCCArgs[0], "", "", "")) {
+  if (RunProgramWithTimeout(GCCPath, &GCCArgs[0], sys::Path(), sys::Path(),
+                            sys::Path())) {
     Error = ProcessFailure(GCCPath, &GCCArgs[0]);
     return 1;
   }
@@ -907,16 +875,16 @@ int GCC::MakeSharedObject(const std::string &InputFile, FileType fileType,
 GCC *GCC::create(std::string &Message,
                  const std::string &GCCBinary,
                  const std::vector<std::string> *Args) {
-  std::string GCCPath = sys::FindProgramByName(GCCBinary);
-  if (GCCPath.empty()) {
+  sys::Path GCCPath = sys::Program::FindProgramByName(GCCBinary);
+  if (GCCPath.isEmpty()) {
     Message = "Cannot find `"+ GCCBinary +"' in PATH!\n";
-    return nullptr;
+    return 0;
   }
 
-  std::string RemoteClientPath;
+  sys::Path RemoteClientPath;
   if (!RemoteClient.empty())
-    RemoteClientPath = sys::FindProgramByName(RemoteClient);
+    RemoteClientPath = sys::Program::FindProgramByName(RemoteClient);
 
-  Message = "Found gcc: " + GCCPath + "\n";
+  Message = "Found gcc: " + GCCPath.str() + "\n";
   return new GCC(GCCPath, RemoteClientPath, Args);
 }

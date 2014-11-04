@@ -16,8 +16,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CODEGEN_MACHINEFUNCTIONPASS_H
-#define LLVM_CODEGEN_MACHINEFUNCTIONPASS_H
+#ifndef LLVM_CODEGEN_MACHINE_FUNCTION_PASS_H
+#define LLVM_CODEGEN_MACHINE_FUNCTION_PASS_H
 
 #include "llvm/Pass.h"
 
@@ -44,14 +44,14 @@ protected:
   /// For MachineFunctionPasses, calling AU.preservesCFG() indicates that
   /// the pass does not modify the MachineBasicBlock CFG.
   ///
-  void getAnalysisUsage(AnalysisUsage &AU) const override;
+  virtual void getAnalysisUsage(AnalysisUsage &AU) const;
 
 private:
   /// createPrinterPass - Get a machine function printer pass.
-  Pass *createPrinterPass(raw_ostream &O,
-                          const std::string &Banner) const override;
+  virtual Pass *createPrinterPass(raw_ostream &O,
+                                  const std::string &Banner) const;
 
-  bool runOnFunction(Function &F) override;
+  virtual bool runOnFunction(Function &F);
 };
 
 } // End llvm namespace

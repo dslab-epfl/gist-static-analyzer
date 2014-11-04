@@ -12,10 +12,10 @@ entry:
 }
 
 define i32 @t1(i32 %a, i32 %b) {
-; A8-LABEL: t1:
+; A8: t1:
 ; A8: poplt {r7, pc}
 
-; SWIFT-LABEL: t1:
+; SWIFT: t1:
 ; SWIFT: pop {r7, pc}
 ; SWIFT: pop {r7, pc}
 entry:

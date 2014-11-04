@@ -1,15 +1,13 @@
-// RUN: %clang_cc1 -E %s | FileCheck --strict-whitespace %s
+// RUN: %clang_cc1 %s -E | grep "^  4"
 #define FOO __LINE__
 
   FOO
-// CHECK: {{^}}  4{{$}}
 
 // PR3579 - This should expand to the __LINE__ of the ')' not of the X.
+// RUN: %clang_cc1 %s -E | grep "^A 13"
 
 #define X() __LINE__
 
 A X(
 
 )
-// CHECK: {{^}}A 13{{$}}
-

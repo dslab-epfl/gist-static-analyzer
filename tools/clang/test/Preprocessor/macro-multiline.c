@@ -1,7 +1,8 @@
-// RUN: printf -- "-DX=A\nTHIS_SHOULD_NOT_EXIST_IN_THE_OUTPUT" | xargs -0 %clang -E %s | FileCheck -strict-whitespace %s
-// REQUIRES: shell
+// RUN: %clang -E %s "-DX=A
+// RUN: THIS_SHOULD_NOT_EXIST_IN_THE_OUTPUT" > %t
+// RUN: grep "GOOD: A" %t
+// RUN: not grep THIS_SHOULD_NOT_EXIST_IN_THE_OUTPUT %t
+// rdar://6762183
 
-// Per GCC -D semantics, \n and anything that follows is ignored.
+GOOD: X
 
-// CHECK: {{^START A END$}}
-START X END

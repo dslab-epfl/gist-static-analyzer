@@ -1,5 +1,4 @@
-; RUN: llvm-as < %s | llvm-dis | FileCheck %s
-; CHECK-NOT: bitcast
+; RUN: llvm-as < %s | llvm-dis | not grep bitcast
 
 define i60 @test1() {
    ret i60 fptoui(float 0x400D9999A0000000 to i60)

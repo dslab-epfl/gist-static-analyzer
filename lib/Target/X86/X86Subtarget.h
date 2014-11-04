@@ -11,15 +11,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_X86_X86SUBTARGET_H
-#define LLVM_LIB_TARGET_X86_X86SUBTARGET_H
+#ifndef X86SUBTARGET_H
+#define X86SUBTARGET_H
 
-#include "X86FrameLowering.h"
-#include "X86ISelLowering.h"
-#include "X86InstrInfo.h"
-#include "X86SelectionDAGInfo.h"
+#include "llvm/CallingConv.h"
 #include "llvm/ADT/Triple.h"
-#include "llvm/IR/CallingConv.h"
 #include "llvm/Target/TargetSubtargetInfo.h"
 #include <string>
 
@@ -43,11 +39,10 @@ enum Style {
 };
 }
 
-class X86Subtarget final : public X86GenSubtargetInfo {
-
+class X86Subtarget : public X86GenSubtargetInfo {
 protected:
   enum X86SSEEnum {
-    NoMMXSSE, MMX, SSE1, SSE2, SSE3, SSSE3, SSE41, SSE42, AVX, AVX2, AVX512F
+    NoMMXSSE, MMX, SSE1, SSE2, SSE3, SSSE3, SSE41, SSE42, AVX, AVX2
   };
 
   enum X863DNowEnum {
@@ -55,7 +50,7 @@ protected:
   };
 
   enum X86ProcFamilyEnum {
-    Others, IntelAtom, IntelSLM
+    Others, IntelAtom
   };
 
   /// X86ProcFamily - X86 processor family: Intel Atom, and others
@@ -102,9 +97,6 @@ protected:
   /// HasXOP - Target has XOP instructions
   bool HasXOP;
 
-  /// HasTBM - Target has TBM instructions.
-  bool HasTBM;
-
   /// HasMOVBE - True if the processor has the MOVBE instruction.
   bool HasMOVBE;
 
@@ -129,32 +121,8 @@ protected:
   /// HasRTM - Processor has RTM instructions.
   bool HasRTM;
 
-  /// HasHLE - Processor has HLE.
-  bool HasHLE;
-
-  /// HasADX - Processor has ADX instructions.
-  bool HasADX;
-
-  /// HasSHA - Processor has SHA instructions.
-  bool HasSHA;
-
-  /// HasSGX - Processor has SGX instructions.
-  bool HasSGX;
-
-  /// HasPRFCHW - Processor has PRFCHW instructions.
-  bool HasPRFCHW;
-
-  /// HasRDSEED - Processor has RDSEED instructions.
-  bool HasRDSEED;
-
-  /// HasSMAP - Processor has SMAP instructions.
-  bool HasSMAP;
-
   /// IsBTMemSlow - True if BT (bit test) of memory instructions are slow.
   bool IsBTMemSlow;
-
-  /// IsSHLDSlow - True if SHLD instructions are slow.
-  bool IsSHLDSlow;
 
   /// IsUAMemFast - True if unaligned memory access is fast.
   bool IsUAMemFast;
@@ -175,40 +143,8 @@ protected:
   /// full divides and should be used when possible.
   bool HasSlowDivide;
 
-  /// PadShortFunctions - True if the short functions should be padded to prevent
-  /// a stall when returning too early.
-  bool PadShortFunctions;
-
-  /// CallRegIndirect - True if the Calls with memory reference should be converted
-  /// to a register-based indirect call.
-  bool CallRegIndirect;
-  /// LEAUsesAG - True if the LEA instruction inputs have to be ready at
-  ///             address generation (AG) time.
-  bool LEAUsesAG;
-
-  /// SlowLEA - True if the LEA instruction with certain arguments is slow
-  bool SlowLEA;
-
-  /// SlowIncDec - True if INC and DEC instructions are slow when writing to flags
-  bool SlowIncDec;
-
-  /// Processor has AVX-512 PreFetch Instructions
-  bool HasPFI;
-
-  /// Processor has AVX-512 Exponential and Reciprocal Instructions
-  bool HasERI;
-
-  /// Processor has AVX-512 Conflict Detection Instructions
-  bool HasCDI;
-
-  /// Processor has AVX-512 Doubleword and Quadword instructions
-  bool HasDQI;
-
-  /// Processor has AVX-512 Byte and Word instructions
-  bool HasBWI;
-
-  /// Processor has AVX-512 Vector Length eXtenstions
-  bool HasVLX;
+  /// PostRAScheduler - True if using post-register-allocation scheduler.
+  bool PostRAScheduler;
 
   /// stackAlignment - The minimum alignment known to hold of the stack frame on
   /// entry to the function and which must be maintained by every function.
@@ -225,50 +161,17 @@ protected:
   InstrItineraryData InstrItins;
 
 private:
-  // Calculates type size & alignment
-  const DataLayout DL;
-
-  /// StackAlignOverride - Override the stack alignment.
-  unsigned StackAlignOverride;
-
-  /// In64BitMode - True if compiling for 64-bit, false for 16-bit or 32-bit.
+  /// In64BitMode - True if compiling for 64-bit, false for 32-bit.
   bool In64BitMode;
 
-  /// In32BitMode - True if compiling for 32-bit, false for 16-bit or 64-bit.
-  bool In32BitMode;
-
-  /// In16BitMode - True if compiling for 16-bit, false for 32-bit or 64-bit.
-  bool In16BitMode;
-
-  X86SelectionDAGInfo TSInfo;
-  // Ordering here is important. X86InstrInfo initializes X86RegisterInfo which
-  // X86TargetLowering needs.
-  X86InstrInfo InstrInfo;
-  X86TargetLowering TLInfo;
-  X86FrameLowering FrameLowering;
-
 public:
+
   /// This constructor initializes the data members to match that
   /// of the specified triple.
   ///
   X86Subtarget(const std::string &TT, const std::string &CPU,
-               const std::string &FS, const X86TargetMachine &TM,
-               unsigned StackAlignOverride);
-
-  const X86TargetLowering *getTargetLowering() const override {
-    return &TLInfo;
-  }
-  const X86InstrInfo *getInstrInfo() const override { return &InstrInfo; }
-  const DataLayout *getDataLayout() const override { return &DL; }
-  const X86FrameLowering *getFrameLowering() const override {
-    return &FrameLowering;
-  }
-  const X86SelectionDAGInfo *getSelectionDAGInfo() const override {
-    return &TSInfo;
-  }
-  const X86RegisterInfo *getRegisterInfo() const override {
-    return &getInstrInfo()->getRegisterInfo();
-  }
+               const std::string &FS,
+               unsigned StackAlignOverride, bool is64Bit);
 
   /// getStackAlignment - Returns the minimum alignment known to hold of the
   /// stack frame on entry to the function and which must be maintained by every
@@ -283,37 +186,11 @@ public:
   /// subtarget options.  Definition of function is auto generated by tblgen.
   void ParseSubtargetFeatures(StringRef CPU, StringRef FS);
 
-private:
-  /// \brief Initialize the full set of dependencies so we can use an initializer
-  /// list for X86Subtarget.
-  X86Subtarget &initializeSubtargetDependencies(StringRef CPU, StringRef FS);
-  void initializeEnvironment();
-  void initSubtargetFeatures(StringRef CPU, StringRef FS);
-public:
-  /// Is this x86_64? (disregarding specific ABI / programming model)
-  bool is64Bit() const {
-    return In64BitMode;
-  }
+  /// AutoDetectSubtargetFeatures - Auto-detect CPU features using CPUID
+  /// instruction.
+  void AutoDetectSubtargetFeatures();
 
-  bool is32Bit() const {
-    return In32BitMode;
-  }
-
-  bool is16Bit() const {
-    return In16BitMode;
-  }
-
-  /// Is this x86_64 with the ILP32 programming model (x32 ABI)?
-  bool isTarget64BitILP32() const {
-    return In64BitMode && (TargetTriple.getEnvironment() == Triple::GNUX32 ||
-                           TargetTriple.getOS() == Triple::NaCl);
-  }
-
-  /// Is this x86_64 with the LP64 programming model (standard AMD64, no x32)?
-  bool isTarget64BitLP64() const {
-    return In64BitMode && (TargetTriple.getEnvironment() != Triple::GNUX32 &&
-                           TargetTriple.getOS() != Triple::NaCl);
-  }
+  bool is64Bit() const { return In64BitMode; }
 
   PICStyles::Style getPICStyle() const { return PICStyle; }
   void setPICStyle(PICStyles::Style Style)  { PICStyle = Style; }
@@ -328,9 +205,6 @@ public:
   bool hasSSE42() const { return X86SSELevel >= SSE42; }
   bool hasAVX() const { return X86SSELevel >= AVX; }
   bool hasAVX2() const { return X86SSELevel >= AVX2; }
-  bool hasAVX512() const { return X86SSELevel >= AVX512F; }
-  bool hasFp256() const { return hasAVX(); }
-  bool hasInt256() const { return hasAVX2(); }
   bool hasSSE4A() const { return HasSSE4A; }
   bool has3DNow() const { return X863DNowLevel >= ThreeDNow; }
   bool has3DNowA() const { return X863DNowLevel >= ThreeDNowA; }
@@ -341,7 +215,6 @@ public:
   // FIXME: Favor FMA when both are enabled. Is this the right thing to do?
   bool hasFMA4() const { return HasFMA4 && !HasFMA; }
   bool hasXOP() const { return HasXOP; }
-  bool hasTBM() const { return HasTBM; }
   bool hasMOVBE() const { return HasMOVBE; }
   bool hasRDRAND() const { return HasRDRAND; }
   bool hasF16C() const { return HasF16C; }
@@ -350,34 +223,14 @@ public:
   bool hasBMI() const { return HasBMI; }
   bool hasBMI2() const { return HasBMI2; }
   bool hasRTM() const { return HasRTM; }
-  bool hasHLE() const { return HasHLE; }
-  bool hasADX() const { return HasADX; }
-  bool hasSHA() const { return HasSHA; }
-  bool hasSGX() const { return HasSGX; }
-  bool hasPRFCHW() const { return HasPRFCHW; }
-  bool hasRDSEED() const { return HasRDSEED; }
-  bool hasSMAP() const { return HasSMAP; }
   bool isBTMemSlow() const { return IsBTMemSlow; }
-  bool isSHLDSlow() const { return IsSHLDSlow; }
   bool isUnalignedMemAccessFast() const { return IsUAMemFast; }
   bool hasVectorUAMem() const { return HasVectorUAMem; }
   bool hasCmpxchg16b() const { return HasCmpxchg16b; }
   bool useLeaForSP() const { return UseLeaForSP; }
   bool hasSlowDivide() const { return HasSlowDivide; }
-  bool padShortFunctions() const { return PadShortFunctions; }
-  bool callRegIndirect() const { return CallRegIndirect; }
-  bool LEAusesAG() const { return LEAUsesAG; }
-  bool slowLEA() const { return SlowLEA; }
-  bool slowIncDec() const { return SlowIncDec; }
-  bool hasCDI() const { return HasCDI; }
-  bool hasPFI() const { return HasPFI; }
-  bool hasERI() const { return HasERI; }
-  bool hasDQI() const { return HasDQI; }
-  bool hasBWI() const { return HasBWI; }
-  bool hasVLX() const { return HasVLX; }
 
   bool isAtom() const { return X86ProcFamily == IntelAtom; }
-  bool isSLM() const { return X86ProcFamily == IntelSLM; }
 
   const Triple &getTargetTriple() const { return TargetTriple; }
 
@@ -388,42 +241,35 @@ public:
   bool isTargetSolaris() const {
     return TargetTriple.getOS() == Triple::Solaris;
   }
-
-  bool isTargetELF() const { return TargetTriple.isOSBinFormatELF(); }
-  bool isTargetCOFF() const { return TargetTriple.isOSBinFormatCOFF(); }
-  bool isTargetMacho() const { return TargetTriple.isOSBinFormatMachO(); }
-
-  bool isTargetLinux() const { return TargetTriple.isOSLinux(); }
-  bool isTargetNaCl() const { return TargetTriple.isOSNaCl(); }
+  bool isTargetELF() const {
+    return (TargetTriple.getEnvironment() == Triple::ELF ||
+            TargetTriple.isOSBinFormatELF());
+  }
+  bool isTargetLinux() const { return TargetTriple.getOS() == Triple::Linux; }
+  bool isTargetNaCl() const {
+    return TargetTriple.getOS() == Triple::NativeClient;
+  }
   bool isTargetNaCl32() const { return isTargetNaCl() && !is64Bit(); }
   bool isTargetNaCl64() const { return isTargetNaCl() && is64Bit(); }
-
-  bool isTargetWindowsMSVC() const {
-    return TargetTriple.isWindowsMSVCEnvironment();
-  }
-
-  bool isTargetKnownWindowsMSVC() const {
-    return TargetTriple.isKnownWindowsMSVCEnvironment();
-  }
-
-  bool isTargetWindowsCygwin() const {
-    return TargetTriple.isWindowsCygwinEnvironment();
-  }
-
-  bool isTargetWindowsGNU() const {
-    return TargetTriple.isWindowsGNUEnvironment();
-  }
-
+  bool isTargetWindows() const { return TargetTriple.getOS() == Triple::Win32; }
+  bool isTargetMingw() const { return TargetTriple.getOS() == Triple::MinGW32; }
+  bool isTargetCygwin() const { return TargetTriple.getOS() == Triple::Cygwin; }
   bool isTargetCygMing() const { return TargetTriple.isOSCygMing(); }
-
-  bool isOSWindows() const { return TargetTriple.isOSWindows(); }
+  bool isTargetCOFF() const {
+    return (TargetTriple.getEnvironment() != Triple::ELF &&
+            TargetTriple.isOSBinFormatCOFF());
+  }
+  bool isTargetEnvMacho() const { return TargetTriple.isEnvironmentMachO(); }
 
   bool isTargetWin64() const {
+    // FIXME: x86_64-cygwin has not been released yet.
     return In64BitMode && TargetTriple.isOSWindows();
   }
 
   bool isTargetWin32() const {
-    return !In64BitMode && (isTargetCygMing() || isTargetKnownWindowsMSVC());
+    // FIXME: Cygwin is included for isTargetWin64 -- should it be included
+    // here too?
+    return !In64BitMode && (isTargetMingw() || isTargetWindows());
   }
 
   bool isPICStyleSet() const { return PICStyle != PICStyles::None; }
@@ -439,13 +285,7 @@ public:
   }
   bool isPICStyleStubAny() const {
     return PICStyle == PICStyles::StubDynamicNoPIC ||
-           PICStyle == PICStyles::StubPIC;
-  }
-
-  bool isCallingConvWin64(CallingConv::ID CC) const {
-    return (isTargetWin64() && CC != CallingConv::X86_64_SysV) ||
-           CC == CallingConv::X86_64_Win64;
-  }
+           PICStyle == PICStyles::StubPIC; }
 
   /// ClassifyGlobalReference - Classify a global variable reference for the
   /// current subtarget according to how we should reference it in a non-pcrel
@@ -469,24 +309,16 @@ public:
   /// returns null.
   const char *getBZeroEntry() const;
 
-  /// This function returns true if the target has sincos() routine in its
-  /// compiler runtime or math libraries.
-  bool hasSinCos() const;
+  /// enablePostRAScheduler - run for Atom optimization.
+  bool enablePostRAScheduler(CodeGenOpt::Level OptLevel,
+                             TargetSubtargetInfo::AntiDepBreakMode& Mode,
+                             RegClassVector& CriticalPathRCs) const;
 
-  /// Enable the MachineScheduler pass for all X86 subtargets.
-  bool enableMachineScheduler() const override { return true; }
-
-  bool enableEarlyIfConversion() const override;
+  bool postRAScheduler() const { return PostRAScheduler; }
 
   /// getInstrItins = Return the instruction itineraries based on the
   /// subtarget selection.
-  const InstrItineraryData *getInstrItineraryData() const override {
-    return &InstrItins;
-  }
-
-  AntiDepBreakMode getAntiDepBreakMode() const override {
-    return TargetSubtargetInfo::ANTIDEP_CRITICAL;
-  }
+  const InstrItineraryData &getInstrItineraryData() const { return InstrItins; }
 };
 
 } // End llvm namespace

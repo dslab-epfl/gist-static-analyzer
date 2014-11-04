@@ -25,9 +25,6 @@
         <ref name="USR" />
       </optional>
       <optional>
-        <ref name="Headerfile" />
-      </optional>
-      <optional>
         <ref name="Declaration" />
       </optional>
       <optional>
@@ -75,9 +72,7 @@
       <optional>
         <ref name="USR" />
       </optional>
-      <optional>
-        <ref name="Headerfile" />
-      </optional>
+      <!-- TODO: Add exception specification. -->
       <optional>
         <ref name="Declaration" />
       </optional>
@@ -89,9 +84,6 @@
       </optional>
       <optional>
         <ref name="Parameters" />
-      </optional>
-      <optional>
-        <ref name="Exceptions" />
       </optional>
       <zeroOrMore>
         <ref name="Availability" />
@@ -129,9 +121,6 @@
         <ref name="USR" />
       </optional>
       <optional>
-        <ref name="Headerfile" />
-      </optional>
-      <optional>
         <ref name="Declaration" />
       </optional>
       <optional>
@@ -162,9 +151,6 @@
       <ref name="Name" />
       <optional>
         <ref name="USR" />
-      </optional>
-      <optional>
-        <ref name="Headerfile" />
       </optional>
       <optional>
         <ref name="Declaration" />
@@ -200,9 +186,6 @@
         <ref name="USR" />
       </optional>
       <optional>
-        <ref name="Headerfile" />
-      </optional>
-      <optional>
         <ref name="Declaration" />
       </optional>
       <optional>
@@ -236,9 +219,6 @@
         <ref name="USR" />
       </optional>
       <optional>
-        <ref name="Headerfile" />
-      </optional>
-      <optional>
         <ref name="Declaration" />
       </optional>
       <optional>
@@ -270,9 +250,6 @@
       <ref name="Name" />
       <optional>
         <ref name="USR" />
-      </optional>
-      <optional>
-        <ref name="Headerfile" />
       </optional>
       <optional>
         <ref name="Declaration" />
@@ -352,14 +329,6 @@
     </element>
   </define>
 
-  <define name="Headerfile">
-    <element name="Headerfile">
-      <oneOrMore>
-        <ref name="TextBlockContent" />
-      </oneOrMore>
-    </element>
-  </define>
-
   <define name="Discussion">
     <element name="Discussion">
       <zeroOrMore>
@@ -412,14 +381,9 @@
             </data>
           </element>
           <optional>
-            <choice>
-              <element name="Index">
-                <data type="nonNegativeInteger" />
-              </element>
-              <element name="IsVarArg">
-                <empty />
-              </element>
-            </choice>
+            <element name="Index">
+              <data type="nonNegativeInteger" />
+            </element>
           </optional>
           <element name="Direction">
             <attribute name="isExplicit">
@@ -442,18 +406,10 @@
     </element>
   </define>
 
-  <define name="Exceptions">
-    <element name="Exceptions">
-      <oneOrMore>
-        <ref name="TextBlockContent" />
-      </oneOrMore>
-    </element>
-  </define>
-
   <define name="Availability">
     <element name="Availability">
       <attribute name="distribution">
-        <data type="string" />
+          <data type="string" />
       </attribute>
       <optional>
         <element name="IntroducedInVersion">
@@ -514,30 +470,6 @@
   <define name="TextBlockContent">
     <choice>
       <element name="Para">
-        <optional>
-          <attribute name="kind">
-            <choice>
-              <value>attention</value>
-              <value>author</value>
-              <value>authors</value>
-              <value>bug</value>
-              <value>copyright</value>
-              <value>date</value>
-              <value>invariant</value>
-              <value>note</value>
-              <value>post</value>
-              <value>pre</value>
-              <value>remark</value>
-              <value>remarks</value>
-              <value>sa</value>
-              <value>see</value>
-              <value>since</value>
-              <value>todo</value>
-              <value>version</value>
-              <value>warning</value>
-            </choice>
-          </attribute>
-        </optional>
         <zeroOrMore>
           <ref name="TextInlineContent" />
         </zeroOrMore>
@@ -580,14 +512,6 @@
         </data>
       </element>
       <element name="rawHTML">
-        <optional>
-          <!-- If not specified, the default value is 'false'. -->
-          <!-- The value 'false' or absence of the attribute does not imply
-               that the HTML is actually well-formed. -->
-          <attribute name="isMalformed">
-            <data type="boolean" />
-          </attribute>
-        </optional>
         <!-- Non-empty text content. -->
         <data type="string">
           <param name="pattern">.*\S.*</param>

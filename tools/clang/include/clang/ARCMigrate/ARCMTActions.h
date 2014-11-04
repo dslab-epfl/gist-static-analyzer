@@ -7,19 +7,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_ARCMIGRATE_ARCMTACTIONS_H
-#define LLVM_CLANG_ARCMIGRATE_ARCMTACTIONS_H
+#ifndef LLVM_CLANG_ARCMIGRATE_ARCMT_ACTION_H
+#define LLVM_CLANG_ARCMIGRATE_ARCMT_ACTION_H
 
-#include "clang/ARCMigrate/FileRemapper.h"
 #include "clang/Frontend/FrontendAction.h"
-#include <memory>
+#include "clang/ARCMigrate/FileRemapper.h"
+#include "llvm/ADT/OwningPtr.h"
 
 namespace clang {
 namespace arcmt {
 
 class CheckAction : public WrapperFrontendAction {
 protected:
-  bool BeginInvocation(CompilerInstance &CI) override;
+  virtual bool BeginInvocation(CompilerInstance &CI);
 
 public:
   CheckAction(FrontendAction *WrappedAction);
@@ -27,7 +27,7 @@ public:
 
 class ModifyAction : public WrapperFrontendAction {
 protected:
-  bool BeginInvocation(CompilerInstance &CI) override;
+  virtual bool BeginInvocation(CompilerInstance &CI);
 
 public:
   ModifyAction(FrontendAction *WrappedAction);
@@ -36,9 +36,9 @@ public:
 class MigrateSourceAction : public ASTFrontendAction {
   FileRemapper Remapper;
 protected:
-  bool BeginInvocation(CompilerInstance &CI) override;
-  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
-                                                 StringRef InFile) override;
+  virtual bool BeginInvocation(CompilerInstance &CI);
+  virtual ASTConsumer *CreateASTConsumer(CompilerInstance &CI,
+                                         StringRef InFile);
 };
 
 class MigrateAction : public WrapperFrontendAction {
@@ -46,7 +46,7 @@ class MigrateAction : public WrapperFrontendAction {
   std::string PlistOut;
   bool EmitPremigrationARCErros;
 protected:
-  bool BeginInvocation(CompilerInstance &CI) override;
+  virtual bool BeginInvocation(CompilerInstance &CI);
 
 public:
   MigrateAction(FrontendAction *WrappedAction, StringRef migrateDir,
@@ -57,17 +57,18 @@ public:
 /// \brief Migrates to modern ObjC syntax.
 class ObjCMigrateAction : public WrapperFrontendAction {
   std::string MigrateDir;
-  unsigned    ObjCMigAction;
+  bool MigrateLiterals;
+  bool MigrateSubscripting;
   FileRemapper Remapper;
   CompilerInstance *CompInst;
 public:
   ObjCMigrateAction(FrontendAction *WrappedAction, StringRef migrateDir,
-                    unsigned migrateAction);
+                    bool migrateLiterals,
+                    bool migrateSubscripting);
 
 protected:
-  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
-                                                 StringRef InFile) override;
-  bool BeginInvocation(CompilerInstance &CI) override;
+  virtual ASTConsumer *CreateASTConsumer(CompilerInstance &CI,StringRef InFile);
+  virtual bool BeginInvocation(CompilerInstance &CI);
 };
 
 }

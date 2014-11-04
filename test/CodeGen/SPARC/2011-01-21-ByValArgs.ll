@@ -6,7 +6,7 @@
 
 define i32 @test() nounwind {
 entry:
-;CHECK-LABEL:     test:
+;CHECK:     test
 ;CHECK:     st
 ;CHECK:     st
 ;CHECK:     st

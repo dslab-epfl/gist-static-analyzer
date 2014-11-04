@@ -14,7 +14,7 @@ struct Y {
   operator id() const;
 };
 
-// CHECK-LABEL: define void @_Z10test_arrayv
+// CHECK: define void @_Z10test_arrayv
 void test_array() {
   // CHECK: [[OBJECTS:%[a-zA-Z0-9.]+]] = alloca [2 x i8*]
 
@@ -33,15 +33,8 @@ void test_array() {
   // CHECK: store i8* [[RET1]], i8** [[ELEMENT1]]
 
   // Build the array
-  // CHECK: [[T4:%.*]] = load [[CLASS:%.*]]** @"\01L_OBJC_CLASSLIST_REFERENCES_$_"
-  // CHECK-NEXT: [[T5:%.*]] = load i8** @"\01L_OBJC_SELECTOR_REFERENCES_
-  // CHECK-NEXT: [[T6:%.*]] = bitcast [[CLASS]]* [[T4]] to i8*
-  // CHECK-NEXT: [[ALLOC:%.*]] = {{invoke.*@objc_msgSend}}
-
-  // CHECK: [[T7:%.*]] = load i8** @"\01L_OBJC_SELECTOR_REFERENCES_
-  // CHECK-NEXT: [[T8:%.*]] = bitcast [2 x i8*]* [[OBJECTS]] to i8**
-  // CHECK-NEXT: [[INIT:%.*]]  = {{invoke.*@objc_msgSend}}
-
+  // CHECK: {{invoke.*@objc_msgSend}}
+  // CHECK: call i8* @objc_retainAutoreleasedReturnValue
   id arr = @[ X(), Y() ];
 
   // Destroy temporaries
@@ -67,7 +60,7 @@ void test_array() {
   // CHECK: unreachable
 }
 
-// CHECK-LABEL: define weak_odr void @_Z24test_array_instantiationIiEvv
+// CHECK: define weak_odr void @_Z24test_array_instantiationIiEvv
 template<typename T>
 void test_array_instantiation() {
   // CHECK: [[OBJECTS:%[a-zA-Z0-9.]+]] = alloca [2 x i8*]
@@ -88,7 +81,7 @@ void test_array_instantiation() {
 
   // Build the array
   // CHECK: {{invoke.*@objc_msgSend}}
-
+  // CHECK: call i8* @objc_retainAutoreleasedReturnValue
   id arr = @[ X(), Y() ];
 
   // Destroy temporaries

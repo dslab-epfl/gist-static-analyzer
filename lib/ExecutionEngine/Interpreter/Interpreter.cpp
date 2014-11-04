@@ -15,8 +15,8 @@
 
 #include "Interpreter.h"
 #include "llvm/CodeGen/IntrinsicLowering.h"
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/Module.h"
+#include "llvm/DerivedTypes.h"
+#include "llvm/Module.h"
 #include <cstring>
 using namespace llvm;
 
@@ -30,27 +30,23 @@ static struct RegisterInterp {
 
 extern "C" void LLVMLinkInInterpreter() { }
 
-/// Create a new interpreter object.
+/// create - Create a new interpreter object.  This can never fail.
 ///
-ExecutionEngine *Interpreter::create(std::unique_ptr<Module> M,
-                                     std::string *ErrStr) {
+ExecutionEngine *Interpreter::create(Module *M, std::string* ErrStr) {
   // Tell this Module to materialize everything and release the GVMaterializer.
-  if (std::error_code EC = M->materializeAllPermanently()) {
-    if (ErrStr)
-      *ErrStr = EC.message();
+  if (M->MaterializeAllPermanently(ErrStr))
     // We got an error, just return 0
-    return nullptr;
-  }
+    return 0;
 
-  return new Interpreter(std::move(M));
+  return new Interpreter(M);
 }
 
 //===----------------------------------------------------------------------===//
 // Interpreter ctor - Initialize stuff
 //
-Interpreter::Interpreter(std::unique_ptr<Module> M)
-  : ExecutionEngine(std::move(M)), TD(Modules.back().get()) {
-
+Interpreter::Interpreter(Module *M)
+  : ExecutionEngine(M), TD(M) {
+      
   memset(&ExitValue.Untyped, 0, sizeof(ExitValue.Untyped));
   setDataLayout(&TD);
   // Initialize the "backend"

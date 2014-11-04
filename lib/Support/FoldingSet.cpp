@@ -8,7 +8,9 @@
 //===----------------------------------------------------------------------===//
 //
 // This file implements a hash set that can be used to remove duplication of
-// nodes in a graph.
+// nodes in a graph.  This code was originally created by Chris Lattner for use
+// with SelectionDAGCSEMap, but was isolated to provide use across the llvm code
+// set. 
 //
 //===----------------------------------------------------------------------===//
 
@@ -16,8 +18,8 @@
 #include "llvm/ADT/Hashing.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/Host.h"
 #include "llvm/Support/MathExtras.h"
+#include "llvm/Support/Host.h"
 #include <cassert>
 #include <cstring>
 using namespace llvm;
@@ -101,7 +103,7 @@ void FoldingSetNodeID::AddString(StringRef String) {
     // Otherwise do it the hard way.
     // To be compatible with above bulk transfer, we need to take endianness
     // into account.
-    if (sys::IsBigEndianHost) {
+    if (sys::isBigEndianHost()) {
       for (Pos += 4; Pos <= Size; Pos += 4) {
         unsigned V = ((unsigned char)String[Pos - 4] << 24) |
                      ((unsigned char)String[Pos - 3] << 16) |
@@ -110,7 +112,7 @@ void FoldingSetNodeID::AddString(StringRef String) {
         Bits.push_back(V);
       }
     } else {
-      assert(sys::IsLittleEndianHost && "Unexpected host endianness");
+      assert(sys::isLittleEndianHost() && "Unexpected host endianness");
       for (Pos += 4; Pos <= Size; Pos += 4) {
         unsigned V = ((unsigned char)String[Pos - 1] << 24) |
                      ((unsigned char)String[Pos - 2] << 16) |
@@ -148,7 +150,7 @@ unsigned FoldingSetNodeID::ComputeHash() const {
 
 /// operator== - Used to compare two nodes to each other.
 ///
-bool FoldingSetNodeID::operator==(const FoldingSetNodeID &RHS) const {
+bool FoldingSetNodeID::operator==(const FoldingSetNodeID &RHS)const{
   return *this == FoldingSetNodeIDRef(RHS.Bits.data(), RHS.Bits.size());
 }
 
@@ -160,7 +162,7 @@ bool FoldingSetNodeID::operator==(FoldingSetNodeIDRef RHS) const {
 
 /// Used to compare the "ordering" of two nodes as defined by the
 /// profiled bits and their ordering defined by memcmp().
-bool FoldingSetNodeID::operator<(const FoldingSetNodeID &RHS) const {
+bool FoldingSetNodeID::operator<(const FoldingSetNodeID &RHS)const{
   return *this < FoldingSetNodeIDRef(RHS.Bits.data(), RHS.Bits.size());
 }
 
@@ -190,7 +192,7 @@ FoldingSetNodeID::Intern(BumpPtrAllocator &Allocator) const {
 static FoldingSetImpl::Node *GetNextPtr(void *NextInBucketPtr) {
   // The low bit is set if this is the pointer back to the bucket.
   if (reinterpret_cast<intptr_t>(NextInBucketPtr) & 1)
-    return nullptr;
+    return 0;
   
   return static_cast<FoldingSetImpl::Node*>(NextInBucketPtr);
 }
@@ -262,7 +264,7 @@ void FoldingSetImpl::GrowHashTable() {
     while (Node *NodeInBucket = GetNextPtr(Probe)) {
       // Figure out the next link, remove NodeInBucket from the old link.
       Probe = NodeInBucket->getNextInBucket();
-      NodeInBucket->SetNextInBucket(nullptr);
+      NodeInBucket->SetNextInBucket(0);
 
       // Insert the node into the new bucket, after recomputing the hash.
       InsertNode(NodeInBucket,
@@ -285,7 +287,7 @@ FoldingSetImpl::Node
   void **Bucket = GetBucketFor(IDHash, Buckets, NumBuckets);
   void *Probe = *Bucket;
   
-  InsertPos = nullptr;
+  InsertPos = 0;
   
   FoldingSetNodeID TempID;
   while (Node *NodeInBucket = GetNextPtr(Probe)) {
@@ -298,14 +300,14 @@ FoldingSetImpl::Node
   
   // Didn't find the node, return null with the bucket as the InsertPos.
   InsertPos = Bucket;
-  return nullptr;
+  return 0;
 }
 
 /// InsertNode - Insert the specified node into the folding set, knowing that it
 /// is not already in the map.  InsertPos must be obtained from 
 /// FindNodeOrInsertPos.
 void FoldingSetImpl::InsertNode(Node *N, void *InsertPos) {
-  assert(!N->getNextInBucket());
+  assert(N->getNextInBucket() == 0);
   // Do we need to grow the hashtable?
   if (NumNodes+1 > NumBuckets*2) {
     GrowHashTable();
@@ -323,7 +325,7 @@ void FoldingSetImpl::InsertNode(Node *N, void *InsertPos) {
   // If this is the first insertion into this bucket, its next pointer will be
   // null.  Pretend as if it pointed to itself, setting the low bit to indicate
   // that it is a pointer to the bucket.
-  if (!Next)
+  if (Next == 0)
     Next = reinterpret_cast<void*>(reinterpret_cast<intptr_t>(Bucket)|1);
 
   // Set the node's next pointer, and make the bucket point to the node.
@@ -337,10 +339,10 @@ bool FoldingSetImpl::RemoveNode(Node *N) {
   // Because each bucket is a circular list, we don't need to compute N's hash
   // to remove it.
   void *Ptr = N->getNextInBucket();
-  if (!Ptr) return false;  // Not in folding set.
+  if (Ptr == 0) return false;  // Not in folding set.
 
   --NumNodes;
-  N->SetNextInBucket(nullptr);
+  N->SetNextInBucket(0);
 
   // Remember what N originally pointed to, either a bucket or another node.
   void *NodeNextPtr = Ptr;
@@ -390,7 +392,7 @@ FoldingSetImpl::Node *FoldingSetImpl::GetOrInsertNode(FoldingSetImpl::Node *N) {
 FoldingSetIteratorImpl::FoldingSetIteratorImpl(void **Bucket) {
   // Skip to the first non-null non-self-cycle bucket.
   while (*Bucket != reinterpret_cast<void*>(-1) &&
-         (!*Bucket || !GetNextPtr(*Bucket)))
+         (*Bucket == 0 || GetNextPtr(*Bucket) == 0))
     ++Bucket;
   
   NodePtr = static_cast<FoldingSetNode*>(*Bucket);
@@ -410,7 +412,7 @@ void FoldingSetIteratorImpl::advance() {
     do {
       ++Bucket;
     } while (*Bucket != reinterpret_cast<void*>(-1) &&
-             (!*Bucket || !GetNextPtr(*Bucket)));
+             (*Bucket == 0 || GetNextPtr(*Bucket) == 0));
     
     NodePtr = static_cast<FoldingSetNode*>(*Bucket);
   }
@@ -420,5 +422,5 @@ void FoldingSetIteratorImpl::advance() {
 // FoldingSetBucketIteratorImpl Implementation
 
 FoldingSetBucketIteratorImpl::FoldingSetBucketIteratorImpl(void **Bucket) {
-  Ptr = (!*Bucket || !GetNextPtr(*Bucket)) ? (void*) Bucket : *Bucket;
+  Ptr = (*Bucket == 0 || GetNextPtr(*Bucket) == 0) ? (void*) Bucket : *Bucket;
 }

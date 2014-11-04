@@ -17,8 +17,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_POWERPC_PPCINSTRBUILDER_H
-#define LLVM_LIB_TARGET_POWERPC_PPCINSTRBUILDER_H
+#ifndef POWERPC_INSTRBUILDER_H
+#define POWERPC_INSTRBUILDER_H
 
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 

@@ -1,4 +1,4 @@
-; RUN: opt -inline -S < %s | FileCheck %s
+; RUN: opt %s -inline -S | FileCheck %s
 ; PR6682
 declare void @foo() nounwind
 

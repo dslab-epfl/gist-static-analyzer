@@ -1,7 +1,7 @@
-// RUN: %clang_cc1 -triple %itanium_abi_triple -emit-llvm %s -o - | FileCheck -check-prefix=CHECK-HOST %s
-// RUN: %clang_cc1 -triple %itanium_abi_triple -emit-llvm %s -o - -fcuda-is-device | FileCheck -check-prefix=CHECK-DEVICE %s
+// RUN: %clang_cc1 -emit-llvm %s -o - | FileCheck -check-prefix=CHECK-HOST %s
+// RUN: %clang_cc1 -emit-llvm %s -o - -fcuda-is-device | FileCheck -check-prefix=CHECK-DEVICE %s
 
-#include "Inputs/cuda.h"
+#include "../SemaCUDA/cuda.h"
 
 // CHECK-HOST-NOT: constantdata = global
 // CHECK-DEVICE: constantdata = global

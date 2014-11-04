@@ -1,6 +1,7 @@
-// RUN: %clang_cc1 -fsyntax-only -verify %s
+// RUN: %clang_cc1 -verify %s
+// XFAIL: *
 
-void f0() { // expected-note {{previous definition is here}}
+void f0() {
 }
 
-inline void f0(); // expected-error {{inline declaration of 'f0' follows non-inline definition}}
+inline void f0(); // expected-error {{function definition cannot precede inline declaration}}

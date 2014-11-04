@@ -1,5 +1,4 @@
 // RUN: %clang_cc1 -pedantic -Wall -Wno-comment -verify -fcxx-exceptions -x c++ %s
-// RUN: not %clang_cc1 -fsyntax-only -fdiagnostics-parseable-fixits -x c++ -std=c++11 %s 2>&1 | FileCheck %s
 // RUN: cp %s %t
 // RUN: not %clang_cc1 -pedantic -Wall -Wno-comment -fcxx-exceptions -fixit -x c++ %t
 // RUN: %clang_cc1 -fsyntax-only -pedantic -Wall -Werror -Wno-comment -fcxx-exceptions -x c++ %t
@@ -19,7 +18,7 @@ virtual void C1::f() { } // expected-error{{'virtual' can only be specified insi
 
 static void C1::g() { } // expected-error{{'static' can only be specified inside the class definition}}
 
-template<int Value> struct CT { template<typename> struct Inner; }; // expected-note{{previous use is here}}
+template<int Value> struct CT { }; // expected-note{{previous use is here}}
 
 CT<10 >> 2> ct; // expected-warning{{require parentheses}}
 
@@ -31,8 +30,6 @@ public:
 struct CT<0> { }; // expected-error{{'template<>'}}
 
 template<> union CT<1> { }; // expected-error{{tag type}}
-
-struct CT<2>::Inner<int> { }; // expected-error 2{{'template<>'}}
 
 // Access declarations
 class A {
@@ -204,7 +201,7 @@ template<class T> typedef Mystery<T>::type getMysteriousThing() { // \
 }
 
 template<template<typename> Foo, // expected-error {{template template parameter requires 'class' after the parameter list}}
-         template<typename> typename Bar, // expected-warning {{template template parameter using 'typename' is a C++1z extension}}
+         template<typename> typename Bar, // expected-error {{template template parameter requires 'class' after the parameter list}}
          template<typename> struct Baz> // expected-error {{template template parameter requires 'class' after the parameter list}}
 void func();
 
@@ -302,82 +299,3 @@ class foo {
   }
   int i();
 };
-
-namespace dtor_fixit {
-  class foo {
-    ~bar() { }  // expected-error {{expected the class name after '~' to name a destructor}}
-    // CHECK: fix-it:"{{.*}}":{[[@LINE-1]]:6-[[@LINE-1]]:9}:"foo"
-  };
-
-  class bar {
-    ~bar();
-  };
-  ~bar::bar() {} // expected-error {{'~' in destructor name should be after nested name specifier}}
-  // CHECK: fix-it:"{{.*}}":{[[@LINE-1]]:3-[[@LINE-1]]:4}:""
-  // CHECK: fix-it:"{{.*}}":{[[@LINE-2]]:9-[[@LINE-2]]:9}:"~"
-}
-
-namespace PR5066 {
-  template<typename T> struct X {};
-  X<int *p> x; // expected-error {{type-id cannot have a name}}
-}
-
-namespace PR5898 {
-  class A {
-  public:
-    const char *str();
-  };
-  const char* foo(A &x)
-  {
-    return x.str.();  // expected-error {{unexpected '.' in function call; perhaps remove the '.'?}}
-  }
-  bool bar(A x, const char *y) {
-    return foo->(x) == y;  // expected-error {{unexpected '->' in function call; perhaps remove the '->'?}}
-  }
-}
-
-namespace PR15045 {
-  class Cl0 {
-  public:
-    int a;
-  };
-
-  int f() {
-    Cl0 c;
-    return c->a;  // expected-error {{member reference type 'PR15045::Cl0' is not a pointer; maybe you meant to use '.'?}}
-  }
-}
-
-namespace curly_after_base_clause {
-struct A { void f(); };
-struct B : A // expected-error{{expected '{' after base class list}}
-  // CHECK: fix-it:"{{.*}}":{[[@LINE-1]]:13-[[@LINE-1]]:13}:" {"
-  int i;
-};
-struct C : A // expected-error{{expected '{' after base class list}}
-  // CHECK: fix-it:"{{.*}}":{[[@LINE-1]]:13-[[@LINE-1]]:13}:" {"
-  using A::f;
-};
-struct D : A // expected-error{{expected '{' after base class list}}
-  // CHECK: fix-it:"{{.*}}":{[[@LINE-1]]:13-[[@LINE-1]]:13}:" {"
-    protected:
-};
-struct E : A  // expected-error{{expected '{' after base class list}}
-  // CHECK: fix-it:"{{.*}}":{[[@LINE-1]]:13-[[@LINE-1]]:13}:" {"
-  template<typename T> struct inner { };
-};
-struct F : A  // expected-error{{expected '{' after base class list}}
-  // CHECK: fix-it:"{{.*}}":{[[@LINE-1]]:13-[[@LINE-1]]:13}:" {"
-  F() { }
-};
-#if __cplusplus >= 201103L
-struct G : A  // expected-error{{expected '{' after base class list}}
-  // CHECK: fix-it:"{{.*}}":{[[@LINE-1]]:13-[[@LINE-1]]:13}:" {"
-  constexpr G(int) { }
-};
-struct H : A  // expected-error{{expected '{' after base class list}}
-  // CHECK: fix-it:"{{.*}}":{[[@LINE-1]]:13-[[@LINE-1]]:13}:" {"
-  static_assert(true, "");
-};
-#endif
-}

@@ -1,4 +1,4 @@
-; RUN: llc < %s -mtriple=thumbv7-apple-darwin9 -mcpu=cortex-a8 -relocation-model=pic -disable-fp-elim -arm-atomic-cfg-tidy=0 | FileCheck %s
+; RUN: llc < %s -mtriple=thumbv7-apple-darwin9 -mcpu=cortex-a8 -relocation-model=pic -disable-fp-elim | FileCheck %s
 
 @csize = external global [100 x [20 x [4 x i8]]]		; <[100 x [20 x [4 x i8]]]*> [#uses=1]
 @vsize = external global [100 x [20 x [4 x i8]]]		; <[100 x [20 x [4 x i8]]]*> [#uses=1]
@@ -7,7 +7,7 @@
 @sep = external global [20 x i32]		; <[20 x i32]*> [#uses=1]
 
 define void @main(i32 %argc, i8** %argv) noreturn nounwind {
-; CHECK-LABEL: main:
+; CHECK: main:
 ; CHECK: ldrb
 entry:
 	%nb.i.i.i = alloca [25 x i8], align 1		; <[25 x i8]*> [#uses=0]

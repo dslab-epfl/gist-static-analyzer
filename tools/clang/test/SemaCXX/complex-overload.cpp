@@ -42,15 +42,9 @@ void test_promote_or_convert2(float _Complex fc) {
   int *cp = promote_or_convert2(fc);
 }
 
-char *promote_or_convert3(int _Complex); // expected-note {{candidate}}
-int *promote_or_convert3(long _Complex); // expected-note {{candidate}}
+char *promote_or_convert3(int _Complex);
+int *promote_or_convert3(long _Complex);
 
 void test_promote_or_convert3(short _Complex sc) {
-  char *cp1 = promote_or_convert3(sc);
-  char *cp2 = promote_or_convert3(1i);
-  int *cp3 = promote_or_convert3(1il);
-  int *cp4 = promote_or_convert3(1ill); // expected-error {{ambiguous}}
+  char *cp = promote_or_convert3(sc);
 }
-
-char &convert4(short _Complex);
-char &test_convert4 = convert4(1i);

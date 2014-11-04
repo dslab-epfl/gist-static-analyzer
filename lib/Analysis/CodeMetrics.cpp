@@ -11,97 +11,120 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Analysis/AssumptionTracker.h"
 #include "llvm/Analysis/CodeMetrics.h"
-#include "llvm/Analysis/LoopInfo.h"
-#include "llvm/Analysis/TargetTransformInfo.h"
-#include "llvm/Analysis/ValueTracking.h"
-#include "llvm/IR/CallSite.h"
-#include "llvm/IR/DataLayout.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/IntrinsicInst.h"
-#include "llvm/Support/Debug.h"
-
-#define DEBUG_TYPE "code-metrics"
+#include "llvm/Function.h"
+#include "llvm/Support/CallSite.h"
+#include "llvm/IntrinsicInst.h"
+#include "llvm/DataLayout.h"
 
 using namespace llvm;
 
-static void completeEphemeralValues(SmallVector<const Value *, 16> &WorkSet,
-                                    SmallPtrSetImpl<const Value*> &EphValues) {
-  SmallPtrSet<const Value *, 32> Visited;
+/// callIsSmall - If a call is likely to lower to a single target instruction,
+/// or is otherwise deemed small return true.
+/// TODO: Perhaps calls like memcpy, strcpy, etc?
+bool llvm::callIsSmall(ImmutableCallSite CS) {
+  if (isa<IntrinsicInst>(CS.getInstruction()))
+    return true;
 
-  // Make sure that all of the items in WorkSet are in our EphValues set.
-  EphValues.insert(WorkSet.begin(), WorkSet.end());
+  const Function *F = CS.getCalledFunction();
+  if (!F) return false;
 
-  // Note: We don't speculate PHIs here, so we'll miss instruction chains kept
-  // alive only by ephemeral values.
+  if (F->hasLocalLinkage()) return false;
 
-  while (!WorkSet.empty()) {
-    const Value *V = WorkSet.pop_back_val();
-    if (!Visited.insert(V))
-      continue;
+  if (!F->hasName()) return false;
 
-    // If all uses of this value are ephemeral, then so is this value.
-    bool FoundNEUse = false;
-    for (const User *I : V->users())
-      if (!EphValues.count(I)) {
-        FoundNEUse = true;
-        break;
-      }
+  StringRef Name = F->getName();
 
-    if (FoundNEUse)
-      continue;
+  // These will all likely lower to a single selection DAG node.
+  if (Name == "copysign" || Name == "copysignf" || Name == "copysignl" ||
+      Name == "fabs" || Name == "fabsf" || Name == "fabsl" ||
+      Name == "sin" || Name == "sinf" || Name == "sinl" ||
+      Name == "cos" || Name == "cosf" || Name == "cosl" ||
+      Name == "sqrt" || Name == "sqrtf" || Name == "sqrtl" )
+    return true;
 
-    EphValues.insert(V);
-    DEBUG(dbgs() << "Ephemeral Value: " << *V << "\n");
+  // These are all likely to be optimized into something smaller.
+  if (Name == "pow" || Name == "powf" || Name == "powl" ||
+      Name == "exp2" || Name == "exp2l" || Name == "exp2f" ||
+      Name == "floor" || Name == "floorf" || Name == "ceil" ||
+      Name == "round" || Name == "ffs" || Name == "ffsl" ||
+      Name == "abs" || Name == "labs" || Name == "llabs")
+    return true;
 
-    if (const User *U = dyn_cast<User>(V))
-      for (const Value *J : U->operands()) {
-        if (isSafeToSpeculativelyExecute(J))
-          WorkSet.push_back(J);
-      }
-  }
+  return false;
 }
 
-// Find all ephemeral values.
-void CodeMetrics::collectEphemeralValues(const Loop *L, AssumptionTracker *AT,
-                                         SmallPtrSetImpl<const Value*> &EphValues) {
-  SmallVector<const Value *, 16> WorkSet;
+bool llvm::isInstructionFree(const Instruction *I, const DataLayout *TD) {
+  if (isa<PHINode>(I))
+    return true;
 
-  for (auto &I : AT->assumptions(L->getHeader()->getParent())) {
-    // Filter out call sites outside of the loop so we don't to a function's
-    // worth of work for each of its loops (and, in the common case, ephemeral
-    // values in the loop are likely due to @llvm.assume calls in the loop).
-    if (!L->contains(I->getParent()))
-      continue;
+  // If a GEP has all constant indices, it will probably be folded with
+  // a load/store.
+  if (const GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(I))
+    return GEP->hasAllConstantIndices();
 
-    WorkSet.push_back(I);
+  if (const IntrinsicInst *II = dyn_cast<IntrinsicInst>(I)) {
+    switch (II->getIntrinsicID()) {
+    default:
+      return false;
+    case Intrinsic::dbg_declare:
+    case Intrinsic::dbg_value:
+    case Intrinsic::invariant_start:
+    case Intrinsic::invariant_end:
+    case Intrinsic::lifetime_start:
+    case Intrinsic::lifetime_end:
+    case Intrinsic::objectsize:
+    case Intrinsic::ptr_annotation:
+    case Intrinsic::var_annotation:
+      // These intrinsics don't count as size.
+      return true;
+    }
   }
 
-  completeEphemeralValues(WorkSet, EphValues);
-}
+  if (const CastInst *CI = dyn_cast<CastInst>(I)) {
+    // Noop casts, including ptr <-> int,  don't count.
+    if (CI->isLosslessCast())
+      return true;
 
-void CodeMetrics::collectEphemeralValues(const Function *F, AssumptionTracker *AT,
-                                         SmallPtrSetImpl<const Value*> &EphValues) {
-  SmallVector<const Value *, 16> WorkSet;
+    Value *Op = CI->getOperand(0);
+    // An inttoptr cast is free so long as the input is a legal integer type
+    // which doesn't contain values outside the range of a pointer.
+    if (isa<IntToPtrInst>(CI) && TD &&
+        TD->isLegalInteger(Op->getType()->getScalarSizeInBits()) &&
+        Op->getType()->getScalarSizeInBits() <= TD->getPointerSizeInBits())
+      return true;
 
-  for (auto &I : AT->assumptions(const_cast<Function*>(F)))
-    WorkSet.push_back(I);
+    // A ptrtoint cast is free so long as the result is large enough to store
+    // the pointer, and a legal integer type.
+    if (isa<PtrToIntInst>(CI) && TD &&
+        TD->isLegalInteger(Op->getType()->getScalarSizeInBits()) &&
+        Op->getType()->getScalarSizeInBits() >= TD->getPointerSizeInBits())
+      return true;
 
-  completeEphemeralValues(WorkSet, EphValues);
+    // trunc to a native type is free (assuming the target has compare and
+    // shift-right of the same width).
+    if (TD && isa<TruncInst>(CI) &&
+        TD->isLegalInteger(TD->getTypeSizeInBits(CI->getType())))
+      return true;
+    // Result of a cmp instruction is often extended (to be used by other
+    // cmp instructions, logical or return instructions). These are usually
+    // nop on most sane targets.
+    if (isa<CmpInst>(CI->getOperand(0)))
+      return true;
+  }
+
+  return false;
 }
 
 /// analyzeBasicBlock - Fill in the current structure with information gleaned
 /// from the specified block.
 void CodeMetrics::analyzeBasicBlock(const BasicBlock *BB,
-                                    const TargetTransformInfo &TTI,
-                                    SmallPtrSetImpl<const Value*> &EphValues) {
+                                    const DataLayout *TD) {
   ++NumBlocks;
   unsigned NumInstsBeforeThisBB = NumInsts;
   for (BasicBlock::const_iterator II = BB->begin(), E = BB->end();
        II != E; ++II) {
-    // Skip ephemeral values.
-    if (EphValues.count(II))
+    if (isInstructionFree(II, TD))
       continue;
 
     // Special handling for calls.
@@ -121,10 +144,12 @@ void CodeMetrics::analyzeBasicBlock(const BasicBlock *BB,
         // for that case.
         if (F == BB->getParent())
           isRecursive = true;
+      }
 
-        if (TTI.isLoweredToCall(F))
-          ++NumCalls;
-      } else {
+      if (!callIsSmall(CS)) {
+        // Each argument to a call takes on average one instruction to set up.
+        NumInsts += CS.arg_size();
+
         // We don't want inline asm to count as a call - that would prevent loop
         // unrolling. The argument setup cost is still real, though.
         if (!isa<InlineAsm>(CS.getCalledValue()))
@@ -140,15 +165,7 @@ void CodeMetrics::analyzeBasicBlock(const BasicBlock *BB,
     if (isa<ExtractElementInst>(II) || II->getType()->isVectorTy())
       ++NumVectorInsts;
 
-    if (const CallInst *CI = dyn_cast<CallInst>(II))
-      if (CI->cannotDuplicate())
-        notDuplicatable = true;
-
-    if (const InvokeInst *InvI = dyn_cast<InvokeInst>(II))
-      if (InvI->cannotDuplicate())
-        notDuplicatable = true;
-
-    NumInsts += TTI.getUserCost(&*II);
+    ++NumInsts;
   }
 
   if (isa<ReturnInst>(BB->getTerminator()))
@@ -165,8 +182,23 @@ void CodeMetrics::analyzeBasicBlock(const BasicBlock *BB,
   // if someone is using a blockaddress without an indirectbr, and that
   // reference somehow ends up in another function or global, we probably
   // don't want to inline this function.
-  notDuplicatable |= isa<IndirectBrInst>(BB->getTerminator());
+  if (isa<IndirectBrInst>(BB->getTerminator()))
+    containsIndirectBr = true;
 
   // Remember NumInsts for this BB.
   NumBBInsts[BB] = NumInsts - NumInstsBeforeThisBB;
+}
+
+void CodeMetrics::analyzeFunction(Function *F, const DataLayout *TD) {
+  // If this function contains a call that "returns twice" (e.g., setjmp or
+  // _setjmp) and it isn't marked with "returns twice" itself, never inline it.
+  // This is a hack because we depend on the user marking their local variables
+  // as volatile if they are live across a setjmp call, and they probably
+  // won't do this in callers.
+  exposesReturnsTwice = F->callsFunctionThatReturnsTwice() &&
+    !F->getFnAttributes().hasAttribute(Attributes::ReturnsTwice);
+
+  // Look at the size of the callee.
+  for (Function::const_iterator BB = F->begin(), E = F->end(); BB != E; ++BB)
+    analyzeBasicBlock(&*BB, TD);
 }

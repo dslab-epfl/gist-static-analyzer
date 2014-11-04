@@ -10,14 +10,13 @@ declare i8* @returner()
 
 ; ARCOpt shouldn't try to move the releases to the block containing the invoke.
 
-; CHECK-LABEL: define void @test0(
+; CHECK: define void @test0(
 ; CHECK: invoke.cont:
-; CHECK:   call void @objc_release(i8* %zipFile) [[NUW:#[0-9]+]], !clang.imprecise_release !0
+; CHECK:   call void @objc_release(i8* %zipFile) nounwind, !clang.imprecise_release !0
 ; CHECK:   ret void
 ; CHECK: lpad:
-; CHECK:   call void @objc_release(i8* %zipFile) [[NUW]], !clang.imprecise_release !0
+; CHECK:   call void @objc_release(i8* %zipFile) nounwind, !clang.imprecise_release !0
 ; CHECK:   ret void
-; CHECK-NEXT: }
 define void @test0(i8* %zipFile) {
 entry:
   call i8* @objc_retain(i8* %zipFile) nounwind
@@ -38,18 +37,17 @@ lpad:                                             ; preds = %entry
 
 ; ARCOpt should move the release before the callee calls.
 
-; CHECK-LABEL: define void @test1(
+; CHECK: define void @test1(
 ; CHECK: invoke.cont:
-; CHECK:   call void @objc_release(i8* %zipFile) [[NUW]], !clang.imprecise_release !0
+; CHECK:   call void @objc_release(i8* %zipFile) nounwind, !clang.imprecise_release !0
 ; CHECK:   call void @callee()
 ; CHECK:   br label %done
 ; CHECK: lpad:
-; CHECK:   call void @objc_release(i8* %zipFile) [[NUW]], !clang.imprecise_release !0
+; CHECK:   call void @objc_release(i8* %zipFile) nounwind, !clang.imprecise_release !0
 ; CHECK:   call void @callee()
 ; CHECK:   br label %done
 ; CHECK: done:
 ; CHECK-NEXT: ret void
-; CHECK-NEXT: }
 define void @test1(i8* %zipFile) {
 entry:
   call i8* @objc_retain(i8* %zipFile) nounwind
@@ -108,11 +106,10 @@ finally.rethrow:                                  ; preds = %invoke.cont, %entry
 
 ; Don't try to place code on invoke critical edges.
 
-; CHECK-LABEL: define void @test3(
+; CHECK: define void @test3(
 ; CHECK: if.end:
-; CHECK-NEXT: call void @objc_release(i8* %p) [[NUW]]
+; CHECK-NEXT: call void @objc_release(i8* %p) nounwind
 ; CHECK-NEXT: ret void
-; CHECK-NEXT: }
 define void @test3(i8* %p, i1 %b) {
 entry:
   %0 = call i8* @objc_retain(i8* %p)
@@ -139,16 +136,15 @@ if.end:
 
 ; Like test3, but with ARC-relevant exception handling.
 
-; CHECK-LABEL: define void @test4(
+; CHECK: define void @test4(
 ; CHECK: lpad:
 ; CHECK-NEXT: %r = landingpad { i8*, i32 } personality i8* bitcast (i32 (...)* @__objc_personality_v0 to i8*)
 ; CHECK-NEXT: cleanup
-; CHECK-NEXT: call void @objc_release(i8* %p) [[NUW]]
+; CHECK-NEXT: call void @objc_release(i8* %p) nounwind
 ; CHECK-NEXT: ret void
 ; CHECK: if.end:
-; CHECK-NEXT: call void @objc_release(i8* %p) [[NUW]]
+; CHECK-NEXT: call void @objc_release(i8* %p) nounwind
 ; CHECK-NEXT: ret void
-; CHECK-NEXT: }
 define void @test4(i8* %p, i1 %b) {
 entry:
   %0 = call i8* @objc_retain(i8* %p)
@@ -177,7 +173,7 @@ if.end:
 ; Don't turn the retainAutoreleaseReturnValue into retain, because it's
 ; for an invoke which we can assume codegen will put immediately prior.
 
-; CHECK-LABEL: define void @test5(
+; CHECK: define void @test5(
 ; CHECK: call i8* @objc_retainAutoreleasedReturnValue(i8* %z)
 ; CHECK: }
 define void @test5() {
@@ -197,7 +193,7 @@ if.end:
 
 ; Like test5, but there's intervening code.
 
-; CHECK-LABEL: define void @test6(
+; CHECK: define void @test6(
 ; CHECK: call i8* @objc_retain(i8* %z)
 ; CHECK: }
 define void @test6() {
@@ -218,7 +214,5 @@ if.end:
 
 declare i32 @__gxx_personality_v0(...)
 declare i32 @__objc_personality_v0(...)
-
-; CHECK: attributes [[NUW]] = { nounwind }
 
 !0 = metadata !{}

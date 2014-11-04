@@ -1,19 +1,17 @@
-// RUN: %clang_cc1 %s -verify -rewrite-macros -o %t
-// RUN: FileCheck %s < %t
-
-// Any CHECK line comments are included in the output, so we use some extra
-// regex brackets to make sure we don't match the CHECK lines themselves.
+// RUN: %clang_cc1 -verify -rewrite-macros -o %t %s
 
 #define A(a,b) a ## b
 
-// CHECK: {{^}} 12 /*A*/ /*(1,2)*/{{$}}
+// RUN: grep '12 */\*A\*/ /\*(1,2)\*/' %t
 A(1,2)
 
-// CHECK: {{^}} /*_Pragma("mark")*/{{$}}
+// RUN: grep '/\*_Pragma("mark")\*/' %t
 _Pragma("mark")
 
-// CHECK: /*#warning eek*/{{$}}
+// RUN: grep "//#warning eek" %t
 /* expected-warning {{eek}} */ #warning eek
 
-// CHECK: {{^}}//#pragma mark mark{{$}}
+// RUN: grep "//#pragma mark mark" %t
 #pragma mark mark
+
+

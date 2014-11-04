@@ -8,21 +8,18 @@ static int bar1 = 42;
 
 extern int g1;
 extern int g1 __attribute((alias("g0")));
-// CHECKBASIC-DAG: @g1 = alias i32* @g0
+// CHECKBASIC: @g1 = alias i32* @g0
 
 void f0(void) { }
 extern void f1(void);
 extern void f1(void) __attribute((alias("f0")));
-// CHECKBASIC-DAG: @f1 = alias void ()* @f0
-// CHECKBASIC-DAG: @test8_foo = weak alias bitcast (void ()* @test8_bar to void (...)*)
-// CHECKBASIC-DAG: @test8_zed = alias bitcast (void ()* @test8_bar to void (...)*)
-// CHECKBASIC-DAG: @test9_zed = alias void ()* @test9_bar
-// CHECKBASIC: define void @f0() [[NUW:#[0-9]+]] {
+// CHECKBASIC: @f1 = alias void ()* @f0
+// CHECKBASIC: define void @f0() nounwind {
 
 // Make sure that aliases cause referenced values to be emitted.
 // PR3200
 static inline int foo1() { return 0; }
-// CHECKBASIC-LABEL: define internal i32 @foo1()
+// CHECKBASIC: define internal i32 @foo1()
 int foo() __attribute__((alias("foo1")));
 int bar() __attribute__((alias("bar1")));
 
@@ -37,25 +34,13 @@ static int inner_weak(int a) { return 0; }
 extern __typeof(inner) inner_a __attribute__((alias("inner")));
 static __typeof(inner_weak) inner_weak_a __attribute__((weakref, alias("inner_weak")));
 // CHECKCC: @inner_a = alias i32 (i32)* @inner
-// CHECKCC: define internal arm_aapcs_vfpcc i32 @inner(i32 %a) [[NUW:#[0-9]+]] {
+// CHECKCC: define internal arm_aapcs_vfpcc i32 @inner(i32 %a) nounwind {
 
 int outer(int a) { return inner(a); }
-// CHECKCC: define arm_aapcs_vfpcc i32 @outer(i32 %a) [[NUW]] {
+// CHECKCC: define arm_aapcs_vfpcc i32 @outer(i32 %a) nounwind {
 // CHECKCC: call arm_aapcs_vfpcc  i32 @inner(i32 %{{.*}})
 
 int outer_weak(int a) { return inner_weak_a(a); }
-// CHECKCC: define arm_aapcs_vfpcc i32 @outer_weak(i32 %a) [[NUW]] {
+// CHECKCC: define arm_aapcs_vfpcc i32 @outer_weak(i32 %a) nounwind {
 // CHECKCC: call arm_aapcs_vfpcc  i32 @inner_weak(i32 %{{.*}})
-// CHECKCC: define internal arm_aapcs_vfpcc i32 @inner_weak(i32 %a) [[NUW]] {
-
-// CHECKBASIC: attributes [[NUW]] = { nounwind{{.*}} }
-
-// CHECKCC: attributes [[NUW]] = { nounwind{{.*}} }
-
-void test8_bar() {}
-void test8_foo() __attribute__((weak, alias("test8_bar")));
-void test8_zed() __attribute__((alias("test8_foo")));
-
-void test9_bar(void) { }
-void test9_zed(void) __attribute__((section("test")));
-void test9_zed(void) __attribute__((alias("test9_bar")));
+// CHECKCC: define internal arm_aapcs_vfpcc i32 @inner_weak(i32 %a) nounwind {

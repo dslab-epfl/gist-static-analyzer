@@ -20,18 +20,11 @@ namespace __tsan {
 
 enum ReportType {
   ReportTypeRace,
-  ReportTypeVptrRace,
   ReportTypeUseAfterFree,
-  ReportTypeVptrUseAfterFree,
   ReportTypeThreadLeak,
   ReportTypeMutexDestroyLocked,
-  ReportTypeMutexDoubleLock,
-  ReportTypeMutexBadUnlock,
-  ReportTypeMutexBadReadLock,
-  ReportTypeMutexBadReadUnlock,
   ReportTypeSignalUnsafe,
-  ReportTypeErrnoInSignal,
-  ReportTypeDeadlock
+  ReportTypeErrnoInSignal
 };
 
 struct ReportStack {
@@ -43,12 +36,6 @@ struct ReportStack {
   char *file;
   int line;
   int col;
-  bool suppressable;
-};
-
-struct ReportMopMutex {
-  u64 id;
-  bool write;
 };
 
 struct ReportMop {
@@ -56,33 +43,25 @@ struct ReportMop {
   uptr addr;
   int size;
   bool write;
-  bool atomic;
-  Vector<ReportMopMutex> mset;
+  int nmutex;
+  int *mutex;
   ReportStack *stack;
-
-  ReportMop();
 };
 
 enum ReportLocationType {
   ReportLocationGlobal,
   ReportLocationHeap,
-  ReportLocationStack,
-  ReportLocationTLS,
-  ReportLocationFD
+  ReportLocationStack
 };
 
 struct ReportLocation {
   ReportLocationType type;
   uptr addr;
   uptr size;
-  char *module;
-  uptr offset;
   int tid;
-  int fd;
   char *name;
   char *file;
   int line;
-  bool suppressable;
   ReportStack *stack;
 };
 
@@ -91,14 +70,11 @@ struct ReportThread {
   uptr pid;
   bool running;
   char *name;
-  int parent_tid;
   ReportStack *stack;
 };
 
 struct ReportMutex {
-  u64 id;
-  uptr addr;
-  bool destroyed;
+  int id;
   ReportStack *stack;
 };
 
@@ -110,9 +86,7 @@ class ReportDesc {
   Vector<ReportLocation*> locs;
   Vector<ReportMutex*> mutexes;
   Vector<ReportThread*> threads;
-  Vector<int> unique_tids;
   ReportStack *sleep;
-  int count;
 
   ReportDesc();
   ~ReportDesc();

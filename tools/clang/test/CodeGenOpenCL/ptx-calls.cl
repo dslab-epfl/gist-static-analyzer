@@ -2,12 +2,11 @@
 
 void device_function() {
 }
-// CHECK-LABEL: define void @device_function()
+// CHECK: define ptx_device void @device_function()
 
 __kernel void kernel_function() {
   device_function();
 }
-// CHECK-LABEL: define void @kernel_function()
-// CHECK: call void @device_function()
-// CHECK: !{{[0-9]+}} = metadata !{void ()* @kernel_function, metadata !"kernel", i32 1}
+// CHECK: define ptx_kernel void @kernel_function()
+// CHECK: call ptx_device void @device_function()
 

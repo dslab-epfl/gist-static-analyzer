@@ -12,7 +12,7 @@ define weak void @foo_weak() nounwind {
 
 ; Calls to local function does not require the TOC restore 'nop'
 define void @test_direct() nounwind readnone {
-; CHECK-LABEL: test_direct:
+; CHECK: test_direct:
   tail call void @foo() nounwind
 ; CHECK: bl foo
 ; CHECK-NOT: nop
@@ -22,7 +22,7 @@ define void @test_direct() nounwind readnone {
 ; Calls to weak function requires a TOC restore 'nop' because they
 ; may be overridden in a different module.
 define void @test_weak() nounwind readnone {
-; CHECK-LABEL: test_weak:
+; CHECK: test_weak:
   tail call void @foo_weak() nounwind
 ; CHECK: bl foo
 ; CHECK-NEXT: nop
@@ -31,7 +31,7 @@ define void @test_weak() nounwind readnone {
 
 ; Indirect calls requires a full stub creation
 define void @test_indirect(void ()* nocapture %fp) nounwind {
-; CHECK-LABEL: test_indirect:
+; CHECK: test_indirect:
   tail call void %fp() nounwind
 ; CHECK: ld [[FP:[0-9]+]], 0(3)
 ; CHECK: ld 11, 16(3)
@@ -42,18 +42,12 @@ define void @test_indirect(void ()* nocapture %fp) nounwind {
   ret void
 }
 
-; Absolute values must use the regular indirect call sequence
-; The main purpose of this test is to ensure that BLA is not
-; used on 64-bit SVR4 (as e.g. on Darwin).
+; Absolute vales should be have the TOC restore 'nop'
 define void @test_abs() nounwind {
-; CHECK-LABEL: test_abs:
+; CHECK: test_abs:
   tail call void inttoptr (i64 1024 to void ()*)() nounwind
-; CHECK: ld [[FP:[0-9]+]], 1024(0)
-; CHECK: ld 11, 1040(0)
-; CHECK: ld 2, 1032(0)
-; CHECK-NEXT: mtctr [[FP]]
-; CHECK-NEXT: bctrl
-; CHECK-NEXT: ld 2, 40(1)
+; CHECK: bla 1024
+; CHECK-NEXT: nop
   ret void
 }
 
@@ -61,7 +55,7 @@ declare double @sin(double) nounwind
 
 ; External functions call should also have a 'nop'
 define double @test_external(double %x) nounwind {
-; CHECK-LABEL: test_external:
+; CHECK: test_external:
   %call = tail call double @sin(double %x) nounwind
 ; CHECK: bl sin
 ; CHECK-NEXT: nop

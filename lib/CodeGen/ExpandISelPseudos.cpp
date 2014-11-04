@@ -14,15 +14,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/CodeGen/Passes.h"
+#define DEBUG_TYPE "expand-isel-pseudos"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
-#include "llvm/Support/Debug.h"
+#include "llvm/CodeGen/Passes.h"
 #include "llvm/Target/TargetLowering.h"
-#include "llvm/Target/TargetSubtargetInfo.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Support/Debug.h"
 using namespace llvm;
-
-#define DEBUG_TYPE "expand-isel-pseudos"
 
 namespace {
   class ExpandISelPseudos : public MachineFunctionPass {
@@ -31,9 +30,9 @@ namespace {
     ExpandISelPseudos() : MachineFunctionPass(ID) {}
 
   private:
-    bool runOnMachineFunction(MachineFunction &MF) override;
+    virtual bool runOnMachineFunction(MachineFunction &MF);
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       MachineFunctionPass::getAnalysisUsage(AU);
     }
   };
@@ -46,7 +45,7 @@ INITIALIZE_PASS(ExpandISelPseudos, "expand-isel-pseudos",
 
 bool ExpandISelPseudos::runOnMachineFunction(MachineFunction &MF) {
   bool Changed = false;
-  const TargetLowering *TLI = MF.getSubtarget().getTargetLowering();
+  const TargetLowering *TLI = MF.getTarget().getTargetLowering();
 
   // Iterate through each instruction in the function, looking for pseudos.
   for (MachineFunction::iterator I = MF.begin(), E = MF.end(); I != E; ++I) {

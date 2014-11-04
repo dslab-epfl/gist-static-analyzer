@@ -1,4 +1,4 @@
-; RUN: opt -deadargelim -S < %s | FileCheck %s
+; RUN: opt -deadargelim -S %s | FileCheck %s
 
 define void @test(i32) {
   ret void
@@ -7,7 +7,7 @@ define void @test(i32) {
 define void @foo() {
   call void @test(i32 0)
   ret void
-; CHECK-LABEL: @foo(
+; CHECK: @foo
 ; CHECK: i32 undef
 }
 
@@ -32,7 +32,7 @@ entry:
   %i = alloca i32, align 4
   store volatile i32 10, i32* %i, align 4
 ; CHECK: %tmp = load volatile i32* %i, align 4
-; CHECK-NEXT: call void @f(i32 undef)
+; CHECK-next: call void @f(i32 undef)
   %tmp = load volatile i32* %i, align 4
   call void @f(i32 %tmp)
   ret void

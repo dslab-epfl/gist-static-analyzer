@@ -11,23 +11,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_HEXAGON_INSTPRINTER_HEXAGONINSTPRINTER_H
-#define LLVM_LIB_TARGET_HEXAGON_INSTPRINTER_HEXAGONINSTPRINTER_H
+#ifndef HEXAGONINSTPRINTER_H
+#define HEXAGONINSTPRINTER_H
 
+#include "HexagonMCInst.h"
 #include "llvm/MC/MCInstPrinter.h"
-#include "llvm/MC/MCInstrInfo.h"
 
 namespace llvm {
-  class HexagonMCInst;
-
   class HexagonInstPrinter : public MCInstPrinter {
   public:
     explicit HexagonInstPrinter(const MCAsmInfo &MAI,
                                 const MCInstrInfo &MII,
                                 const MCRegisterInfo &MRI)
-      : MCInstPrinter(MAI, MII, MRI), MII(MII) {}
+      : MCInstPrinter(MAI, MII, MRI) {}
 
-    void printInst(const MCInst *MI, raw_ostream &O, StringRef Annot) override;
+    virtual void printInst(const MCInst *MI, raw_ostream &O, StringRef Annot);
     void printInst(const HexagonMCInst *MI, raw_ostream &O, StringRef Annot);
     virtual StringRef getOpcodeName(unsigned Opcode) const;
     void printInstruction(const MCInst *MI, raw_ostream &O);
@@ -67,19 +65,10 @@ namespace llvm {
     void printSymbolLo(const MCInst *MI, unsigned OpNo, raw_ostream &O) const
       { printSymbol(MI, OpNo, O, false); }
 
-    const MCInstrInfo &getMII() const {
-      return MII;
-    }
-
+    bool isConstExtended(const MCInst *MI) const;
   protected:
     void printSymbol(const MCInst *MI, unsigned OpNo, raw_ostream &O, bool hi)
            const;
-
-    static const char PacketPadding;
-
-  private:
-    const MCInstrInfo &MII;
-
   };
 
 } // end namespace llvm

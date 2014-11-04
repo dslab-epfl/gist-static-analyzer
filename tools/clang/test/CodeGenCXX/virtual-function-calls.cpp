@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 %s -triple %itanium_abi_triple -std=c++11 -emit-llvm -o - | FileCheck %s
+// RUN: %clang_cc1 %s -emit-llvm -o - | FileCheck %s
 
 // PR5021
 namespace PR5021 {
@@ -8,7 +8,7 @@ struct A {
 };
 
 void f(A *a) {
-  // CHECK: call {{.*}}void %
+  // CHECK: call void %
   a->f('c');
 }
 
@@ -34,18 +34,5 @@ namespace Test1 {
 
   void f(B *b) {
     b->f();
-  }
-}
-
-namespace VirtualNoreturn {
-  struct A {
-    [[noreturn]] virtual void f();
-  };
-
-  // CHECK: @_ZN15VirtualNoreturn1f
-  void f(A *p) {
-    p->f();
-    // CHECK: call {{.*}}void %{{[^#]*$}}
-    // CHECK-NOT: unreachable
   }
 }

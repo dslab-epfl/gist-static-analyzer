@@ -44,8 +44,9 @@ public:
   SourceLocation getAtLoc() const { return AtLoc; }
   void setAtLoc(SourceLocation L) { AtLoc = L; }
 
-  SourceLocation getLocStart() const LLVM_READONLY { return AtLoc; }
-  SourceLocation getLocEnd() const LLVM_READONLY { return String->getLocEnd(); }
+  SourceRange getSourceRange() const LLVM_READONLY {
+    return SourceRange(AtLoc, String->getLocEnd());
+  }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == ObjCStringLiteralClass;
@@ -71,9 +72,8 @@ public:
   bool getValue() const { return Value; }
   void setValue(bool V) { Value = V; }
     
-  SourceLocation getLocStart() const LLVM_READONLY { return Loc; }
-  SourceLocation getLocEnd() const LLVM_READONLY { return Loc; }
-
+  SourceRange getSourceRange() const LLVM_READONLY { return SourceRange(Loc); }
+    
   SourceLocation getLocation() const { return Loc; }
   void setLocation(SourceLocation L) { Loc = L; }
     
@@ -112,8 +112,6 @@ public:
   
   SourceLocation getAtLoc() const { return Range.getBegin(); }
   
-  SourceLocation getLocStart() const LLVM_READONLY { return Range.getBegin(); }
-  SourceLocation getLocEnd() const LLVM_READONLY { return Range.getEnd(); }
   SourceRange getSourceRange() const LLVM_READONLY {
     return Range;
   }
@@ -134,30 +132,22 @@ class ObjCArrayLiteral : public Expr {
   unsigned NumElements;
   SourceRange Range;
   ObjCMethodDecl *ArrayWithObjectsMethod;
-  /// \brief in arc mode, this field holds array allocation method declaration.
-  /// In MRR mode, it is null
-  ObjCMethodDecl *ArrayAllocMethod;
   
-  ObjCArrayLiteral(ArrayRef<Expr *> Elements,
+  ObjCArrayLiteral(llvm::ArrayRef<Expr *> Elements,
                    QualType T, ObjCMethodDecl * Method,
-                   ObjCMethodDecl *allocMethod,
                    SourceRange SR);
   
   explicit ObjCArrayLiteral(EmptyShell Empty, unsigned NumElements)
     : Expr(ObjCArrayLiteralClass, Empty), NumElements(NumElements) {}
 
 public:
-  static ObjCArrayLiteral *Create(const ASTContext &C,
-                                  ArrayRef<Expr *> Elements,
+  static ObjCArrayLiteral *Create(ASTContext &C, 
+                                  llvm::ArrayRef<Expr *> Elements,
                                   QualType T, ObjCMethodDecl * Method,
-                                  ObjCMethodDecl *allocMethod,
                                   SourceRange SR);
 
-  static ObjCArrayLiteral *CreateEmpty(const ASTContext &C,
-                                       unsigned NumElements);
+  static ObjCArrayLiteral *CreateEmpty(ASTContext &C, unsigned NumElements);
 
-  SourceLocation getLocStart() const LLVM_READONLY { return Range.getBegin(); }
-  SourceLocation getLocEnd() const LLVM_READONLY { return Range.getEnd(); }
   SourceRange getSourceRange() const LLVM_READONLY { return Range; }
 
   static bool classof(const Stmt *T) {
@@ -189,10 +179,6 @@ public:
     return ArrayWithObjectsMethod; 
   }
     
-  ObjCMethodDecl *getArrayAllocMethod() const {
-    return ArrayAllocMethod;
-  }
-    
   // Iterators
   child_range children() { 
     return child_range((Stmt **)getElements(), 
@@ -216,18 +202,12 @@ struct ObjCDictionaryElement {
   
   /// \brief The number of elements this pack expansion will expand to, if
   /// this is a pack expansion and is known.
-  Optional<unsigned> NumExpansions;
+  llvm::Optional<unsigned> NumExpansions;
 
   /// \brief Determines whether this dictionary element is a pack expansion.
   bool isPackExpansion() const { return EllipsisLoc.isValid(); }
 };
-} // end namespace clang
 
-namespace llvm {
-template <> struct isPodLike<clang::ObjCDictionaryElement> : std::true_type {};
-}
-
-namespace clang {
 /// ObjCDictionaryLiteral - AST node to represent objective-c dictionary 
 /// literals; as in:  @{@"name" : NSUserName(), @"date" : [NSDate date] };
 class ObjCDictionaryLiteral : public Expr {
@@ -265,15 +245,10 @@ class ObjCDictionaryLiteral : public Expr {
   
   SourceRange Range;
   ObjCMethodDecl *DictWithObjectsMethod;
-
-  /// \brief for arc-specific dictionary literals, this field is used to store
-  /// NSDictionary allocation method declaration. It is null for MRR mode.
-  ObjCMethodDecl *DictAllocMethod;
     
   ObjCDictionaryLiteral(ArrayRef<ObjCDictionaryElement> VK, 
                         bool HasPackExpansions,
                         QualType T, ObjCMethodDecl *method,
-                        ObjCMethodDecl *allocMethod,
                         SourceRange SR);
 
   explicit ObjCDictionaryLiteral(EmptyShell Empty, unsigned NumElements,
@@ -291,27 +266,26 @@ class ObjCDictionaryLiteral : public Expr {
 
   ExpansionData *getExpansionData() {
     if (!HasPackExpansions)
-      return nullptr;
+      return 0;
     
     return reinterpret_cast<ExpansionData *>(getKeyValues() + NumElements);
   }
 
   const ExpansionData *getExpansionData() const {
     if (!HasPackExpansions)
-      return nullptr;
+      return 0;
     
     return reinterpret_cast<const ExpansionData *>(getKeyValues()+NumElements);
   }
 
 public:
-  static ObjCDictionaryLiteral *Create(const ASTContext &C,
+  static ObjCDictionaryLiteral *Create(ASTContext &C,
                                        ArrayRef<ObjCDictionaryElement> VK, 
                                        bool HasPackExpansions,
                                        QualType T, ObjCMethodDecl *method,
-                                       ObjCMethodDecl *allocMethod,
                                        SourceRange SR);
   
-  static ObjCDictionaryLiteral *CreateEmpty(const ASTContext &C,
+  static ObjCDictionaryLiteral *CreateEmpty(ASTContext &C, 
                                             unsigned NumElements,
                                             bool HasPackExpansions);
   
@@ -322,7 +296,8 @@ public:
   ObjCDictionaryElement getKeyValueElement(unsigned Index) const {
     assert((Index < NumElements) && "Arg access out of range!");
     const KeyValuePair &KV = getKeyValues()[Index];
-    ObjCDictionaryElement Result = { KV.Key, KV.Value, SourceLocation(), None };
+    ObjCDictionaryElement Result = { KV.Key, KV.Value, SourceLocation(),
+                                     llvm::Optional<unsigned>() };
     if (HasPackExpansions) {
       const ExpansionData &Expansion = getExpansionData()[Index];
       Result.EllipsisLoc = Expansion.EllipsisLoc;
@@ -335,11 +310,6 @@ public:
   ObjCMethodDecl *getDictWithObjectsMethod() const
     { return DictWithObjectsMethod; }
 
-  ObjCMethodDecl *getDictAllocMethod() const
-    { return DictAllocMethod; }
-
-  SourceLocation getLocStart() const LLVM_READONLY { return Range.getBegin(); }
-  SourceLocation getLocEnd() const LLVM_READONLY { return Range.getEnd(); }
   SourceRange getSourceRange() const LLVM_READONLY { return Range; }
   
   static bool classof(const Stmt *T) {
@@ -390,8 +360,9 @@ public:
     EncodedType = EncType; 
   }
 
-  SourceLocation getLocStart() const LLVM_READONLY { return AtLoc; }
-  SourceLocation getLocEnd() const LLVM_READONLY { return RParenLoc; }
+  SourceRange getSourceRange() const LLVM_READONLY {
+    return SourceRange(AtLoc, RParenLoc);
+  }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == ObjCEncodeExprClass;
@@ -422,8 +393,9 @@ public:
   void setAtLoc(SourceLocation L) { AtLoc = L; }
   void setRParenLoc(SourceLocation L) { RParenLoc = L; }
 
-  SourceLocation getLocStart() const LLVM_READONLY { return AtLoc; }
-  SourceLocation getLocEnd() const LLVM_READONLY { return RParenLoc; }
+  SourceRange getSourceRange() const LLVM_READONLY {
+    return SourceRange(AtLoc, RParenLoc);
+  }
 
   /// getNumArgs - Return the number of actual arguments to this call.
   unsigned getNumArgs() const { return SelName.getNumArgs(); }
@@ -436,13 +408,9 @@ public:
   child_range children() { return child_range(); }
 };
 
-/// ObjCProtocolExpr used for protocol expression in Objective-C.
-///
-/// This is used as: \@protocol(foo), as in:
-/// \code
-///   [obj conformsToProtocol:@protocol(foo)]
-/// \endcode
-///
+/// ObjCProtocolExpr used for protocol expression in Objective-C.  This is used
+/// as: @protocol(foo), as in:
+///   obj conformsToProtocol:@protocol(foo)]
 /// The return type is "Protocol*".
 class ObjCProtocolExpr : public Expr {
   ObjCProtocolDecl *TheProtocol;
@@ -465,8 +433,9 @@ public:
   void setAtLoc(SourceLocation L) { AtLoc = L; }
   void setRParenLoc(SourceLocation L) { RParenLoc = L; }
 
-  SourceLocation getLocStart() const LLVM_READONLY { return AtLoc; }
-  SourceLocation getLocEnd() const LLVM_READONLY { return RParenLoc; }
+  SourceRange getSourceRange() const LLVM_READONLY {
+    return SourceRange(AtLoc, RParenLoc);
+  }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == ObjCProtocolExprClass;
@@ -484,24 +453,18 @@ class ObjCIvarRefExpr : public Expr {
   ObjCIvarDecl *D;
   Stmt *Base;
   SourceLocation Loc;
-  /// OpLoc - This is the location of '.' or '->'
-  SourceLocation OpLoc;
-  
   bool IsArrow:1;      // True if this is "X->F", false if this is "X.F".
   bool IsFreeIvar:1;   // True if ivar reference has no base (self assumed).
 
 public:
   ObjCIvarRefExpr(ObjCIvarDecl *d, QualType t,
-                  SourceLocation l, SourceLocation oploc,
-                  Expr *base,
+                  SourceLocation l, Expr *base,
                   bool arrow = false, bool freeIvar = false) :
-    Expr(ObjCIvarRefExprClass, t, VK_LValue,
-         d->isBitField() ? OK_BitField : OK_Ordinary,
+    Expr(ObjCIvarRefExprClass, t, VK_LValue, OK_Ordinary,
          /*TypeDependent=*/false, base->isValueDependent(), 
          base->isInstantiationDependent(),
          base->containsUnexpandedParameterPack()), 
-    D(d), Base(base), Loc(l), OpLoc(oploc),
-    IsArrow(arrow), IsFreeIvar(freeIvar) {}
+    D(d), Base(base), Loc(l), IsArrow(arrow), IsFreeIvar(freeIvar) {}
 
   explicit ObjCIvarRefExpr(EmptyShell Empty)
     : Expr(ObjCIvarRefExprClass, Empty) {}
@@ -522,13 +485,10 @@ public:
   SourceLocation getLocation() const { return Loc; }
   void setLocation(SourceLocation L) { Loc = L; }
 
-  SourceLocation getLocStart() const LLVM_READONLY {
-    return isFreeIvar() ? Loc : getBase()->getLocStart();
+  SourceRange getSourceRange() const LLVM_READONLY {
+    return isFreeIvar() ? SourceRange(Loc)
+    : SourceRange(getBase()->getLocStart(), Loc);
   }
-  SourceLocation getLocEnd() const LLVM_READONLY { return Loc; }
-  
-  SourceLocation getOpLoc() const { return OpLoc; }
-  void setOpLoc(SourceLocation L) { OpLoc = L; }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == ObjCIvarRefExprClass;
@@ -701,13 +661,13 @@ public:
     if (isExplicitProperty()) {
       const ObjCPropertyDecl *PDecl = getExplicitProperty();
       if (const ObjCMethodDecl *Getter = PDecl->getGetterMethodDecl())
-        ResultType = Getter->getReturnType();
+        ResultType = Getter->getResultType();
       else
         ResultType = PDecl->getType();
     } else {
       const ObjCMethodDecl *Getter = getImplicitPropertyGetter();
       if (Getter)
-        ResultType = Getter->getReturnType(); // with reference!
+        ResultType = Getter->getResultType(); // with reference!
     }
     return ResultType;
   }
@@ -737,10 +697,11 @@ public:
   bool isSuperReceiver() const { return Receiver.is<const Type*>(); }
   bool isClassReceiver() const { return Receiver.is<ObjCInterfaceDecl*>(); }
 
-  SourceLocation getLocStart() const LLVM_READONLY {
-    return isObjectReceiver() ? getBase()->getLocStart() :getReceiverLocation();
+  SourceRange getSourceRange() const LLVM_READONLY {
+    return SourceRange((isObjectReceiver() ? getBase()->getLocStart()
+                                           : getReceiverLocation()), 
+                       IdLoc);
   }
-  SourceLocation getLocEnd() const LLVM_READONLY { return IdLoc; }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == ObjCPropertyRefExprClass;
@@ -761,7 +722,7 @@ private:
   void setExplicitProperty(ObjCPropertyDecl *D, unsigned methRefFlags) {
     PropertyOrGetter.setPointer(D);
     PropertyOrGetter.setInt(false);
-    SetterAndMethodRefFlags.setPointer(nullptr);
+    SetterAndMethodRefFlags.setPointer(0);
     SetterAndMethodRefFlags.setInt(methRefFlags);
   }
   void setImplicitProperty(ObjCMethodDecl *Getter, ObjCMethodDecl *Setter,
@@ -826,7 +787,7 @@ public:
   explicit ObjCSubscriptRefExpr(EmptyShell Empty)
     : Expr(ObjCSubscriptRefExprClass, Empty) {}
   
-  static ObjCSubscriptRefExpr *Create(const ASTContext &C,
+  static ObjCSubscriptRefExpr *Create(ASTContext &C,
                                       Expr *base,
                                       Expr *key, QualType T, 
                                       ObjCMethodDecl *getMethod,
@@ -835,12 +796,10 @@ public:
   
   SourceLocation getRBracket() const { return RBracket; }
   void setRBracket(SourceLocation RB) { RBracket = RB; }
-
-  SourceLocation getLocStart() const LLVM_READONLY {
-    return SubExprs[BASE]->getLocStart();
+  SourceRange getSourceRange() const LLVM_READONLY {
+    return SourceRange(SubExprs[BASE]->getLocStart(), RBracket);
   }
-  SourceLocation getLocEnd() const LLVM_READONLY { return RBracket; }
-
+  
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == ObjCSubscriptRefExprClass;
   }
@@ -1022,13 +981,13 @@ class ObjCMessageExpr : public Expr {
     return getNumSelectorLocs();
   }
 
-  static ObjCMessageExpr *alloc(const ASTContext &C,
+  static ObjCMessageExpr *alloc(ASTContext &C,
                                 ArrayRef<Expr *> Args,
                                 SourceLocation RBraceLoc,
                                 ArrayRef<SourceLocation> SelLocs,
                                 Selector Sel,
                                 SelectorLocationsKind &SelLocsK);
-  static ObjCMessageExpr *alloc(const ASTContext &C,
+  static ObjCMessageExpr *alloc(ASTContext &C,
                                 unsigned NumArgs,
                                 unsigned NumStoredSelLocs);
 
@@ -1070,7 +1029,7 @@ public:
   /// \param Args The message send arguments.
   ///
   /// \param RBracLoc The location of the closing square bracket ']'.
-  static ObjCMessageExpr *Create(const ASTContext &Context, QualType T,
+  static ObjCMessageExpr *Create(ASTContext &Context, QualType T, 
                                  ExprValueKind VK,
                                  SourceLocation LBracLoc,
                                  SourceLocation SuperLoc,
@@ -1106,7 +1065,7 @@ public:
   /// \param Args The message send arguments.
   ///
   /// \param RBracLoc The location of the closing square bracket ']'.
-  static ObjCMessageExpr *Create(const ASTContext &Context, QualType T,
+  static ObjCMessageExpr *Create(ASTContext &Context, QualType T,
                                  ExprValueKind VK,
                                  SourceLocation LBracLoc,
                                  TypeSourceInfo *Receiver,
@@ -1140,7 +1099,7 @@ public:
   /// \param Args The message send arguments.
   ///
   /// \param RBracLoc The location of the closing square bracket ']'.
-  static ObjCMessageExpr *Create(const ASTContext &Context, QualType T,
+  static ObjCMessageExpr *Create(ASTContext &Context, QualType T,
                                  ExprValueKind VK,
                                  SourceLocation LBracLoc,
                                  Expr *Receiver,
@@ -1158,7 +1117,7 @@ public:
   ///
   /// \param NumArgs The number of message arguments, not including
   /// the receiver.
-  static ObjCMessageExpr *CreateEmpty(const ASTContext &Context,
+  static ObjCMessageExpr *CreateEmpty(ASTContext &Context,
                                       unsigned NumArgs,
                                       unsigned NumStoredSelLocs);
 
@@ -1192,7 +1151,7 @@ public:
     if (getReceiverKind() == Instance)
       return static_cast<Expr *>(getReceiverPointer());
 
-    return nullptr;
+    return 0;
   }
   const Expr *getInstanceReceiver() const {
     return const_cast<ObjCMessageExpr*>(this)->getInstanceReceiver();
@@ -1219,7 +1178,7 @@ public:
   TypeSourceInfo *getClassReceiverTypeInfo() const {
     if (getReceiverKind() == Class)
       return reinterpret_cast<TypeSourceInfo *>(getReceiverPointer());
-    return nullptr;
+    return 0;
   }
 
   void setClassReceiver(TypeSourceInfo *TSInfo) {
@@ -1288,14 +1247,14 @@ public:
     if (HasMethod)
       return reinterpret_cast<const ObjCMethodDecl *>(SelectorOrMethod);
 
-    return nullptr;
+    return 0;
   }
 
   ObjCMethodDecl *getMethodDecl() { 
     if (HasMethod)
       return reinterpret_cast<ObjCMethodDecl *>(SelectorOrMethod);
 
-    return nullptr;
+    return 0;
   }
 
   void setMethodDecl(ObjCMethodDecl *MD) { 
@@ -1376,8 +1335,9 @@ public:
     LBracLoc = R.getBegin();
     RBracLoc = R.getEnd();
   }
-  SourceLocation getLocStart() const LLVM_READONLY { return LBracLoc; }
-  SourceLocation getLocEnd() const LLVM_READONLY { return RBracLoc; }
+  SourceRange getSourceRange() const LLVM_READONLY {
+    return SourceRange(LBracLoc, RBracLoc);
+  }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == ObjCMessageExprClass;
@@ -1412,20 +1372,16 @@ class ObjCIsaExpr : public Expr {
 
   /// IsaMemberLoc - This is the location of the 'isa'.
   SourceLocation IsaMemberLoc;
-  
-  /// OpLoc - This is the location of '.' or '->'
-  SourceLocation OpLoc;
 
   /// IsArrow - True if this is "X->F", false if this is "X.F".
   bool IsArrow;
 public:
-  ObjCIsaExpr(Expr *base, bool isarrow, SourceLocation l, SourceLocation oploc,
-              QualType ty)
+  ObjCIsaExpr(Expr *base, bool isarrow, SourceLocation l, QualType ty)
     : Expr(ObjCIsaExprClass, ty, VK_LValue, OK_Ordinary,
            /*TypeDependent=*/false, base->isValueDependent(),
            base->isInstantiationDependent(),
            /*ContainsUnexpandedParameterPack=*/false),
-      Base(base), IsaMemberLoc(l), OpLoc(oploc), IsArrow(isarrow) {}
+      Base(base), IsaMemberLoc(l), IsArrow(isarrow) {}
 
   /// \brief Build an empty expression.
   explicit ObjCIsaExpr(EmptyShell Empty) : Expr(ObjCIsaExprClass, Empty) { }
@@ -1440,19 +1396,10 @@ public:
   /// location of 'F'.
   SourceLocation getIsaMemberLoc() const { return IsaMemberLoc; }
   void setIsaMemberLoc(SourceLocation L) { IsaMemberLoc = L; }
-  
-  SourceLocation getOpLoc() const { return OpLoc; }
-  void setOpLoc(SourceLocation L) { OpLoc = L; }
 
-  SourceLocation getLocStart() const LLVM_READONLY {
-    return getBase()->getLocStart();
+  SourceRange getSourceRange() const LLVM_READONLY {
+    return SourceRange(getBase()->getLocStart(), IsaMemberLoc);
   }
-  
-  SourceLocation getBaseLocEnd() const LLVM_READONLY {
-    return getBase()->getLocEnd();
-  }
-  
-  SourceLocation getLocEnd() const LLVM_READONLY { return IsaMemberLoc; }
 
   SourceLocation getExprLoc() const LLVM_READONLY { return IsaMemberLoc; }
 
@@ -1522,11 +1469,9 @@ public:
   child_range children() { return child_range(&Operand, &Operand+1); }  
 
   // Source locations are determined by the subexpression.
-  SourceLocation getLocStart() const LLVM_READONLY {
-    return Operand->getLocStart();
+  SourceRange getSourceRange() const LLVM_READONLY {
+    return Operand->getSourceRange();
   }
-  SourceLocation getLocEnd() const LLVM_READONLY { return Operand->getLocEnd();}
-
   SourceLocation getExprLoc() const LLVM_READONLY {
     return getSubExpr()->getExprLoc();
   }
@@ -1575,9 +1520,8 @@ public:
   /// \brief The location of the bridge keyword.
   SourceLocation getBridgeKeywordLoc() const { return BridgeKeywordLoc; }
   
-  SourceLocation getLocStart() const LLVM_READONLY { return LParenLoc; }
-  SourceLocation getLocEnd() const LLVM_READONLY {
-    return getSubExpr()->getLocEnd();
+  SourceRange getSourceRange() const LLVM_READONLY {
+    return SourceRange(LParenLoc, getSubExpr()->getLocEnd());
   }
   
   static bool classof(const Stmt *T) {

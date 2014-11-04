@@ -12,11 +12,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/StaticAnalyzer/Core/PathSensitive/Store.h"
-#include "clang/AST/CXXInheritance.h"
-#include "clang/AST/CharUnits.h"
-#include "clang/AST/DeclObjC.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
+#include "clang/AST/CharUnits.h"
+#include "clang/AST/CXXInheritance.h"
+#include "clang/AST/DeclObjC.h"
 
 using namespace clang;
 using namespace ento;
@@ -48,6 +48,17 @@ const MemRegion *StoreManager::MakeElementRegion(const MemRegion *Base,
   return MRMgr.getElementRegion(EleTy, idx, Base, svalBuilder.getContext());
 }
 
+// FIXME: Merge with the implementation of the same method in MemRegion.cpp
+static bool IsCompleteType(ASTContext &Ctx, QualType Ty) {
+  if (const RecordType *RT = Ty->getAs<RecordType>()) {
+    const RecordDecl *D = RT->getDecl();
+    if (!D->getDefinition())
+      return false;
+  }
+
+  return true;
+}
+
 StoreRef StoreManager::BindDefault(Store store, const MemRegion *R, SVal V) {
   return StoreRef(store, *this);
 }
@@ -77,7 +88,7 @@ const MemRegion *StoreManager::castRegion(const MemRegion *R, QualType CastToTy)
 
     // We don't know what to make of it.  Return a NULL region, which
     // will be interpretted as UnknownVal.
-    return nullptr;
+    return NULL;
   }
 
   // Now assume we are casting from pointer to pointer. Other cases should
@@ -155,7 +166,7 @@ const MemRegion *StoreManager::castRegion(const MemRegion *R, QualType CastToTy)
       // If we cannot compute a raw offset, throw up our hands and return
       // a NULL MemRegion*.
       if (!baseR)
-        return nullptr;
+        return NULL;
 
       CharUnits off = rawOff.getOffset();
 
@@ -182,10 +193,10 @@ const MemRegion *StoreManager::castRegion(const MemRegion *R, QualType CastToTy)
 
       // Compute the index for the new ElementRegion.
       int64_t newIndex = 0;
-      const MemRegion *newSuperR = nullptr;
+      const MemRegion *newSuperR = 0;
 
       // We can only compute sizeof(PointeeTy) if it is a complete type.
-      if (!PointeeTy->isIncompleteType()) {
+      if (IsCompleteType(Ctx, PointeeTy)) {
         // Compute the size in **bytes**.
         CharUnits pointeeTySize = Ctx.getTypeSizeInChars(PointeeTy);
         if (!pointeeTySize.isZero()) {
@@ -212,38 +223,13 @@ const MemRegion *StoreManager::castRegion(const MemRegion *R, QualType CastToTy)
   llvm_unreachable("unreachable");
 }
 
-static bool regionMatchesCXXRecordType(SVal V, QualType Ty) {
-  const MemRegion *MR = V.getAsRegion();
-  if (!MR)
-    return true;
-
-  const TypedValueRegion *TVR = dyn_cast<TypedValueRegion>(MR);
-  if (!TVR)
-    return true;
-
-  const CXXRecordDecl *RD = TVR->getValueType()->getAsCXXRecordDecl();
-  if (!RD)
-    return true;
-
-  const CXXRecordDecl *Expected = Ty->getPointeeCXXRecordDecl();
-  if (!Expected)
-    Expected = Ty->getAsCXXRecordDecl();
-
-  return Expected->getCanonicalDecl() == RD->getCanonicalDecl();
-}
-
 SVal StoreManager::evalDerivedToBase(SVal Derived, const CastExpr *Cast) {
-  // Sanity check to avoid doing the wrong thing in the face of
-  // reinterpret_cast.
-  if (!regionMatchesCXXRecordType(Derived, Cast->getSubExpr()->getType()))
-    return UnknownVal();
-
   // Walk through the cast path to create nested CXXBaseRegions.
   SVal Result = Derived;
   for (CastExpr::path_const_iterator I = Cast->path_begin(),
                                      E = Cast->path_end();
        I != E; ++I) {
-    Result = evalDerivedToBase(Result, (*I)->getType(), (*I)->isVirtual());
+    Result = evalDerivedToBase(Result, (*I)->getType());
   }
   return Result;
 }
@@ -253,16 +239,13 @@ SVal StoreManager::evalDerivedToBase(SVal Derived, const CXXBasePath &Path) {
   SVal Result = Derived;
   for (CXXBasePath::const_iterator I = Path.begin(), E = Path.end();
        I != E; ++I) {
-    Result = evalDerivedToBase(Result, I->Base->getType(),
-                               I->Base->isVirtual());
+    Result = evalDerivedToBase(Result, I->Base->getType());
   }
   return Result;
 }
 
-SVal StoreManager::evalDerivedToBase(SVal Derived, QualType BaseType,
-                                     bool IsVirtual) {
-  Optional<loc::MemRegionVal> DerivedRegVal =
-      Derived.getAs<loc::MemRegionVal>();
+SVal StoreManager::evalDerivedToBase(SVal Derived, QualType BaseType) {
+  loc::MemRegionVal *DerivedRegVal = dyn_cast<loc::MemRegionVal>(&Derived);
   if (!DerivedRegVal)
     return Derived;
 
@@ -272,91 +255,67 @@ SVal StoreManager::evalDerivedToBase(SVal Derived, QualType BaseType,
   assert(BaseDecl && "not a C++ object?");
 
   const MemRegion *BaseReg =
-    MRMgr.getCXXBaseObjectRegion(BaseDecl, DerivedRegVal->getRegion(),
-                                 IsVirtual);
+    MRMgr.getCXXBaseObjectRegion(BaseDecl, DerivedRegVal->getRegion());
 
   return loc::MemRegionVal(BaseReg);
 }
 
-/// Returns the static type of the given region, if it represents a C++ class
-/// object.
-///
-/// This handles both fully-typed regions, where the dynamic type is known, and
-/// symbolic regions, where the dynamic type is merely bounded (and even then,
-/// only ostensibly!), but does not take advantage of any dynamic type info.
-static const CXXRecordDecl *getCXXRecordType(const MemRegion *MR) {
-  if (const TypedValueRegion *TVR = dyn_cast<TypedValueRegion>(MR))
-    return TVR->getValueType()->getAsCXXRecordDecl();
-  if (const SymbolicRegion *SR = dyn_cast<SymbolicRegion>(MR))
-    return SR->getSymbol()->getType()->getPointeeCXXRecordDecl();
-  return nullptr;
-}
-
-SVal StoreManager::evalDynamicCast(SVal Base, QualType TargetType,
+SVal StoreManager::evalDynamicCast(SVal Base, QualType DerivedType,
                                    bool &Failed) {
   Failed = false;
 
-  const MemRegion *MR = Base.getAsRegion();
-  if (!MR)
+  loc::MemRegionVal *BaseRegVal = dyn_cast<loc::MemRegionVal>(&Base);
+  if (!BaseRegVal)
     return UnknownVal();
+  const MemRegion *BaseRegion = BaseRegVal->stripCasts(/*StripBases=*/false);
 
   // Assume the derived class is a pointer or a reference to a CXX record.
-  TargetType = TargetType->getPointeeType();
-  assert(!TargetType.isNull());
-  const CXXRecordDecl *TargetClass = TargetType->getAsCXXRecordDecl();
-  if (!TargetClass && !TargetType->isVoidType())
+  DerivedType = DerivedType->getPointeeType();
+  assert(!DerivedType.isNull());
+  const CXXRecordDecl *DerivedDecl = DerivedType->getAsCXXRecordDecl();
+  if (!DerivedDecl && !DerivedType->isVoidType())
     return UnknownVal();
 
   // Drill down the CXXBaseObject chains, which represent upcasts (casts from
   // derived to base).
-  while (const CXXRecordDecl *MRClass = getCXXRecordType(MR)) {
-    // If found the derived class, the cast succeeds.
-    if (MRClass == TargetClass)
-      return loc::MemRegionVal(MR);
+  const MemRegion *SR = BaseRegion;
+  while (const TypedRegion *TSR = dyn_cast_or_null<TypedRegion>(SR)) {
+    QualType BaseType = TSR->getLocationType()->getPointeeType();
+    assert(!BaseType.isNull());
+    const CXXRecordDecl *SRDecl = BaseType->getAsCXXRecordDecl();
+    if (!SRDecl)
+      return UnknownVal();
 
-    // We skip over incomplete types. They must be the result of an earlier
-    // reinterpret_cast, as one can only dynamic_cast between types in the same
-    // class hierarchy.
-    if (!TargetType->isVoidType() && MRClass->hasDefinition()) {
+    // If found the derived class, the cast succeeds.
+    if (SRDecl == DerivedDecl)
+      return loc::MemRegionVal(TSR);
+
+    if (!DerivedType->isVoidType()) {
       // Static upcasts are marked as DerivedToBase casts by Sema, so this will
       // only happen when multiple or virtual inheritance is involved.
       CXXBasePaths Paths(/*FindAmbiguities=*/false, /*RecordPaths=*/true,
                          /*DetectVirtual=*/false);
-      if (MRClass->isDerivedFrom(TargetClass, Paths))
-        return evalDerivedToBase(loc::MemRegionVal(MR), Paths.front());
+      if (SRDecl->isDerivedFrom(DerivedDecl, Paths))
+        return evalDerivedToBase(loc::MemRegionVal(TSR), Paths.front());
     }
 
-    if (const CXXBaseObjectRegion *BaseR = dyn_cast<CXXBaseObjectRegion>(MR)) {
+    if (const CXXBaseObjectRegion *R = dyn_cast<CXXBaseObjectRegion>(TSR))
       // Drill down the chain to get the derived classes.
-      MR = BaseR->getSuperRegion();
-      continue;
+      SR = R->getSuperRegion();
+    else {
+      // We reached the bottom of the hierarchy.
+
+      // If this is a cast to void*, return the region.
+      if (DerivedType->isVoidType())
+        return loc::MemRegionVal(TSR);
+
+      // We did not find the derived class. We we must be casting the base to
+      // derived, so the cast should fail.
+      Failed = true;
+      return UnknownVal();
     }
-
-    // If this is a cast to void*, return the region.
-    if (TargetType->isVoidType())
-      return loc::MemRegionVal(MR);
-
-    // Strange use of reinterpret_cast can give us paths we don't reason
-    // about well, by putting in ElementRegions where we'd expect
-    // CXXBaseObjectRegions. If it's a valid reinterpret_cast (i.e. if the
-    // derived class has a zero offset from the base class), then it's safe
-    // to strip the cast; if it's invalid, -Wreinterpret-base-class should
-    // catch it. In the interest of performance, the analyzer will silently
-    // do the wrong thing in the invalid case (because offsets for subregions
-    // will be wrong).
-    const MemRegion *Uncasted = MR->StripCasts(/*IncludeBaseCasts=*/false);
-    if (Uncasted == MR) {
-      // We reached the bottom of the hierarchy and did not find the derived
-      // class. We we must be casting the base to derived, so the cast should
-      // fail.
-      break;
-    }
-
-    MR = Uncasted;
   }
-
-  // We failed if the region we ended up with has perfect type info.
-  Failed = isa<TypedValueRegion>(MR);
+  
   return UnknownVal();
 }
 
@@ -389,12 +348,12 @@ SVal StoreManager::getLValueFieldOrIvar(const Decl *D, SVal Base) {
   if (Base.isUnknownOrUndef())
     return Base;
 
-  Loc BaseL = Base.castAs<Loc>();
-  const MemRegion* BaseR = nullptr;
+  Loc BaseL = cast<Loc>(Base);
+  const MemRegion* BaseR = 0;
 
   switch (BaseL.getSubKind()) {
   case loc::MemRegionKind:
-    BaseR = BaseL.castAs<loc::MemRegionVal>().getRegion();
+    BaseR = cast<loc::MemRegionVal>(BaseL).getRegion();
     break;
 
   case loc::GotoLabelKind:
@@ -431,16 +390,16 @@ SVal StoreManager::getLValueElement(QualType elementType, NonLoc Offset,
   // FIXME: For absolute pointer addresses, we just return that value back as
   //  well, although in reality we should return the offset added to that
   //  value.
-  if (Base.isUnknownOrUndef() || Base.getAs<loc::ConcreteInt>())
+  if (Base.isUnknownOrUndef() || isa<loc::ConcreteInt>(Base))
     return Base;
 
-  const MemRegion* BaseRegion = Base.castAs<loc::MemRegionVal>().getRegion();
+  const MemRegion* BaseRegion = cast<loc::MemRegionVal>(Base).getRegion();
 
   // Pointer of any type can be cast and used as array base.
   const ElementRegion *ElemR = dyn_cast<ElementRegion>(BaseRegion);
 
   // Convert the offset to the appropriate size and signedness.
-  Offset = svalBuilder.convertToArrayIndex(Offset).castAs<NonLoc>();
+  Offset = cast<NonLoc>(svalBuilder.convertToArrayIndex(Offset));
 
   if (!ElemR) {
     //
@@ -458,16 +417,15 @@ SVal StoreManager::getLValueElement(QualType elementType, NonLoc Offset,
 
   SVal BaseIdx = ElemR->getIndex();
 
-  if (!BaseIdx.getAs<nonloc::ConcreteInt>())
+  if (!isa<nonloc::ConcreteInt>(BaseIdx))
     return UnknownVal();
 
-  const llvm::APSInt &BaseIdxI =
-      BaseIdx.castAs<nonloc::ConcreteInt>().getValue();
+  const llvm::APSInt& BaseIdxI = cast<nonloc::ConcreteInt>(BaseIdx).getValue();
 
   // Only allow non-integer offsets if the base region has no offset itself.
   // FIXME: This is a somewhat arbitrary restriction. We should be using
   // SValBuilder here to add the two offsets without checking their types.
-  if (!Offset.getAs<nonloc::ConcreteInt>()) {
+  if (!isa<nonloc::ConcreteInt>(Offset)) {
     if (isa<ElementRegion>(BaseRegion->StripCasts()))
       return UnknownVal();
 
@@ -476,7 +434,7 @@ SVal StoreManager::getLValueElement(QualType elementType, NonLoc Offset,
                                                     Ctx));
   }
 
-  const llvm::APSInt& OffI = Offset.castAs<nonloc::ConcreteInt>().getValue();
+  const llvm::APSInt& OffI = cast<nonloc::ConcreteInt>(Offset).getValue();
   assert(BaseIdxI.isSigned());
 
   // Compute the new index.

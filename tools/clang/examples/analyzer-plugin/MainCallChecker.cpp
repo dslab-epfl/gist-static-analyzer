@@ -1,14 +1,14 @@
 #include "clang/StaticAnalyzer/Core/Checker.h"
-#include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
-#include "clang/StaticAnalyzer/Core/CheckerRegistry.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
+#include "clang/StaticAnalyzer/Core/CheckerRegistry.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 
 using namespace clang;
 using namespace ento;
 
 namespace {
 class MainCallChecker : public Checker < check::PreStmt<CallExpr> > {
-  mutable std::unique_ptr<BugType> BT;
+  mutable OwningPtr<BugType> BT;
 
 public:
   void checkPreStmt(const CallExpr *CE, CheckerContext &C) const;
@@ -35,7 +35,7 @@ void MainCallChecker::checkPreStmt(const CallExpr *CE, CheckerContext &C) const 
       return;
 
     if (!BT)
-      BT.reset(new BugType(this, "call to main", "example analyzer plugin"));
+      BT.reset(new BugType("call to main", "example analyzer plugin"));
 
     BugReport *report = new BugReport(*BT, BT->getName(), N);
     report->addRange(Callee->getSourceRange());

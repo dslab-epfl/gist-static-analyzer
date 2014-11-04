@@ -16,10 +16,11 @@
 #include "CodeGenFunction.h"
 #include "CodeGenModule.h"
 #include "clang/AST/Decl.h"
-#include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/CallSite.h"
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/DerivedTypes.h"
+#include "llvm/BasicBlock.h"
+#include "llvm/Constants.h"
+#include "llvm/DerivedTypes.h"
+#include "llvm/Support/CallSite.h"
+
 #include <vector>
 
 using namespace clang;
@@ -39,7 +40,7 @@ private:
 public:
   CGNVCUDARuntime(CodeGenModule &CGM);
 
-  void EmitDeviceStubBody(CodeGenFunction &CGF, FunctionArgList &Args) override;
+  void EmitDeviceStubBody(CodeGenFunction &CGF, FunctionArgList &Args);
 };
 
 }
@@ -78,7 +79,7 @@ llvm::Constant *CGNVCUDARuntime::getLaunchFn() const {
 void CGNVCUDARuntime::EmitDeviceStubBody(CodeGenFunction &CGF,
                                          FunctionArgList &Args) {
   // Build the argument value list and the argument stack struct type.
-  SmallVector<llvm::Value *, 16> ArgValues;
+  llvm::SmallVector<llvm::Value *, 16> ArgValues;
   std::vector<llvm::Type *> ArgTypes;
   for (FunctionArgList::const_iterator I = Args.begin(), E = Args.end();
        I != E; ++I) {
@@ -104,7 +105,7 @@ void CGNVCUDARuntime::EmitDeviceStubBody(CodeGenFunction &CGF,
     Args[2] = CGF.Builder.CreateIntCast(
         llvm::ConstantExpr::getOffsetOf(ArgStackTy, I),
         SizeTy, false);
-    llvm::CallSite CS = CGF.EmitRuntimeCallOrInvoke(cudaSetupArgFn, Args);
+    llvm::CallSite CS = CGF.EmitCallOrInvoke(cudaSetupArgFn, Args);
     llvm::Constant *Zero = llvm::ConstantInt::get(IntTy, 0);
     llvm::Value *CSZero = CGF.Builder.CreateICmpEQ(CS.getInstruction(), Zero);
     CGF.Builder.CreateCondBr(CSZero, NextBlock, EndBlock);
@@ -114,7 +115,7 @@ void CGNVCUDARuntime::EmitDeviceStubBody(CodeGenFunction &CGF,
   // Emit the call to cudaLaunch
   llvm::Constant *cudaLaunchFn = getLaunchFn();
   llvm::Value *Arg = CGF.Builder.CreatePointerCast(CGF.CurFn, CharPtrTy);
-  CGF.EmitRuntimeCallOrInvoke(cudaLaunchFn, Arg);
+  CGF.EmitCallOrInvoke(cudaLaunchFn, Arg);
   CGF.EmitBranch(EndBlock);
 
   CGF.EmitBlock(EndBlock);

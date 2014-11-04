@@ -13,8 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "CIndexer.h"
-#include "CXSourceLocation.h"
 #include "CXTranslationUnit.h"
+#include "CXSourceLocation.h"
 #include "clang/AST/DeclVisitor.h"
 #include "clang/Frontend/ASTUnit.h"
 #include "llvm/ADT/SmallString.h"
@@ -24,12 +24,8 @@ using namespace clang;
 extern "C" {
 void clang_getInclusions(CXTranslationUnit TU, CXInclusionVisitor CB,
                          CXClientData clientData) {
-  if (cxtu::isNotUsableTU(TU)) {
-    LOG_BAD_TU(TU);
-    return;
-  }
-
-  ASTUnit *CXXUnit = cxtu::getASTUnit(TU);
+  
+  ASTUnit *CXXUnit = static_cast<ASTUnit *>(TU->TUData);
   SourceManager &SM = CXXUnit->getSourceManager();
   ASTContext &Ctx = CXXUnit->getASTContext();
 
@@ -68,8 +64,7 @@ void clang_getInclusions(CXTranslationUnit TU, CXInclusionVisitor CB,
             
     // Callback to the client.
     // FIXME: We should have a function to construct CXFiles.
-    CB(static_cast<CXFile>(
-         const_cast<FileEntry *>(FI.getContentCache()->OrigEntry)), 
+    CB((CXFile) FI.getContentCache()->OrigEntry, 
        InclusionStack.data(), InclusionStack.size(), clientData);
   }    
 }

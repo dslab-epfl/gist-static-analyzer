@@ -1,6 +1,6 @@
 ; RUN: opt < %s -S -early-cse | FileCheck %s
 
-; CHECK-LABEL: @test1(
+; CHECK: @test1
 define void @test1(float %A, float %B, float* %PA, float* %PB) {
   ; CHECK-NEXT: fadd
   ; CHECK-NEXT: store
@@ -13,20 +13,20 @@ define void @test1(float %A, float %B, float* %PA, float* %PB) {
   ret void
 }
 
-; CHECK-LABEL: @test2(
+; CHECK: @test2
 define void @test2(float %A, float %B, i1* %PA, i1* %PB) {
   ; CHECK-NEXT: fcmp
   ; CHECK-NEXT: store
   ; CHECK-NEXT: store
   ; CHECK-NEXT: ret
-  %C = fcmp oeq float %A, %B
+  %C = fcmp eq float %A, %B
   store i1 %C, i1* %PA
-  %D = fcmp oeq float %B, %A
+  %D = fcmp eq float %B, %A
   store i1 %D, i1* %PB
   ret void
 }
 
-; CHECK-LABEL: @test3(
+; CHECK: @test3
 define void @test3(float %A, float %B, i1* %PA, i1* %PB) {
   ; CHECK-NEXT: fcmp
   ; CHECK-NEXT: store
@@ -39,7 +39,7 @@ define void @test3(float %A, float %B, i1* %PA, i1* %PB) {
   ret void
 }
 
-; CHECK-LABEL: @test4(
+; CHECK: @test4
 define void @test4(i32 %A, i32 %B, i1* %PA, i1* %PB) {
   ; CHECK-NEXT: icmp
   ; CHECK-NEXT: store
@@ -52,7 +52,7 @@ define void @test4(i32 %A, i32 %B, i1* %PA, i1* %PB) {
   ret void
 }
 
-; CHECK-LABEL: @test5(
+; CHECK: @test5
 define void @test5(i32 %A, i32 %B, i1* %PA, i1* %PB) {
   ; CHECK-NEXT: icmp
   ; CHECK-NEXT: store

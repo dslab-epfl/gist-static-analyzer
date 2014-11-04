@@ -5,7 +5,7 @@ target datalayout = "e-p:64:64:64"
 ; GVN should ignore the store to p[1] to see that the load from p[0] is
 ; fully redundant.
 
-; CHECK-LABEL: @yes(
+; CHECK: @yes
 ; CHECK: if.then:
 ; CHECK-NEXT: store i32 0, i32* %q
 ; CHECK-NEXT: ret void
@@ -30,7 +30,7 @@ if.else:
 ; fully redundant. However, the second load is larger, so it's not a simple
 ; redundancy.
 
-; CHECK-LABEL: @watch_out_for_size_change(
+; CHECK: @watch_out_for_size_change
 ; CHECK: if.then:
 ; CHECK-NEXT: store i32 0, i32* %q
 ; CHECK-NEXT: ret void

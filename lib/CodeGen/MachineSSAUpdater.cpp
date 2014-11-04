@@ -13,23 +13,21 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/MachineSSAUpdater.h"
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetRegisterInfo.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/AlignOf.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/TargetInstrInfo.h"
-#include "llvm/Target/TargetRegisterInfo.h"
-#include "llvm/Target/TargetSubtargetInfo.h"
 #include "llvm/Transforms/Utils/SSAUpdaterImpl.h"
 using namespace llvm;
-
-#define DEBUG_TYPE "machine-ssaupdater"
 
 typedef DenseMap<MachineBasicBlock*, unsigned> AvailableValsTy;
 static AvailableValsTy &getAvailableVals(void *AV) {
@@ -38,8 +36,8 @@ static AvailableValsTy &getAvailableVals(void *AV) {
 
 MachineSSAUpdater::MachineSSAUpdater(MachineFunction &MF,
                                      SmallVectorImpl<MachineInstr*> *NewPHI)
-  : AV(nullptr), InsertedPHIs(NewPHI) {
-  TII = MF.getSubtarget().getInstrInfo();
+  : AV(0), InsertedPHIs(NewPHI) {
+  TII = MF.getTarget().getInstrInfo();
   MRI = &MF.getRegInfo();
 }
 
@@ -50,7 +48,7 @@ MachineSSAUpdater::~MachineSSAUpdater() {
 /// Initialize - Reset this object to get ready for a new set of SSA
 /// updates.  ProtoValue is the value used to name PHI nodes.
 void MachineSSAUpdater::Initialize(unsigned V) {
-  if (!AV)
+  if (AV == 0)
     AV = new AvailableValsTy();
   else
     getAvailableVals(AV).clear();
@@ -79,7 +77,7 @@ unsigned MachineSSAUpdater::GetValueAtEndOfBlock(MachineBasicBlock *BB) {
 
 static
 unsigned LookForIdenticalPHI(MachineBasicBlock *BB,
-        SmallVectorImpl<std::pair<MachineBasicBlock*, unsigned> > &PredValues) {
+          SmallVector<std::pair<MachineBasicBlock*, unsigned>, 8> &PredValues) {
   if (BB->empty())
     return 0;
 
@@ -111,7 +109,7 @@ unsigned LookForIdenticalPHI(MachineBasicBlock *BB,
 /// a value of the given register class at the start of the specified basic
 /// block. It returns the virtual register defined by the instruction.
 static
-MachineInstrBuilder InsertNewDef(unsigned Opcode,
+MachineInstr *InsertNewDef(unsigned Opcode,
                            MachineBasicBlock *BB, MachineBasicBlock::iterator I,
                            const TargetRegisterClass *RC,
                            MachineRegisterInfo *MRI,
@@ -185,12 +183,13 @@ unsigned MachineSSAUpdater::GetValueInMiddleOfBlock(MachineBasicBlock *BB) {
 
   // Otherwise, we do need a PHI: insert one now.
   MachineBasicBlock::iterator Loc = BB->empty() ? BB->end() : BB->begin();
-  MachineInstrBuilder InsertedPHI = InsertNewDef(TargetOpcode::PHI, BB,
-                                                 Loc, VRC, MRI, TII);
+  MachineInstr *InsertedPHI = InsertNewDef(TargetOpcode::PHI, BB,
+                                           Loc, VRC, MRI, TII);
 
   // Fill in all the predecessors of the PHI.
+  MachineInstrBuilder MIB(InsertedPHI);
   for (unsigned i = 0, e = PredValues.size(); i != e; ++i)
-    InsertedPHI.addReg(PredValues[i].second).addMBB(PredValues[i].first);
+    MIB.addReg(PredValues[i].second).addMBB(PredValues[i].first);
 
   // See if the PHI node can be merged to a single value.  This can happen in
   // loop cases when we get a PHI of itself and one other value.
@@ -230,6 +229,16 @@ void MachineSSAUpdater::RewriteUse(MachineOperand &U) {
   }
 
   U.setReg(NewVR);
+}
+
+void MachineSSAUpdater::ReplaceRegWith(unsigned OldReg, unsigned NewReg) {
+  MRI->replaceRegWith(OldReg, NewReg);
+
+  AvailableValsTy &AvailableVals = getAvailableVals(AV);
+  for (DenseMap<MachineBasicBlock*, unsigned>::iterator
+         I = AvailableVals.begin(), E = AvailableVals.end(); I != E; ++I)
+    if (I->second == OldReg)
+      I->second = NewReg;
 }
 
 /// SSAUpdaterTraits<MachineSSAUpdater> - Traits for the SSAUpdaterImpl
@@ -307,7 +316,8 @@ public:
   /// the specified predecessor block.
   static void AddPHIOperand(MachineInstr *PHI, unsigned Val,
                             MachineBasicBlock *Pred) {
-    MachineInstrBuilder(*Pred->getParent(), PHI).addReg(Val).addMBB(Pred);
+    PHI->addOperand(MachineOperand::CreateReg(Val, false));
+    PHI->addOperand(MachineOperand::CreateMBB(Pred));
   }
 
   /// InstrIsPHI - Check if an instruction is a PHI.
@@ -315,7 +325,7 @@ public:
   static MachineInstr *InstrIsPHI(MachineInstr *I) {
     if (I && I->isPHI())
       return I;
-    return nullptr;
+    return 0;
   }
 
   /// ValueIsPHI - Check if the instruction that defines the specified register
@@ -330,7 +340,7 @@ public:
     MachineInstr *PHI = ValueIsPHI(Val, Updater);
     if (PHI && PHI->getNumOperands() <= 1)
       return PHI;
-    return nullptr;
+    return 0;
   }
 
   /// GetPHIValue - For the specified PHI instruction, return the register

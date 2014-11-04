@@ -3,13 +3,13 @@
 ; Handle a retain+release pair entirely contained within a split loop backedge.
 ; rdar://11256239
 
-; CHECK-LABEL: define void @test0(
-; CHECK: call i8* @objc_retain(i8* %call) [[NUW:#[0-9]+]]
-; CHECK: call i8* @objc_retain(i8* %call) [[NUW]]
-; CHECK: call i8* @objc_retain(i8* %cond) [[NUW]]
-; CHECK: call void @objc_release(i8* %call) [[NUW]]
-; CHECK: call void @objc_release(i8* %call) [[NUW]]
-; CHECK: call void @objc_release(i8* %cond) [[NUW]]
+; CHECK: define void @test0
+; CHECK: call i8* @objc_retain(i8* %call) nounwind
+; CHECK: call i8* @objc_retain(i8* %call) nounwind
+; CHECK: call i8* @objc_retain(i8* %cond) nounwind
+; CHECK: call void @objc_release(i8* %call) nounwind
+; CHECK: call void @objc_release(i8* %call) nounwind
+; CHECK: call void @objc_release(i8* %cond) nounwind
 define void @test0() {
 entry:
   br label %while.body
@@ -46,5 +46,3 @@ declare i8* @objc_retain(i8*)
 declare void @use_pointer(i8*)
 
 !0 = metadata !{}
-
-; CHECK: attributes [[NUW]] = { nounwind }

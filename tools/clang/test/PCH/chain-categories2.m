@@ -45,7 +45,6 @@
 #else
 //===----------------------------------------------------------------------===//
 
-// expected-note@30 {{receiver is instance of class declared here}}
 void f(I* i) {
   [i meth]; // expected-warning {{not found}}
 }

@@ -1,6 +1,4 @@
-// RUN: %clang_cc1 -analyze -analyzer-checker=core,unix.Malloc,osx.cocoa.NonNilReturnValue,debug.ExprInspection -analyzer-store=region -verify %s
-
-void clang_analyzer_eval(int);
+// RUN: %clang_cc1 -analyze -analyzer-checker=core,unix.Malloc -analyzer-store=region -verify %s
 
 typedef signed char BOOL;
 typedef long NSInteger;
@@ -36,7 +34,7 @@ id constant_string() {
 }
 
 id dynamic_string() {
-    return @(strdup("boxed dynamic string")); // expected-warning{{Potential memory leak}}
+    return @(strdup("boxed dynamic string")); // expected-warning{{Memory is never released; potential leak}}
 }
 
 id const_char_pointer(int *x) {
@@ -44,14 +42,3 @@ id const_char_pointer(int *x) {
     return @(3);
   return @(*x); // expected-warning {{Dereference of null pointer (loaded from variable 'x')}}
 }
-
-void checkNonNil() {
-  clang_analyzer_eval(!!@3); // expected-warning{{TRUE}}
-  clang_analyzer_eval(!!@(3+4)); // expected-warning{{TRUE}}
-  clang_analyzer_eval(!!@(57.0)); // expected-warning{{TRUE}}
-
-  const char *str = "abc";
-  clang_analyzer_eval(!!@(str)); // expected-warning{{TRUE}}
-  clang_analyzer_eval(!!@__objc_yes); // expected-warning{{TRUE}}
-}
-

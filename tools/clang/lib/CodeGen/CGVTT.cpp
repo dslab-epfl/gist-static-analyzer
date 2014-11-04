@@ -19,8 +19,7 @@ using namespace clang;
 using namespace CodeGen;
 
 static llvm::Constant *
-GetAddrOfVTTVTable(CodeGenVTables &CGVT, CodeGenModule &CGM,
-                   const CXXRecordDecl *MostDerivedClass,
+GetAddrOfVTTVTable(CodeGenVTables &CGVT, const CXXRecordDecl *MostDerivedClass,
                    const VTTVTable &VTable,
                    llvm::GlobalVariable::LinkageTypes Linkage,
                    llvm::DenseMap<BaseSubobject, uint64_t> &AddressPoints) {
@@ -28,7 +27,7 @@ GetAddrOfVTTVTable(CodeGenVTables &CGVT, CodeGenModule &CGM,
     assert(VTable.getBaseOffset().isZero() &&
            "Most derived class vtable must have a zero offset!");
     // This is a regular vtable.
-    return CGM.getCXXABI().getAddrOfVTable(MostDerivedClass, CharUnits());
+    return CGVT.GetAddrOfVTable(MostDerivedClass);
   }
   
   return CGVT.GenerateConstructionVTable(MostDerivedClass, 
@@ -53,7 +52,7 @@ CodeGenVTables::EmitVTTDefinition(llvm::GlobalVariable *VTT,
   for (const VTTVTable *i = Builder.getVTTVTables().begin(),
                        *e = Builder.getVTTVTables().end(); i != e; ++i) {
     VTableAddressPoints.push_back(VTableAddressPointsMapTy());
-    VTables.push_back(GetAddrOfVTTVTable(*this, CGM, RD, *i, Linkage,
+    VTables.push_back(GetAddrOfVTTVTable(*this, RD, *i, Linkage,
                                          VTableAddressPoints.back()));
   }
 
@@ -65,9 +64,8 @@ CodeGenVTables::EmitVTTDefinition(llvm::GlobalVariable *VTT,
     uint64_t AddressPoint;
     if (VTTVT.getBase() == RD) {
       // Just get the address point for the regular vtable.
-      AddressPoint =
-          getItaniumVTableContext().getVTableLayout(RD).getAddressPoint(
-              i->VTableBase);
+      AddressPoint = VTContext.getVTableLayout(RD)
+                              .getAddressPoint(i->VTableBase);
       assert(AddressPoint != 0 && "Did not find vtable address point!");
     } else {
       AddressPoint = VTableAddressPoints[i->VTableIndex].lookup(i->VTableBase);
@@ -95,7 +93,7 @@ CodeGenVTables::EmitVTTDefinition(llvm::GlobalVariable *VTT,
   VTT->setLinkage(Linkage);
 
   // Set the right visibility.
-  CGM.setGlobalVisibility(VTT, RD);
+  CGM.setTypeVisibility(VTT, RD, CodeGenModule::TVK_ForVTT);
 }
 
 llvm::GlobalVariable *CodeGenVTables::GetAddrOfVTT(const CXXRecordDecl *RD) {
@@ -103,13 +101,12 @@ llvm::GlobalVariable *CodeGenVTables::GetAddrOfVTT(const CXXRecordDecl *RD) {
 
   SmallString<256> OutName;
   llvm::raw_svector_ostream Out(OutName);
-  cast<ItaniumMangleContext>(CGM.getCXXABI().getMangleContext())
-      .mangleCXXVTT(RD, Out);
+  CGM.getCXXABI().getMangleContext().mangleCXXVTT(RD, Out);
   Out.flush();
   StringRef Name = OutName.str();
 
   // This will also defer the definition of the VTT.
-  (void) CGM.getCXXABI().getAddrOfVTable(RD, CharUnits());
+  (void) GetAddrOfVTable(RD);
 
   VTTBuilder Builder(CGM.getContext(), RD, /*GenerateDefinition=*/false);
 
@@ -121,6 +118,24 @@ llvm::GlobalVariable *CodeGenVTables::GetAddrOfVTT(const CXXRecordDecl *RD) {
                                           llvm::GlobalValue::ExternalLinkage);
   GV->setUnnamedAddr(true);
   return GV;
+}
+
+bool CodeGenVTables::needsVTTParameter(GlobalDecl GD) {
+  const CXXMethodDecl *MD = cast<CXXMethodDecl>(GD.getDecl());
+  
+  // We don't have any virtual bases, just return early.
+  if (!MD->getParent()->getNumVBases())
+    return false;
+  
+  // Check if we have a base constructor.
+  if (isa<CXXConstructorDecl>(MD) && GD.getCtorType() == Ctor_Base)
+    return true;
+
+  // Check if we have a base destructor.
+  if (isa<CXXDestructorDecl>(MD) && GD.getDtorType() == Dtor_Base)
+    return true;
+  
+  return false;
 }
 
 uint64_t CodeGenVTables::getSubVTTIndex(const CXXRecordDecl *RD, 

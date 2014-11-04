@@ -4,7 +4,7 @@
 ; non-address use(s).
 
 define i32 @foo(i8* %x, i32 %y) nounwind {
-; CHECK-LABEL: foo:
+; CHECK: foo:
 ; CHECK-NOT: ret
 ; CHECK: movzbl %{{[abcd]h}},
 ; CHECK-NOT: ret

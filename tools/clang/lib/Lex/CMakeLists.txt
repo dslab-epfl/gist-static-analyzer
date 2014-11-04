@@ -12,7 +12,6 @@ add_clang_library(clangLex
   ModuleMap.cpp
   PPCaching.cpp
   PPCallbacks.cpp
-  PPConditionalDirectiveRecord.cpp
   PPDirectives.cpp
   PPExpressions.cpp
   PPLexerChange.cpp
@@ -25,7 +24,14 @@ add_clang_library(clangLex
   ScratchBuffer.cpp
   TokenConcatenation.cpp
   TokenLexer.cpp
+  )
 
-  LINK_LIBS
+add_dependencies(clangLex
+  ClangAttrSpellings
+  ClangDiagnosticCommon
+  ClangDiagnosticLex
+  )
+
+target_link_libraries(clangLex
   clangBasic
   )

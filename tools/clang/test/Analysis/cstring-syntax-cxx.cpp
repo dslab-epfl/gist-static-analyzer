@@ -15,8 +15,3 @@ void test(X a, X b) {
   X c = a + b;
 }
 
-// Ensure we don't crash on custom-defined strncat.
-char strncat ();
-int main () {
-  return strncat ();
-}

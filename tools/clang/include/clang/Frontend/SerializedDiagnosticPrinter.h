@@ -7,11 +7,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_FRONTEND_SERIALIZEDDIAGNOSTICPRINTER_H
-#define LLVM_CLANG_FRONTEND_SERIALIZEDDIAGNOSTICPRINTER_H
+#ifndef LLVM_CLANG_FRONTEND_SERIALIZE_DIAGNOSTIC_PRINTER_H_
+#define LLVM_CLANG_FRONTEND_SERIALIZE_DIAGNOSTIC_PRINTER_H_
 
-#include "clang/Basic/LLVM.h"
-#include "clang/Frontend/SerializedDiagnostics.h"
 #include "llvm/Bitcode/BitstreamWriter.h"
 
 namespace llvm {
@@ -24,6 +22,28 @@ class DiagnosticsEngine;
 class DiagnosticOptions;
 
 namespace serialized_diags {
+  
+enum BlockIDs {
+  /// \brief A top-level block which represents any meta data associated
+  /// with the diagostics, including versioning of the format.
+  BLOCK_META = llvm::bitc::FIRST_APPLICATION_BLOCKID,
+
+  /// \brief The this block acts as a container for all the information
+  /// for a specific diagnostic.
+  BLOCK_DIAG
+};
+
+enum RecordIDs {
+  RECORD_VERSION = 1,
+  RECORD_DIAG,
+  RECORD_SOURCE_RANGE,
+  RECORD_DIAG_FLAG,
+  RECORD_CATEGORY,
+  RECORD_FILENAME,
+  RECORD_FIXIT,
+  RECORD_FIRST = RECORD_VERSION,
+  RECORD_LAST = RECORD_FIXIT
+};
 
 /// \brief Returns a DiagnosticConsumer that serializes diagnostics to
 ///  a bitcode file.
@@ -33,8 +53,8 @@ namespace serialized_diags {
 /// This allows wrapper tools for Clang to get diagnostics from Clang
 /// (via libclang) without needing to parse Clang's command line output.
 ///
-std::unique_ptr<DiagnosticConsumer> create(std::unique_ptr<raw_ostream> OS,
-                                           DiagnosticOptions *diags);
+DiagnosticConsumer *create(llvm::raw_ostream *OS,
+                           DiagnosticOptions *diags);
 
 } // end serialized_diags namespace
 } // end clang namespace

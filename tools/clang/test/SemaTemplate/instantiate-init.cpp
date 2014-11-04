@@ -78,7 +78,7 @@ namespace PR7985 {
   template<int N> struct integral_c { };
 
   template <typename T, int N>
-  integral_c<N> array_lengthof(T (&x)[N]) { return integral_c<N>(); } // expected-note 2{{candidate template ignored: could not match 'T [N]' against 'const Data<}}
+  integral_c<N> array_lengthof(T (&x)[N]) { return integral_c<N>(); } // expected-note 2{{candidate template ignored: failed template argument deduction}}
 
   template<typename T>
   struct Data {
@@ -94,7 +94,7 @@ namespace PR7985 {
   const Data<T> Description<T>::data[] = {{ 1 }}; // expected-error{{cannot initialize a member subobject of type 'int *' with an rvalue of type 'int'}}
 
   template<>
-  const Data<float*> Description<float*>::data[];
+  Data<float*> Description<float*>::data[];
 
   void test() {
     integral_c<1> ic1 = array_lengthof(Description<int>::data);
@@ -117,28 +117,4 @@ namespace PR13064 {
   B<A> b;
   template<typename T> struct C { T a = { 0 }; }; // expected-error{{explicit}}
   C<A> c; // expected-note{{here}}
-}
-
-namespace PR16903 {
-  // Make sure we properly instantiate list-initialization.
-  template<typename T>
-  void fun (T it) {
-  	int m = 0;
-  	for (int i = 0; i < 4; ++i, ++it){
-  		m |= long{char{*it}};
-  	}
-  }
-  int test() {
-  	char in[4] = {0,0,0,0};
-  	fun(in);
-  }
-}
-
-namespace ReturnStmtIsInitialization {
-  struct X {
-    X() {}
-    X(const X &) = delete;
-  };
-  template<typename T> X f() { return {}; }
-  auto &&x = f<void>();
 }

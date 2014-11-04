@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -verify -std=c++11 -Wno-anonymous-pack-parens %s
+// RUN: %clang_cc1 -verify -std=c++11 %s
 // RUN: cp %s %t
 // RUN: not %clang_cc1 -x c++ -std=c++11 -fixit %t
 // RUN: %clang_cc1 -Wall -pedantic -x c++ -std=c++11 %t
@@ -119,42 +119,4 @@ namespace MissingSemi {
   namespace N {
     struct d // expected-error {{expected ';' after struct}}
   }
-}
-
-namespace NonStaticConstexpr {
-  struct foo {
-    constexpr int i; // expected-error {{non-static data member cannot be constexpr; did you intend to make it const?}}
-    constexpr int j = 7; // expected-error {{non-static data member cannot be constexpr; did you intend to make it static?}}
-    constexpr const int k; // expected-error {{non-static data member cannot be constexpr; did you intend to make it const?}}
-    foo() : i(3), k(4) {
-    }
-    static int get_j() {
-      return j;
-    }
-  };
-}
-
-int RegisterVariable() {
-  register int n; // expected-warning {{'register' storage class specifier is deprecated}}
-  return n;
-}
-
-namespace MisplacedParameterPack {
-  template <typename Args...> // expected-error {{'...' must immediately precede declared identifier}}
-  void misplacedEllipsisInTypeParameter(Args...);
-
-  template <typename... Args...> // expected-error {{'...' must immediately precede declared identifier}}
-  void redundantEllipsisInTypeParameter(Args...);
-
-  template <template <typename> class Args...> // expected-error {{'...' must immediately precede declared identifier}}
-  void misplacedEllipsisInTemplateTypeParameter(Args<int>...);
-
-  template <template <typename> class... Args...> // expected-error {{'...' must immediately precede declared identifier}}
-  void redundantEllipsisInTemplateTypeParameter(Args<int>...);
-
-  template <int N...> // expected-error {{'...' must immediately precede declared identifier}}
-  void misplacedEllipsisInNonTypeTemplateParameter();
-
-  template <int... N...> // expected-error {{'...' must immediately precede declared identifier}}
-  void redundantEllipsisInNonTypeTemplateParameter();
 }

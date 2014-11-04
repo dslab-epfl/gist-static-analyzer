@@ -153,18 +153,3 @@ namespace test2 {
     t->Base::spriv++; // expected-error 2 {{private member}}
   }
 }
-
-namespace PR12788 {
-  class A {
-  protected:
-    struct {
-      int x;
-    };
-  };
-  class B : A {
-    void f() {
-      ++x;
-      A::x++;
-    }
-  };
-}

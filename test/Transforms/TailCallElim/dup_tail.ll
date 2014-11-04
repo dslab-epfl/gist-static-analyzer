@@ -1,8 +1,5 @@
-; REQUIRES: asserts
 ; Duplicate the return into if.end to enable TCE.
-; RUN: opt -tailcallelim -stats -disable-output < %s 2>&1 | FileCheck %s
-
-; CHECK: Number of return duplicated
+; RUN: opt %s -tailcallelim -stats -disable-output 2>&1 | grep "Number of return duplicated"
 
 define i32 @fib(i32 %n) nounwind ssp {
 entry:

@@ -13,7 +13,7 @@ else:		; preds = %entry
 	ret i32 1
 }
 
-; CHECK-LABEL: define i32 @test1_factorial(
+; CHECK: define i32 @test1_factorial
 ; CHECK: phi i32
 ; CHECK-NOT: call i32
 ; CHECK: else:
@@ -34,14 +34,14 @@ return:		; preds = %entry
 	ret i32 %x
 }
 
-; CHECK-LABEL: define i32 @test2_mul(
+; CHECK: define i32 @test2_mul
 ; CHECK: phi i32
 ; CHECK-NOT: call i32
 ; CHECK: return:
 
 
 define i64 @test3_fib(i64 %n) nounwind readnone {
-; CHECK-LABEL: @test3_fib(
+; CHECK: @test3_fib
 entry:
 ; CHECK: tailrecurse:
 ; CHECK: %accumulator.tr = phi i64 [ %n, %entry ], [ %3, %bb1 ]

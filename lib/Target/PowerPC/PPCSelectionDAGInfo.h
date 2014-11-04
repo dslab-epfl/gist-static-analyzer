@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_POWERPC_PPCSELECTIONDAGINFO_H
-#define LLVM_LIB_TARGET_POWERPC_PPCSELECTIONDAGINFO_H
+#ifndef POWERPCCSELECTIONDAGINFO_H
+#define POWERPCCSELECTIONDAGINFO_H
 
 #include "llvm/Target/TargetSelectionDAGInfo.h"
 
@@ -22,7 +22,7 @@ class PPCTargetMachine;
 
 class PPCSelectionDAGInfo : public TargetSelectionDAGInfo {
 public:
-  explicit PPCSelectionDAGInfo(const DataLayout *DL);
+  explicit PPCSelectionDAGInfo(const PPCTargetMachine &TM);
   ~PPCSelectionDAGInfo();
 };
 

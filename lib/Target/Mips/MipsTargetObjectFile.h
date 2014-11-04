@@ -7,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_MIPS_MIPSTARGETOBJECTFILE_H
-#define LLVM_LIB_TARGET_MIPS_MIPSTARGETOBJECTFILE_H
+#ifndef LLVM_TARGET_MIPS_TARGETOBJECTFILE_H
+#define LLVM_TARGET_MIPS_TARGETOBJECTFILE_H
 
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
 
@@ -19,7 +19,7 @@ namespace llvm {
     const MCSection *SmallBSSSection;
   public:
 
-    void Initialize(MCContext &Ctx, const TargetMachine &TM) override;
+    void Initialize(MCContext &Ctx, const TargetMachine &TM);
 
 
     /// IsGlobalInSmallSection - Return true if this global address should be
@@ -30,8 +30,11 @@ namespace llvm {
                                 const TargetMachine &TM) const;
 
     const MCSection *SelectSectionForGlobal(const GlobalValue *GV,
-                                        SectionKind Kind, Mangler &Mang,
-                                        const TargetMachine &TM) const override;
+                                            SectionKind Kind,
+                                            Mangler *Mang,
+                                            const TargetMachine &TM) const;
+
+    // TODO: Classify globals as mips wishes.
   };
 } // end namespace llvm
 

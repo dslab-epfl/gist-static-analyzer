@@ -12,13 +12,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_X86_INSTPRINTER_X86INSTCOMMENTS_H
-#define LLVM_LIB_TARGET_X86_INSTPRINTER_X86INSTCOMMENTS_H
+#ifndef X86_INST_COMMENTS_H
+#define X86_INST_COMMENTS_H
 
 namespace llvm {
   class MCInst;
   class raw_ostream;
-  bool EmitAnyX86InstComments(const MCInst *MI, raw_ostream &OS,
+  void EmitAnyX86InstComments(const MCInst *MI, raw_ostream &OS,
                               const char *(*getRegName)(unsigned));
 }
 

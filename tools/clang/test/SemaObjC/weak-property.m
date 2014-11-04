@@ -4,7 +4,7 @@
 @interface WeakPropertyTest {
     Class isa;
     __weak id value;
-    id x; // expected-error {{existing instance variable 'x' for __weak property 'x' must be __weak}}
+    id x;
 }
 @property (weak) id value1;
 @property __weak id value;
@@ -19,6 +19,6 @@
 @end
 
 @implementation WeakPropertyTest
-@synthesize x; // expected-note {{property synthesized here}}
+@synthesize x;	// expected-error {{existing instance variable 'x' for __weak property 'x' must be __weak}}
 @dynamic value1, value, value2, v1,v2,v3,v4;
 @end

@@ -1,4 +1,4 @@
-//===----- CGCXXABI.cpp - Interface to C++ ABIs ---------------------------===//
+//===----- CGCXXABI.cpp - Interface to C++ ABIs -----------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -19,7 +19,8 @@ using namespace CodeGen;
 
 CGCXXABI::~CGCXXABI() { }
 
-void CGCXXABI::ErrorUnsupportedABI(CodeGenFunction &CGF, StringRef S) {
+static void ErrorUnsupportedABI(CodeGenFunction &CGF,
+                                StringRef S) {
   DiagnosticsEngine &Diags = CGF.CGM.getDiags();
   unsigned DiagID = Diags.getCustomDiagID(DiagnosticsEngine::Error,
                                           "cannot yet compile %0 in this ABI");
@@ -28,42 +29,8 @@ void CGCXXABI::ErrorUnsupportedABI(CodeGenFunction &CGF, StringRef S) {
     << S;
 }
 
-bool CGCXXABI::canCopyArgument(const CXXRecordDecl *RD) const {
-  // If RD has a non-trivial move or copy constructor, we cannot copy the
-  // argument.
-  if (RD->hasNonTrivialCopyConstructor() || RD->hasNonTrivialMoveConstructor())
-    return false;
-
-  // If RD has a non-trivial destructor, we cannot copy the argument.
-  if (RD->hasNonTrivialDestructor())
-    return false;
-
-  // We can only copy the argument if there exists at least one trivial,
-  // non-deleted copy or move constructor.
-  // FIXME: This assumes that all lazily declared copy and move constructors are
-  // not deleted.  This assumption might not be true in some corner cases.
-  bool CopyDeleted = false;
-  bool MoveDeleted = false;
-  for (const CXXConstructorDecl *CD : RD->ctors()) {
-    if (CD->isCopyConstructor() || CD->isMoveConstructor()) {
-      assert(CD->isTrivial());
-      // We had at least one undeleted trivial copy or move ctor.  Return
-      // directly.
-      if (!CD->isDeleted())
-        return true;
-      if (CD->isCopyConstructor())
-        CopyDeleted = true;
-      else
-        MoveDeleted = true;
-    }
-  }
-
-  // If all trivial copy and move constructors are deleted, we cannot copy the
-  // argument.
-  return !(CopyDeleted && MoveDeleted);
-}
-
-llvm::Constant *CGCXXABI::GetBogusMemberPointer(QualType T) {
+static llvm::Constant *GetBogusMemberPointer(CodeGenModule &CGM,
+                                             QualType T) {
   return llvm::Constant::getNullValue(CGM.getTypes().ConvertType(T));
 }
 
@@ -72,9 +39,10 @@ CGCXXABI::ConvertMemberPointerType(const MemberPointerType *MPT) {
   return CGM.getTypes().ConvertType(CGM.getContext().getPointerDiffType());
 }
 
-llvm::Value *CGCXXABI::EmitLoadOfMemberFunctionPointer(
-    CodeGenFunction &CGF, const Expr *E, llvm::Value *&This,
-    llvm::Value *MemPtr, const MemberPointerType *MPT) {
+llvm::Value *CGCXXABI::EmitLoadOfMemberFunctionPointer(CodeGenFunction &CGF,
+                                                       llvm::Value *&This,
+                                                       llvm::Value *MemPtr,
+                                                 const MemberPointerType *MPT) {
   ErrorUnsupportedABI(CGF, "calls through member pointers");
 
   const FunctionProtoType *FPT = 
@@ -86,10 +54,10 @@ llvm::Value *CGCXXABI::EmitLoadOfMemberFunctionPointer(
   return llvm::Constant::getNullValue(FTy->getPointerTo());
 }
 
-llvm::Value *
-CGCXXABI::EmitMemberDataPointerAddress(CodeGenFunction &CGF, const Expr *E,
-                                       llvm::Value *Base, llvm::Value *MemPtr,
-                                       const MemberPointerType *MPT) {
+llvm::Value *CGCXXABI::EmitMemberDataPointerAddress(CodeGenFunction &CGF,
+                                                    llvm::Value *Base,
+                                                    llvm::Value *MemPtr,
+                                              const MemberPointerType *MPT) {
   ErrorUnsupportedABI(CGF, "loads of member pointers");
   llvm::Type *Ty = CGF.ConvertType(MPT->getPointeeType())->getPointerTo();
   return llvm::Constant::getNullValue(Ty);
@@ -99,12 +67,12 @@ llvm::Value *CGCXXABI::EmitMemberPointerConversion(CodeGenFunction &CGF,
                                                    const CastExpr *E,
                                                    llvm::Value *Src) {
   ErrorUnsupportedABI(CGF, "member function pointer conversions");
-  return GetBogusMemberPointer(E->getType());
+  return GetBogusMemberPointer(CGM, E->getType());
 }
 
 llvm::Constant *CGCXXABI::EmitMemberPointerConversion(const CastExpr *E,
                                                       llvm::Constant *Src) {
-  return GetBogusMemberPointer(E->getType());
+  return GetBogusMemberPointer(CGM, E->getType());
 }
 
 llvm::Value *
@@ -127,22 +95,22 @@ CGCXXABI::EmitMemberPointerIsNotNull(CodeGenFunction &CGF,
 
 llvm::Constant *
 CGCXXABI::EmitNullMemberPointer(const MemberPointerType *MPT) {
-  return GetBogusMemberPointer(QualType(MPT, 0));
+  return GetBogusMemberPointer(CGM, QualType(MPT, 0));
 }
 
 llvm::Constant *CGCXXABI::EmitMemberPointer(const CXXMethodDecl *MD) {
-  return GetBogusMemberPointer(
+  return GetBogusMemberPointer(CGM,
                          CGM.getContext().getMemberPointerType(MD->getType(),
                                          MD->getParent()->getTypeForDecl()));
 }
 
 llvm::Constant *CGCXXABI::EmitMemberDataPointer(const MemberPointerType *MPT,
                                                 CharUnits offset) {
-  return GetBogusMemberPointer(QualType(MPT, 0));
+  return GetBogusMemberPointer(CGM, QualType(MPT, 0));
 }
 
 llvm::Constant *CGCXXABI::EmitMemberPointer(const APValue &MP, QualType MPT) {
-  return GetBogusMemberPointer(MPT);
+  return GetBogusMemberPointer(CGM, MPT);
 }
 
 bool CGCXXABI::isZeroInitializable(const MemberPointerType *MPT) {
@@ -150,13 +118,13 @@ bool CGCXXABI::isZeroInitializable(const MemberPointerType *MPT) {
   return true;
 }
 
-void CGCXXABI::buildThisParam(CodeGenFunction &CGF, FunctionArgList &params) {
+void CGCXXABI::BuildThisParam(CodeGenFunction &CGF, FunctionArgList &params) {
   const CXXMethodDecl *MD = cast<CXXMethodDecl>(CGF.CurGD.getDecl());
 
   // FIXME: I'm not entirely sure I like using a fake decl just for code
   // generation. Maybe we can come up with a better way?
   ImplicitParamDecl *ThisDecl
-    = ImplicitParamDecl::Create(CGM.getContext(), nullptr, MD->getLocation(),
+    = ImplicitParamDecl::Create(CGM.getContext(), 0, MD->getLocation(),
                                 &CGM.getContext().Idents.get("this"),
                                 MD->getThisType(CGM.getContext()));
   params.push_back(ThisDecl);
@@ -194,7 +162,7 @@ llvm::Value *CGCXXABI::InitializeArrayCookie(CodeGenFunction &CGF,
                                              QualType ElementType) {
   // Should never be called.
   ErrorUnsupportedABI(CGF, "array cookie initialization");
-  return nullptr;
+  return 0;
 }
 
 bool CGCXXABI::requiresArrayCookie(const CXXDeleteExpr *expr,
@@ -228,7 +196,7 @@ void CGCXXABI::ReadArrayCookie(CodeGenFunction &CGF, llvm::Value *ptr,
   // If we don't need an array cookie, bail out early.
   if (!requiresArrayCookie(expr, eltTy)) {
     allocPtr = ptr;
-    numElements = nullptr;
+    numElements = 0;
     cookieSize = CharUnits::Zero();
     return;
   }
@@ -244,6 +212,20 @@ llvm::Value *CGCXXABI::readArrayCookieImpl(CodeGenFunction &CGF,
                                            CharUnits cookieSize) {
   ErrorUnsupportedABI(CGF, "reading a new[] cookie");
   return llvm::ConstantInt::get(CGF.SizeTy, 0);
+}
+
+void CGCXXABI::EmitGuardedInit(CodeGenFunction &CGF,
+                               const VarDecl &D,
+                               llvm::GlobalVariable *GV,
+                               bool PerformInit) {
+  ErrorUnsupportedABI(CGF, "static local variable initialization");
+}
+
+void CGCXXABI::registerGlobalDtor(CodeGenFunction &CGF,
+                                  llvm::Constant *dtor,
+                                  llvm::Constant *addr) {
+  // The default behavior is to use atexit.
+  CGF.registerGlobalDtorWithAtExit(dtor, addr);
 }
 
 /// Returns the adjustment, in bytes, required for the given
@@ -265,40 +247,4 @@ llvm::Constant *CGCXXABI::getMemberPointerAdjustment(const CastExpr *E) {
   return CGM.GetNonVirtualBaseClassOffset(derivedClass,
                                           E->path_begin(),
                                           E->path_end());
-}
-
-CharUnits CGCXXABI::getMemberPointerPathAdjustment(const APValue &MP) {
-  // TODO: Store base specifiers in APValue member pointer paths so we can
-  // easily reuse CGM.GetNonVirtualBaseClassOffset().
-  const ValueDecl *MPD = MP.getMemberPointerDecl();
-  CharUnits ThisAdjustment = CharUnits::Zero();
-  ArrayRef<const CXXRecordDecl*> Path = MP.getMemberPointerPath();
-  bool DerivedMember = MP.isMemberPointerToDerivedMember();
-  const CXXRecordDecl *RD = cast<CXXRecordDecl>(MPD->getDeclContext());
-  for (unsigned I = 0, N = Path.size(); I != N; ++I) {
-    const CXXRecordDecl *Base = RD;
-    const CXXRecordDecl *Derived = Path[I];
-    if (DerivedMember)
-      std::swap(Base, Derived);
-    ThisAdjustment +=
-      getContext().getASTRecordLayout(Derived).getBaseClassOffset(Base);
-    RD = Path[I];
-  }
-  if (DerivedMember)
-    ThisAdjustment = -ThisAdjustment;
-  return ThisAdjustment;
-}
-
-llvm::BasicBlock *
-CGCXXABI::EmitCtorCompleteObjectHandler(CodeGenFunction &CGF,
-                                        const CXXRecordDecl *RD) {
-  if (CGM.getTarget().getCXXABI().hasConstructorVariants())
-    llvm_unreachable("shouldn't be called in this ABI");
-
-  ErrorUnsupportedABI(CGF, "complete object detection in ctor");
-  return nullptr;
-}
-
-bool CGCXXABI::NeedsVTTParameter(GlobalDecl GD) {
-  return false;
 }

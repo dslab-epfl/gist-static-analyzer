@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fcxx-exceptions -fexceptions -fsyntax-only -verify -std=c++11 -ffreestanding -Wno-null-conversion %s
+// RUN: %clang_cc1 -fcxx-exceptions -fexceptions -fsyntax-only -verify -std=c++11 -ffreestanding %s
 #include <stdint.h>
 
 typedef decltype(nullptr) nullptr_t;
@@ -57,15 +57,12 @@ nullptr_t f(nullptr_t null)
   o2(nullptr); // expected-error {{ambiguous}}
 
   // nullptr is an rvalue, null is an lvalue
-  (void)&nullptr; // expected-error {{cannot take the address of an rvalue of type 'nullptr_t'}}
+  (void)&nullptr; // expected-error {{address expression must be an lvalue}}
   nullptr_t *pn = &null;
 
   // You can reinterpret_cast nullptr to an integer.
   (void)reinterpret_cast<uintptr_t>(nullptr);
   (void)reinterpret_cast<uintptr_t>(*pn);
-
-  // You can't reinterpret_cast nullptr to any integer
-  (void)reinterpret_cast<char>(nullptr); // expected-error {{cast from pointer to smaller type 'char' loses information}}
 
   int *ip = *pn;
   if (*pn) { }

@@ -21,11 +21,10 @@ bb:                                               ; preds = %entry
 
 return:                                           ; preds = %entry
   ret void
-; CHECK-LABEL: memcmp2:
-; CHECK: movzwl
-; CHECK-NEXT: movzwl
-; CHECK-NEXT: cmpl
-; NOBUILTIN-LABEL: memcmp2:
+; CHECK: memcmp2:
+; CHECK: movw    ([[A0:%rdi|%rcx]]), %ax
+; CHECK: cmpw    ([[A1:%rsi|%rdx]]), %ax
+; NOBUILTIN: memcmp2:
 ; NOBUILTIN: callq
 }
 
@@ -41,9 +40,8 @@ bb:                                               ; preds = %entry
 
 return:                                           ; preds = %entry
   ret void
-; CHECK-LABEL: memcmp2a:
-; CHECK: movzwl
-; CHECK-NEXT: cmpl    $28527,
+; CHECK: memcmp2a:
+; CHECK: cmpw    $28527, ([[A0]])
 }
 
 
@@ -59,9 +57,9 @@ bb:                                               ; preds = %entry
 
 return:                                           ; preds = %entry
   ret void
-; CHECK-LABEL: memcmp4:
-; CHECK: movl
-; CHECK-NEXT: cmpl
+; CHECK: memcmp4:
+; CHECK: movl    ([[A0]]), %eax
+; CHECK: cmpl    ([[A1]]), %eax
 }
 
 define void @memcmp4a(i8* %X, i32* nocapture %P) nounwind {
@@ -76,8 +74,8 @@ bb:                                               ; preds = %entry
 
 return:                                           ; preds = %entry
   ret void
-; CHECK-LABEL: memcmp4a:
-; CHECK: cmpl $1869573999,
+; CHECK: memcmp4a:
+; CHECK: cmpl $1869573999, ([[A0]])
 }
 
 define void @memcmp8(i8* %X, i8* %Y, i32* nocapture %P) nounwind {
@@ -92,9 +90,9 @@ bb:                                               ; preds = %entry
 
 return:                                           ; preds = %entry
   ret void
-; CHECK-LABEL: memcmp8:
-; CHECK: movq
-; CHECK: cmpq
+; CHECK: memcmp8:
+; CHECK: movq    ([[A0]]), %rax
+; CHECK: cmpq    ([[A1]]), %rax
 }
 
 define void @memcmp8a(i8* %X, i32* nocapture %P) nounwind {
@@ -109,8 +107,8 @@ bb:                                               ; preds = %entry
 
 return:                                           ; preds = %entry
   ret void
-; CHECK-LABEL: memcmp8a:
-; CHECK: movabsq $8029759185026510694,
-; CHECK: cmpq
+; CHECK: memcmp8a:
+; CHECK: movabsq $8029759185026510694, %rax
+; CHECK: cmpq	%rax, ([[A0]])
 }
 

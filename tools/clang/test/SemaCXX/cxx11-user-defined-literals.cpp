@@ -135,33 +135,3 @@ namespace Namespace {
   int _y(unsigned long long);
   int k2 = 123_y; // expected-error {{no matching literal operator for call to 'operator "" _y'}}
 }
-
-namespace PR14950 {
-  template<...> // expected-error {{expected template parameter}}
-  int operator"" _b(); // expected-error {{no function template matches function template specialization}}
-  int main() { return 0_b; } // expected-error {{no matching literal operator for call to 'operator "" _b'}}
-}
-
-namespace bad_names {
-  template<char...> int operator""_x();
-
-  template<typename T> void f() {
-    class T:: // expected-error {{anonymous class}} expected-warning {{does not declare anything}}
-        operator // expected-error {{expected identifier}}
-            ""_q<'a'>;
-
-    T::template operator""_q<'a'>(); // expected-error {{non-namespace scope 'T::' cannot have a literal operator member}} expected-error +{{}}
-    T::template operator""_q<'a'>::X; // expected-error {{non-namespace scope 'T::' cannot have a literal operator member}} expected-error +{{}}
-    T::operator""_q<'a'>(); // expected-error {{non-namespace scope 'T::' cannot have a literal operator member}} expected-error +{{}}
-    typename T::template operator""_q<'a'> a; // expected-error {{non-namespace scope 'T::' cannot have a literal operator member}} expected-error +{{}}
-    typename T::operator""_q(""); // expected-error +{{}} expected-note {{to match}}
-    T::operator""_q(""); // expected-error {{non-namespace scope 'T::' cannot have a literal operator member}}
-
-    bad_names::operator""_x<'a', 'b', 'c'>();
-  };
-
-  struct S {};
-  void g() {
-    S::operator""_q(); // expected-error {{non-namespace scope 'S::' cannot have a literal operator member}}
-  }
-}

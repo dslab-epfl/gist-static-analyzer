@@ -7,9 +7,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_TOOLS_DIAGTOOL_DIAGNOSTICNAMES_H
-#define LLVM_CLANG_TOOLS_DIAGTOOL_DIAGNOSTICNAMES_H
-
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/DataTypes.h"
@@ -38,11 +35,17 @@ namespace diagtool {
 
 
   struct GroupRecord {
-    uint16_t NameOffset;
-    uint16_t Members;
-    uint16_t SubGroups;
-
-    llvm::StringRef getName() const;
+    // Be safe with the size of 'NameLen' because we don't statically check if
+    // the size will fit in the field; the struct size won't decrease with a
+    // shorter type anyway.
+    size_t NameLen;
+    const char *NameStr;
+    const short *Members;
+    const short *SubGroups;
+    
+    llvm::StringRef getName() const {
+      return llvm::StringRef(NameStr, NameLen);
+    }
 
     template<typename RecordType>
     class group_iterator {
@@ -51,7 +54,7 @@ namespace diagtool {
       friend struct GroupRecord;
       group_iterator(const short *Start) : CurrentID(Start) {
         if (CurrentID && *CurrentID == -1)
-          CurrentID = nullptr;
+          CurrentID = 0;
       }
 
     public:
@@ -73,7 +76,7 @@ namespace diagtool {
       group_iterator &operator++() {
         ++CurrentID;
         if (*CurrentID == -1)
-          CurrentID = nullptr;
+          CurrentID = 0;
         return *this;
       }
 
@@ -87,15 +90,23 @@ namespace diagtool {
     };
 
     typedef group_iterator<GroupRecord> subgroup_iterator;
-    subgroup_iterator subgroup_begin() const;
-    subgroup_iterator subgroup_end() const;
+    subgroup_iterator subgroup_begin() const {
+      return SubGroups;
+    }
+    subgroup_iterator subgroup_end() const {
+      return 0;
+    }
 
     typedef group_iterator<DiagnosticRecord> diagnostics_iterator;
-    diagnostics_iterator diagnostics_begin() const;
-    diagnostics_iterator diagnostics_end() const;
+    diagnostics_iterator diagnostics_begin() const {
+      return Members;
+    }
+    diagnostics_iterator diagnostics_end() const {
+      return 0;
+    }
 
-    bool operator<(llvm::StringRef Other) const {
-      return getName() < Other;
+    bool operator<(const GroupRecord &Other) const {
+      return getName() < Other.getName();
     }
   };
 
@@ -115,4 +126,3 @@ namespace diagtool {
   }
 } // end namespace diagtool
 
-#endif

@@ -5,59 +5,45 @@
 typedef signed char BOOL;
 
 @protocol P
-@property(nonatomic,assign) id ptarget __attribute__((availability(ios,introduced=2.0,deprecated=3.0))); // expected-note {{property 'ptarget' is declared deprecated here}} expected-note {{'ptarget' has been explicitly marked deprecated here}}
+@property(nonatomic,assign) id ptarget __attribute__((availability(ios,introduced=2.0,deprecated=3.0))); // expected-note 2 {{property 'ptarget' is declared deprecated here}}
 @end
 
 @protocol P1<P>
-- (void)setPtarget:(id)arg;
+- (void)setPtarget:(id)arg; // expected-note {{method 'setPtarget:' declared here}}
 @end
 
 
 @interface UITableViewCell<P1>
-@property(nonatomic,assign) id target __attribute__((availability(ios,introduced=2.0,deprecated=3.0))); // expected-note {{property 'target' is declared deprecated here}} expected-note {{'setTarget:' has been explicitly marked deprecated here}}
+@property(nonatomic,assign) id target __attribute__((availability(ios,introduced=2.0,deprecated=3.0))); // expected-note {{property 'target' is declared deprecated here}}
 @end
 
 @interface PSTableCell : UITableViewCell
- - (void)setTarget:(id)target;
+ - (void)setTarget:(id)target; // expected-note {{method 'setTarget:' declared here}}
 @end
 
 @interface UITableViewCell(UIDeprecated)
-@property(nonatomic,assign) id dep_target  __attribute__((availability(ios,introduced=2.0,deprecated=3.0))); // expected-note 2 {{'dep_target' has been explicitly marked deprecated here}} \
-                                                                                    // expected-note 4 {{property 'dep_target' is declared deprecated here}} \
-                                                                                    // expected-note 2 {{'setDep_target:' has been explicitly marked deprecated here}}
+@property(nonatomic,assign) id dep_target  __attribute__((availability(ios,introduced=2.0,deprecated=3.0))); // expected-note {{method 'dep_target' declared here}} \
+                                                                                    // expected-note 2 {{property 'dep_target' is declared deprecated here}} \
+                                                                                    // expected-note {{method 'setDep_target:' declared here}}
 @end
 
 @implementation PSTableCell
 - (void)setTarget:(id)target {};
 - (void)setPtarget:(id)val {};
 - (void) Meth {
-  [self setTarget: (id)0]; // no-warning
-  [self setDep_target: [self dep_target]]; // expected-warning {{'dep_target' is deprecated: first deprecated in iOS 3.0}} \
-                                           // expected-warning {{'setDep_target:' is deprecated: first deprecated in iOS 3.0}}
-					   
-  [self setPtarget: (id)0]; // no-warning
-}
-@end
-
-@implementation UITableViewCell
-@synthesize target;
-@synthesize ptarget;
-- (void)setPtarget:(id)val {};
-- (void)setTarget:(id)target {};
-- (void) Meth {
   [self setTarget: (id)0]; // expected-warning {{'setTarget:' is deprecated: first deprecated in iOS 3.0}}
   [self setDep_target: [self dep_target]]; // expected-warning {{'dep_target' is deprecated: first deprecated in iOS 3.0}} \
                                            // expected-warning {{'setDep_target:' is deprecated: first deprecated in iOS 3.0}}
 					   
-  [self setPtarget: (id)0]; // no-warning
+  [self setPtarget: (id)0]; // expected-warning {{setPtarget:' is deprecated: first deprecated in iOS 3.0}}
 }
 @end
 
 
 @interface CustomAccessorNames
-@property(getter=isEnabled,assign) BOOL enabled __attribute__((availability(ios,introduced=2.0,deprecated=3.0))); // expected-note {{'isEnabled' has been explicitly marked deprecated here}} expected-note {{property 'enabled' is declared deprecated here}}
+@property(getter=isEnabled,assign) BOOL enabled __attribute__((availability(ios,introduced=2.0,deprecated=3.0))); // expected-note {{method 'isEnabled' declared here}} expected-note {{property 'enabled' is declared deprecated here}}
 
-@property(setter=setNewDelegate:,assign) id delegate __attribute__((availability(ios,introduced=2.0,deprecated=3.0))); // expected-note {{'setNewDelegate:' has been explicitly marked deprecated here}} expected-note {{property 'delegate' is declared deprecated here}}
+@property(setter=setNewDelegate:,assign) id delegate __attribute__((availability(ios,introduced=2.0,deprecated=3.0))); // expected-note {{method 'setNewDelegate:' declared here}} expected-note {{property 'delegate' is declared deprecated here}}
 @end
 
 void testCustomAccessorNames(CustomAccessorNames *obj) {
@@ -70,36 +56,9 @@ void testCustomAccessorNames(CustomAccessorNames *obj) {
 @end
 
 @interface ProtocolInCategory (TheCategory) <P1>
-- (id)ptarget;
+- (id)ptarget; // expected-note {{method 'ptarget' declared here}}
 @end
 
-id useDeprecatedProperty(ProtocolInCategory *obj, id<P> obj2, int flag) {
-  if (flag)
-    return [obj ptarget];  // no-warning
-  return [obj2 ptarget];   // expected-warning {{'ptarget' is deprecated: first deprecated in iOS 3.0}}
-}
-
-// rdar://15951801
-@interface Foo
-{
-  int _x;
-}
-@property(nonatomic,readonly) int x;
-- (void)setX:(int)x __attribute__ ((deprecated)); // expected-note 2 {{'setX:' has been explicitly marked deprecated here}}
-- (int)x __attribute__ ((unavailable)); // expected-note {{'x' has been explicitly marked unavailable here}}
-@end
-
-@implementation Foo
-- (void)setX:(int)x {
-	_x = x;
-}
-- (int)x {
-  return _x;
-}
-@end
-
-void testUserAccessorAttributes(Foo *foo) {
-        [foo setX:5678]; // expected-warning {{'setX:' is deprecated}}
-	foo.x = foo.x; // expected-error {{property access is using 'x' method which is unavailable}} \
-		       // expected-warning {{property access is using 'setX:' method which is deprecated}}
+id useDeprecatedProperty(ProtocolInCategory *obj) {
+  return [obj ptarget]; // expected-warning {{'ptarget' is deprecated: first deprecated in iOS 3.0}}
 }

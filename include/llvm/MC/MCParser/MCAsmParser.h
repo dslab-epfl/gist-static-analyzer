@@ -7,15 +7,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_MC_MCPARSER_MCASMPARSER_H
-#define LLVM_MC_MCPARSER_MCASMPARSER_H
+#ifndef LLVM_MC_MCASMPARSER_H
+#define LLVM_MC_MCASMPARSER_H
 
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/MC/MCParser/AsmLexer.h"
 #include "llvm/Support/DataTypes.h"
+#include "llvm/ADT/ArrayRef.h"
 
 namespace llvm {
+class AsmToken;
 class MCAsmInfo;
 class MCAsmLexer;
 class MCAsmParserExtension;
@@ -23,38 +22,21 @@ class MCContext;
 class MCExpr;
 class MCInstPrinter;
 class MCInstrInfo;
+class MCParsedAsmOperand;
 class MCStreamer;
 class MCTargetAsmParser;
 class SMLoc;
 class SMRange;
 class SourceMgr;
+class StringRef;
 class Twine;
-
-class InlineAsmIdentifierInfo {
-public:
-  void *OpDecl;
-  bool IsVarDecl;
-  unsigned Length, Size, Type;
-
-  void clear() {
-    OpDecl = nullptr;
-    IsVarDecl = false;
-    Length = 1;
-    Size = 0;
-    Type = 0;
-  }
-};
 
 /// MCAsmParserSemaCallback - Generic Sema callback for assembly parser.
 class MCAsmParserSemaCallback {
 public:
-  virtual ~MCAsmParserSemaCallback();
-  virtual void *LookupInlineAsmIdentifier(StringRef &LineBuf,
-                                          InlineAsmIdentifierInfo &Info,
-                                          bool IsUnevaluatedContext) = 0;
-  virtual StringRef LookupInlineAsmLabel(StringRef Identifier, SourceMgr &SM,
-                                         SMLoc Location, bool Create) = 0;
-
+  virtual ~MCAsmParserSemaCallback(); 
+  virtual void *LookupInlineAsmIdentifier(StringRef Name, void *Loc,
+                                          unsigned &Size) = 0;
   virtual bool LookupInlineAsmField(StringRef Base, StringRef Member,
                                     unsigned &Offset) = 0;
 };
@@ -64,8 +46,6 @@ public:
 class MCAsmParser {
 public:
   typedef bool (*DirectiveHandler)(MCAsmParserExtension*, StringRef, SMLoc);
-  typedef std::pair<MCAsmParserExtension*, DirectiveHandler>
-    ExtensionDirectiveHandler;
 
 private:
   MCAsmParser(const MCAsmParser &) LLVM_DELETED_FUNCTION;
@@ -81,8 +61,9 @@ protected: // Can only create subclasses.
 public:
   virtual ~MCAsmParser();
 
-  virtual void addDirectiveHandler(StringRef Directive,
-                                   ExtensionDirectiveHandler Handler) = 0;
+  virtual void AddDirectiveHandler(MCAsmParserExtension *Object,
+                                   StringRef Directive,
+                                   DirectiveHandler Handler) = 0;
 
   virtual SourceMgr &getSourceManager() = 0;
 
@@ -108,8 +89,8 @@ public:
   virtual void setParsingInlineAsm(bool V) = 0;
   virtual bool isParsingInlineAsm() = 0;
 
-  /// parseMSInlineAsm - Parse ms-style inline assembly.
-  virtual bool parseMSInlineAsm(void *AsmLoc, std::string &AsmString,
+  /// ParseMSInlineAsm - Parse ms-style inline assembly.
+  virtual bool ParseMSInlineAsm(void *AsmLoc, std::string &AsmString,
                                 unsigned &NumOutputs, unsigned &NumInputs,
                                 SmallVectorImpl<std::pair<void *, bool> > &OpDecls,
                                 SmallVectorImpl<std::string> &Constraints,
@@ -118,22 +99,18 @@ public:
                                 const MCInstPrinter *IP,
                                 MCAsmParserSemaCallback &SI) = 0;
 
-  /// Note - Emit a note at the location \p L, with the message \p Msg.
-  virtual void Note(SMLoc L, const Twine &Msg,
-                    ArrayRef<SMRange> Ranges = None) = 0;
-
   /// Warning - Emit a warning at the location \p L, with the message \p Msg.
   ///
   /// \return The return value is true, if warnings are fatal.
   virtual bool Warning(SMLoc L, const Twine &Msg,
-                       ArrayRef<SMRange> Ranges = None) = 0;
+                       ArrayRef<SMRange> Ranges = ArrayRef<SMRange>()) = 0;
 
   /// Error - Emit an error at the location \p L, with the message \p Msg.
   ///
   /// \return The return value is always true, as an idiomatic convenience to
   /// clients.
   virtual bool Error(SMLoc L, const Twine &Msg,
-                     ArrayRef<SMRange> Ranges = None) = 0;
+                     ArrayRef<SMRange> Ranges = ArrayRef<SMRange>()) = 0;
 
   /// Lex - Get the next AsmToken in the stream, possibly handling file
   /// inclusion first.
@@ -143,59 +120,45 @@ public:
   const AsmToken &getTok();
 
   /// \brief Report an error at the current lexer location.
-  bool TokError(const Twine &Msg, ArrayRef<SMRange> Ranges = None);
+  bool TokError(const Twine &Msg,
+                ArrayRef<SMRange> Ranges = ArrayRef<SMRange>());
 
-  /// parseIdentifier - Parse an identifier or string (as a quoted identifier)
+  /// ParseIdentifier - Parse an identifier or string (as a quoted identifier)
   /// and set \p Res to the identifier contents.
-  virtual bool parseIdentifier(StringRef &Res) = 0;
+  virtual bool ParseIdentifier(StringRef &Res) = 0;
 
   /// \brief Parse up to the end of statement and return the contents from the
   /// current token until the end of the statement; the current token on exit
   /// will be either the EndOfStatement or EOF.
-  virtual StringRef parseStringToEndOfStatement() = 0;
+  virtual StringRef ParseStringToEndOfStatement() = 0;
 
-  /// parseEscapedString - Parse the current token as a string which may include
-  /// escaped characters and return the string contents.
-  virtual bool parseEscapedString(std::string &Data) = 0;
-
-  /// eatToEndOfStatement - Skip to the end of the current statement, for error
+  /// EatToEndOfStatement - Skip to the end of the current statement, for error
   /// recovery.
-  virtual void eatToEndOfStatement() = 0;
+  virtual void EatToEndOfStatement() = 0;
 
-  /// parseExpression - Parse an arbitrary expression.
+  /// ParseExpression - Parse an arbitrary expression.
   ///
   /// @param Res - The value of the expression. The result is undefined
   /// on error.
   /// @result - False on success.
-  virtual bool parseExpression(const MCExpr *&Res, SMLoc &EndLoc) = 0;
-  bool parseExpression(const MCExpr *&Res);
+  virtual bool ParseExpression(const MCExpr *&Res, SMLoc &EndLoc) = 0;
+  bool ParseExpression(const MCExpr *&Res);
 
-  /// parsePrimaryExpr - Parse a primary expression.
-  ///
-  /// @param Res - The value of the expression. The result is undefined
-  /// on error.
-  /// @result - False on success.
-  virtual bool parsePrimaryExpr(const MCExpr *&Res, SMLoc &EndLoc) = 0;
-
-  /// parseParenExpression - Parse an arbitrary expression, assuming that an
+  /// ParseParenExpression - Parse an arbitrary expression, assuming that an
   /// initial '(' has already been consumed.
   ///
   /// @param Res - The value of the expression. The result is undefined
   /// on error.
   /// @result - False on success.
-  virtual bool parseParenExpression(const MCExpr *&Res, SMLoc &EndLoc) = 0;
+  virtual bool ParseParenExpression(const MCExpr *&Res, SMLoc &EndLoc) = 0;
 
-  /// parseAbsoluteExpression - Parse an expression which must evaluate to an
+  /// ParseAbsoluteExpression - Parse an expression which must evaluate to an
   /// absolute value.
   ///
   /// @param Res - The value of the absolute expression. The result is undefined
   /// on error.
   /// @result - False on success.
-  virtual bool parseAbsoluteExpression(int64_t &Res) = 0;
-
-  /// checkForValidSection - Ensure that we have a valid section set in the
-  /// streamer. Otherwise, report an error and switch to .text.
-  virtual void checkForValidSection() = 0;
+  virtual bool ParseAbsoluteExpression(int64_t &Res) = 0;
 };
 
 /// \brief Create an MCAsmParser instance.

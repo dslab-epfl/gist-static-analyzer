@@ -11,8 +11,8 @@
 |*                                                                            *|
 \*===----------------------------------------------------------------------===*/
 
-#ifndef LLVM_CLANG_TOOLS_LIBCLANG_CXLOADEDDIAGNOSTIC_H
-#define LLVM_CLANG_TOOLS_LIBCLANG_CXLOADEDDIAGNOSTIC_H
+#ifndef LLVM_CLANG_CINDEX_LOADED_DIAGNOSTIC_H
+#define LLVM_CLANG_CINDEX_LOADED_DIAGNOSTIC_H
 
 #include "CIndexDiagnostic.h"
 #include "llvm/ADT/StringRef.h"
@@ -29,36 +29,36 @@ public:
   virtual ~CXLoadedDiagnostic();
   
   /// \brief Return the severity of the diagnostic.
-  CXDiagnosticSeverity getSeverity() const override;
-
+  virtual CXDiagnosticSeverity getSeverity() const;
+  
   /// \brief Return the location of the diagnostic.
-  CXSourceLocation getLocation() const override;
-
+  virtual CXSourceLocation getLocation() const;
+  
   /// \brief Return the spelling of the diagnostic.
-  CXString getSpelling() const override;
-
+  virtual CXString getSpelling() const;
+  
   /// \brief Return the text for the diagnostic option.
-  CXString getDiagnosticOption(CXString *Disable) const override;
-
+  virtual CXString getDiagnosticOption(CXString *Disable) const;
+  
   /// \brief Return the category of the diagnostic.
-  unsigned getCategory() const override;
-
+  virtual unsigned getCategory() const;
+  
   /// \brief Return the category string of the diagnostic.
-  CXString getCategoryText() const override;
-
+  virtual CXString getCategoryText() const;
+  
   /// \brief Return the number of source ranges for the diagnostic.
-  unsigned getNumRanges() const override;
-
+  virtual unsigned getNumRanges() const;
+  
   /// \brief Return the source ranges for the diagnostic.
-  CXSourceRange getRange(unsigned Range) const override;
-
+  virtual CXSourceRange getRange(unsigned Range) const;
+  
   /// \brief Return the number of FixIts.
-  unsigned getNumFixIts() const override;
-
+  virtual unsigned getNumFixIts() const;
+  
   /// \brief Return the FixIt information (source range and inserted text).
-  CXString getFixIt(unsigned FixIt,
-                    CXSourceRange *ReplacementRange) const override;
-
+  virtual CXString getFixIt(unsigned FixIt,
+                            CXSourceRange *ReplacementRange) const;
+  
   static bool classof(const CXDiagnosticImpl *D) {
     return D->getKind() == LoadedDiagnosticKind;
   }
@@ -82,8 +82,8 @@ public:
   Location DiagLoc;
 
   std::vector<CXSourceRange> Ranges;
-  std::vector<std::pair<CXSourceRange, const char *> > FixIts;
-  const char *Spelling;
+  std::vector<std::pair<CXSourceRange, CXString> > FixIts;
+  llvm::StringRef Spelling;
   llvm::StringRef DiagOption;
   llvm::StringRef CategoryText;
   unsigned severity;

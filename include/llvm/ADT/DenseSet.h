@@ -27,26 +27,20 @@ class DenseSet {
   typedef DenseMap<ValueT, char, ValueInfoT> MapTy;
   MapTy TheMap;
 public:
-  typedef ValueT key_type;
-  typedef ValueT value_type;
-  typedef unsigned size_type;
-
+  DenseSet(const DenseSet &Other) : TheMap(Other.TheMap) {}
   explicit DenseSet(unsigned NumInitBuckets = 0) : TheMap(NumInitBuckets) {}
 
   bool empty() const { return TheMap.empty(); }
-  size_type size() const { return TheMap.size(); }
-  size_t getMemorySize() const { return TheMap.getMemorySize(); }
+  unsigned size() const { return TheMap.size(); }
 
-  /// Grow the DenseSet so that it has at least Size buckets. Will not shrink
-  /// the Size of the set.
+  /// Grow the denseset so that it has at least Size buckets. Does not shrink
   void resize(size_t Size) { TheMap.resize(Size); }
 
   void clear() {
     TheMap.clear();
   }
 
-  /// Return 1 if the specified key is in the set, 0 otherwise.
-  size_type count(const ValueT &V) const {
+  bool count(const ValueT &V) const {
     return TheMap.count(V);
   }
 
@@ -56,6 +50,11 @@ public:
 
   void swap(DenseSet& RHS) {
     TheMap.swap(RHS.TheMap);
+  }
+
+  DenseSet &operator=(const DenseSet &RHS) {
+    TheMap = RHS.TheMap;
+    return *this;
   }
 
   // Iterators.

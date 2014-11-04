@@ -16,12 +16,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_PASSANALYSISSUPPORT_H
-#define LLVM_PASSANALYSISSUPPORT_H
+#ifndef LLVM_PASS_ANALYSIS_SUPPORT_H
+#define LLVM_PASS_ANALYSIS_SUPPORT_H
 
+#include "llvm/Pass.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Pass.h"
 #include <vector>
 
 namespace llvm {
@@ -129,7 +129,7 @@ public:
 
   // Find pass that is implementing PI.
   Pass *findImplPass(AnalysisID PI) {
-    Pass *ResultPass = nullptr;
+    Pass *ResultPass = 0;
     for (unsigned i = 0; i < AnalysisImpls.size() ; ++i) {
       if (AnalysisImpls[i].first == PI) {
         ResultPass = AnalysisImpls[i].second;
@@ -182,7 +182,7 @@ AnalysisType *Pass::getAnalysisIfAvailable() const {
   const void *PI = &AnalysisType::ID;
 
   Pass *ResultPass = Resolver->getAnalysisIfAvailable(PI, true);
-  if (!ResultPass) return nullptr;
+  if (ResultPass == 0) return 0;
 
   // Because the AnalysisType may not be a subclass of pass (for
   // AnalysisGroups), we use getAdjustedAnalysisPointer here to potentially

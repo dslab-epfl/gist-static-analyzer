@@ -1,4 +1,3 @@
-; REQUIRES: asserts
 ;; Both functions in this testcase should codegen to the same function, and
 ;; neither of them should require spilling anything to the stack.
 

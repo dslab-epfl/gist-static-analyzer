@@ -50,10 +50,11 @@ void CFGReverseBlockReachabilityAnalysis::mapReachability(const CFGBlock *Dst) {
   // multiple queries relating to a destination node.
   worklist.push_back(Dst);
   bool firstRun = true;
-
-  while (!worklist.empty()) {
-    const CFGBlock *block = worklist.pop_back_val();
-
+  
+  while (!worklist.empty()) {    
+    const CFGBlock *block = worklist.back();
+    worklist.pop_back();
+    
     if (visited[block->getBlockID()])
       continue;
     visited[block->getBlockID()] = true;
@@ -69,8 +70,7 @@ void CFGReverseBlockReachabilityAnalysis::mapReachability(const CFGBlock *Dst) {
     // Add the predecessors to the worklist.
     for (CFGBlock::const_pred_iterator i = block->pred_begin(), 
          e = block->pred_end(); i != e; ++i) {
-      if (*i)
-        worklist.push_back(*i);
+      worklist.push_back(*i);
     }
   }
 }

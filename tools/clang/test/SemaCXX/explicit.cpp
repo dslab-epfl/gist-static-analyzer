@@ -4,11 +4,11 @@ struct A {
   A(int);
 };
 
-struct B { // expected-note+ {{candidate}}
+struct B {
   explicit B(int);
 };
 
-B::B(int) { } // expected-note+ {{here}}
+B::B(int) { }
 
 struct C {
   void f(const A&);
@@ -18,22 +18,6 @@ struct C {
 void f(C c) {
   c.f(10);
 }
-
-A a0 = 0;
-A a1(0);
-A &&a2 = 0;
-A &&a3(0);
-A a4{0};
-A &&a5 = {0};
-A &&a6{0};
-
-B b0 = 0; // expected-error {{no viable conversion}}
-B b1(0);
-B &&b2 = 0; // expected-error {{could not bind}}
-B &&b3(0); // expected-error {{could not bind}}
-B b4{0};
-B &&b5 = {0}; // expected-error {{chosen constructor is explicit}}
-B &&b6{0};
 }
 
 namespace Conversion {
@@ -56,11 +40,12 @@ namespace Conversion {
   void testExplicit()
   {
     // Taken from 12.3.2p2
-    class X { X(); }; // expected-note+ {{candidate constructor}}
-    class Y { }; // expected-note+ {{candidate constructor (the implicit}}
+    class Y { }; // expected-note {{candidate constructor (the implicit copy constructor) not viable: no known conversion from 'Z' to 'const Y &' for 1st argument}} \
+					          expected-note {{candidate constructor (the implicit move constructor) not viable: no known conversion from 'Z' to 'Y &&' for 1st argument}} \
+                    expected-note {{candidate constructor (the implicit copy constructor) not viable: no known conversion from 'Z' to 'const Y &' for 1st argument}} \
+          expected-note {{candidate constructor (the implicit move constructor) not viable: no known conversion from 'Z' to 'Y &&' for 1st argument}}
 
     struct Z {
-      explicit operator X() const;
       explicit operator Y() const;
       explicit operator int() const;
     };
@@ -68,7 +53,6 @@ namespace Conversion {
     Z z;
     // 13.3.1.4p1 & 8.5p16:
     Y y2 = z; // expected-error {{no viable conversion from 'Z' to 'Y'}}
-    Y y2b(z);
     Y y3 = (Y)z;
     Y y4 = Y(z);
     Y y5 = static_cast<Y>(z);
@@ -79,24 +63,7 @@ namespace Conversion {
     int i4(z);
     // 13.3.1.6p1 & 8.5.3p5:
     const Y& y6 = z; // expected-error {{no viable conversion from 'Z' to 'const Y'}}
-    const int& y7 = z; // expected-error {{no viable conversion from 'Z' to 'const int'}}
-    const Y& y8(z);
-    const int& y9(z);
-
-    // Y is an aggregate, so aggregate-initialization is performed and the
-    // conversion function is not considered.
-    const Y y10{z}; // expected-error {{excess elements}}
-    const Y& y11{z}; // expected-error {{excess elements}} expected-note {{in initialization of temporary of type 'const Y'}}
-    const int& y12{z};
-
-    // X is not an aggregate, so constructors are considered.
-    // However, by 13.3.3.1/4, only standard conversion sequences and
-    // ellipsis conversion sequences are considered here, so this is not
-    // allowed.
-    // FIXME: It's not really clear that this is a sensible restriction for this
-    // case. g++ allows this, EDG does not.
-    const X x1{z}; // expected-error {{no matching constructor}}
-    const X& x2{z}; // expected-error {{no matching constructor}}
+    const int& y7(z);
   }
   
   void testBool() {
@@ -152,40 +119,6 @@ namespace Conversion {
     // 6.5.3:
     for (;b;) {}
     for (;n;) {}
-
-    // 13.3.1.5p1:
-    bool direct1(b);
-    bool direct2(n);
-    int direct3(b);
-    int direct4(n); // expected-error {{no viable conversion}}
-    const bool &direct5(b);
-    const bool &direct6(n);
-    const int &direct7(b);
-    const int &direct8(n); // expected-error {{no viable conversion}}
-    bool directList1{b};
-    bool directList2{n};
-    int directList3{b};
-    int directList4{n}; // expected-error {{no viable conversion}}
-    const bool &directList5{b};
-    const bool &directList6{n};
-    const int &directList7{b};
-    const int &directList8{n}; // expected-error {{no viable conversion}}
-    bool copy1 = b;
-    bool copy2 = n; // expected-error {{no viable conversion}}
-    int copy3 = b;
-    int copy4 = n; // expected-error {{no viable conversion}}
-    const bool &copy5 = b;
-    const bool &copy6 = n; // expected-error {{no viable conversion}}
-    const int &copy7 = b;
-    const int &copy8 = n; // expected-error {{no viable conversion}}
-    bool copyList1 = {b};
-    bool copyList2 = {n}; // expected-error {{no viable conversion}}
-    int copyList3 = {b};
-    int copyList4 = {n}; // expected-error {{no viable conversion}}
-    const bool &copyList5 = {b};
-    const bool &copyList6 = {n}; // expected-error {{no viable conversion}}
-    const int &copyList7 = {b};
-    const int &copyList8 = {n}; // expected-error {{no viable conversion}}
   }
   
   void testNew()
@@ -212,14 +145,14 @@ namespace Conversion {
       operator int*();
     };
     struct NotPtr {
-      explicit operator int*(); // expected-note {{conversion}}
+      explicit operator int*();
     };
     
     Ptr    p;
     NotPtr np;
     
     delete p;
-    delete np; // expected-error {{converting delete expression from type 'NotPtr' to type 'int *' invokes an explicit conversion function}}
+    delete np; // expected-error {{cannot delete expression of type 'NotPtr'}}
   }
   
   void testFunctionPointer()
@@ -239,15 +172,4 @@ namespace Conversion {
     fp(1);
     nfp(1); // expected-error {{type 'NotFP' does not provide a call operator}}
   }
-}
-
-namespace pr8264 {
-  struct Test {
-  explicit explicit Test(int x);  // expected-warning{{duplicate 'explicit' declaration specifier}}
-  };
-}
-
-namespace PR18777 {
-  struct S { explicit operator bool() const; } s;
-  int *p = new int(s); // expected-error {{no viable conversion}}
 }

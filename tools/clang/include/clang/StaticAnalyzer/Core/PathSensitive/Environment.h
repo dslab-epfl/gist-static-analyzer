@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_STATICANALYZER_CORE_PATHSENSITIVE_ENVIRONMENT_H
-#define LLVM_CLANG_STATICANALYZER_CORE_PATHSENSITIVE_ENVIRONMENT_H
+#ifndef LLVM_CLANG_GR_ENVIRONMENT_H
+#define LLVM_CLANG_GR_ENVIRONMENT_H
 
 #include "clang/Analysis/AnalysisContext.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
@@ -33,6 +33,9 @@ class SValBuilder;
 /// other things.
 class EnvironmentEntry : public std::pair<const Stmt*,
                                           const StackFrameContext *> {
+  friend class EnvironmentManager;
+  EnvironmentEntry makeLocation() const;
+
 public:
   EnvironmentEntry(const Stmt *s, const LocationContext *L);
 
@@ -115,6 +118,13 @@ public:
   /// Bind a symbolic value to the given environment entry.
   Environment bindExpr(Environment Env, const EnvironmentEntry &E, SVal V,
                        bool Invalidate);
+  
+  /// Bind the location 'location' and value 'V' to the specified
+  /// environment entry.
+  Environment bindExprAndLocation(Environment Env,
+                                  const EnvironmentEntry &E,
+                                  SVal location,
+                                  SVal V);
 
   Environment removeDeadBindings(Environment Env,
                                  SymbolReaper &SymReaper,

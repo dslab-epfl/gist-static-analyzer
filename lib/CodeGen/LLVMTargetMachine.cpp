@@ -11,33 +11,30 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Target/TargetMachine.h"
-
-#include "llvm/Analysis/Passes.h"
+#include "llvm/Transforms/Scalar.h"
+#include "llvm/PassManager.h"
+#include "llvm/Assembly/PrintModulePass.h"
 #include "llvm/CodeGen/AsmPrinter.h"
-#include "llvm/CodeGen/JumpInstrTables.h"
+#include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/MachineFunctionAnalysis.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
-#include "llvm/CodeGen/Passes.h"
-#include "llvm/IR/IRPrintingPasses.h"
-#include "llvm/IR/Verifier.h"
+#include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/Target/TargetLowering.h"
+#include "llvm/Target/TargetLoweringObjectFile.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetOptions.h"
+#include "llvm/Target/TargetSubtargetInfo.h"
+#include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
-#include "llvm/PassManager.h"
+#include "llvm/ADT/OwningPtr.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FormattedStream.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/TargetRegistry.h"
-#include "llvm/Target/TargetInstrInfo.h"
-#include "llvm/Target/TargetLowering.h"
-#include "llvm/Target/TargetLoweringObjectFile.h"
-#include "llvm/Target/TargetOptions.h"
-#include "llvm/Target/TargetRegisterInfo.h"
-#include "llvm/Target/TargetSubtargetInfo.h"
-#include "llvm/Transforms/Scalar.h"
 using namespace llvm;
 
 // Enable or disable FastISel. Both options are needed, because
@@ -47,24 +44,22 @@ static cl::opt<cl::boolOrDefault>
 EnableFastISelOption("fast-isel", cl::Hidden,
   cl::desc("Enable the \"fast\" instruction selector"));
 
-void LLVMTargetMachine::initAsmInfo() {
-  MCAsmInfo *TmpAsmInfo = TheTarget.createMCAsmInfo(
-      *getSubtargetImpl()->getRegisterInfo(), getTargetTriple());
-  // TargetSelect.h moved to a different directory between LLVM 2.9 and 3.0,
-  // and if the old one gets included then MCAsmInfo will be NULL and
-  // we'll crash later.
-  // Provide the user with a useful error message about what's wrong.
-  assert(TmpAsmInfo && "MCAsmInfo not initialized. "
-         "Make sure you include the correct TargetSelect.h"
-         "and that InitializeAllTargetMCs() is being invoked!");
+static cl::opt<bool> ShowMCEncoding("show-mc-encoding", cl::Hidden,
+    cl::desc("Show encoding in .s output"));
+static cl::opt<bool> ShowMCInst("show-mc-inst", cl::Hidden,
+    cl::desc("Show instruction structure in .s output"));
 
-  if (Options.DisableIntegratedAS)
-    TmpAsmInfo->setUseIntegratedAssembler(false);
+static cl::opt<cl::boolOrDefault>
+AsmVerbose("asm-verbose", cl::desc("Add comments to directives."),
+           cl::init(cl::BOU_UNSET));
 
-  if (Options.CompressDebugSections)
-    TmpAsmInfo->setCompressDebugSections(true);
-
-  AsmInfo = TmpAsmInfo;
+static bool getVerboseAsm() {
+  switch (AsmVerbose) {
+  case cl::BOU_UNSET: return TargetMachine::getAsmVerbosityDefault();
+  case cl::BOU_TRUE:  return true;
+  case cl::BOU_FALSE: return false;
+  }
+  llvm_unreachable("Invalid verbose asm state");
 }
 
 LLVMTargetMachine::LLVMTargetMachine(const Target &T, StringRef Triple,
@@ -74,10 +69,14 @@ LLVMTargetMachine::LLVMTargetMachine(const Target &T, StringRef Triple,
                                      CodeGenOpt::Level OL)
   : TargetMachine(T, Triple, CPU, FS, Options) {
   CodeGenInfo = T.createMCCodeGenInfo(Triple, RM, CM, OL);
-}
-
-void LLVMTargetMachine::addAnalysisPasses(PassManagerBase &PM) {
-  PM.add(createBasicTargetTransformInfoPass(this));
+  AsmInfo = T.createMCAsmInfo(Triple);
+  // TargetSelect.h moved to a different directory between LLVM 2.9 and 3.0,
+  // and if the old one gets included then MCAsmInfo will be NULL and
+  // we'll crash later.
+  // Provide the user with a useful error message about what's wrong.
+  assert(AsmInfo && "MCAsmInfo not initialized."
+         "Make sure you include the correct TargetSelect.h"
+         "and that InitializeAllTargetMCs() is being invoked!");
 }
 
 /// addPassesToX helper drives creation and initialization of TargetPassConfig.
@@ -86,12 +85,7 @@ static MCContext *addPassesToGenerateCode(LLVMTargetMachine *TM,
                                           bool DisableVerify,
                                           AnalysisID StartAfter,
                                           AnalysisID StopAfter) {
-
-  // Add internal analysis passes from the target machine.
-  TM->addAnalysisPasses(PM);
-
-  // Targets may override createPassConfig to provide a target-specific
-  // subclass.
+  // Targets may override createPassConfig to provide a target-specific sublass.
   TargetPassConfig *PassConfig = TM->createPassConfig(PM);
   PassConfig->setStartStopPasses(StartAfter, StopAfter);
 
@@ -102,18 +96,17 @@ static MCContext *addPassesToGenerateCode(LLVMTargetMachine *TM,
 
   PassConfig->addIRPasses();
 
-  PassConfig->addCodeGenPrepare();
-
   PassConfig->addPassesToHandleExceptions();
 
   PassConfig->addISelPrepare();
 
   // Install a MachineModuleInfo class, which is an immutable pass that holds
   // all the per-module stuff we're generating, including MCContext.
-  MachineModuleInfo *MMI = new MachineModuleInfo(
-      *TM->getMCAsmInfo(), *TM->getSubtargetImpl()->getRegisterInfo(),
-      &TM->getSubtargetImpl()->getTargetLowering()->getObjFileLowering());
+  MachineModuleInfo *MMI =
+    new MachineModuleInfo(*TM->getMCAsmInfo(), *TM->getRegisterInfo(),
+                          &TM->getTargetLowering()->getObjFileLowering());
   PM.add(MMI);
+  MCContext *Context = &MMI->getContext(); // Return the MCContext by-ref.
 
   // Set up a MachineFunction for the rest of CodeGen to work on.
   PM.add(new MachineFunctionAnalysis(*TM));
@@ -126,13 +119,13 @@ static MCContext *addPassesToGenerateCode(LLVMTargetMachine *TM,
 
   // Ask the target for an isel.
   if (PassConfig->addInstSelector())
-    return nullptr;
+    return NULL;
 
   PassConfig->addMachinePasses();
 
   PassConfig->setInitialized();
 
-  return &MMI->getContext();
+  return Context;
 }
 
 bool LLVMTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
@@ -141,11 +134,6 @@ bool LLVMTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
                                             bool DisableVerify,
                                             AnalysisID StartAfter,
                                             AnalysisID StopAfter) {
-  // Passes to handle jumptable function annotations. These can't be handled at
-  // JIT time, so we don't add them directly to addPassesToGenerateCode.
-  PM.add(createJumpInstrTableInfoPass());
-  PM.add(createJumpInstrTablesPass(Options.JTType));
-
   // Add common CodeGen passes.
   MCContext *Context = addPassesToGenerateCode(this, PM, DisableVerify,
                                                StartAfter, StopAfter);
@@ -158,72 +146,101 @@ bool LLVMTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
     // machine-level pass), and whatever other information is needed to
     // deserialize the code and resume compilation.  For now, just write the
     // LLVM IR.
-    PM.add(createPrintModulePass(Out));
+    PM.add(createPrintModulePass(&Out));
     return false;
   }
 
-  if (Options.MCOptions.MCSaveTempLabels)
+  if (hasMCSaveTempLabels())
     Context->setAllowTemporaryLabels(false);
 
-  const MCSubtargetInfo &STI = getSubtarget<MCSubtargetInfo>();
   const MCAsmInfo &MAI = *getMCAsmInfo();
-  const MCRegisterInfo &MRI = *getSubtargetImpl()->getRegisterInfo();
-  const MCInstrInfo &MII = *getSubtargetImpl()->getInstrInfo();
-  std::unique_ptr<MCStreamer> AsmStreamer;
+  const MCRegisterInfo &MRI = *getRegisterInfo();
+  const MCSubtargetInfo &STI = getSubtarget<MCSubtargetInfo>();
+  OwningPtr<MCStreamer> AsmStreamer;
 
   switch (FileType) {
   case CGFT_AssemblyFile: {
     MCInstPrinter *InstPrinter =
       getTarget().createMCInstPrinter(MAI.getAssemblerDialect(), MAI,
-                                      MII, MRI, STI);
+                                      *getInstrInfo(),
+                                      Context->getRegisterInfo(), STI);
 
     // Create a code emitter if asked to show the encoding.
-    MCCodeEmitter *MCE = nullptr;
-    if (Options.MCOptions.ShowMCEncoding)
-      MCE = getTarget().createMCCodeEmitter(MII, MRI, STI, *Context);
+    MCCodeEmitter *MCE = 0;
+    MCAsmBackend *MAB = 0;
+    if (ShowMCEncoding) {
+      const MCSubtargetInfo &STI = getSubtarget<MCSubtargetInfo>();
+      MCE = getTarget().createMCCodeEmitter(*getInstrInfo(), MRI, STI,
+                                            *Context);
+      MAB = getTarget().createMCAsmBackend(getTargetTriple(), TargetCPU);
+    }
 
-    MCAsmBackend *MAB = getTarget().createMCAsmBackend(MRI, getTargetTriple(),
-                                                       TargetCPU);
-    MCStreamer *S = getTarget().createAsmStreamer(
-        *Context, Out, Options.MCOptions.AsmVerbose,
-        Options.MCOptions.MCUseDwarfDirectory, InstPrinter, MCE, MAB,
-        Options.MCOptions.ShowMCInst);
+    MCStreamer *S = getTarget().createAsmStreamer(*Context, Out,
+                                                  getVerboseAsm(),
+                                                  hasMCUseLoc(),
+                                                  hasMCUseCFI(),
+                                                  hasMCUseDwarfDirectory(),
+                                                  InstPrinter,
+                                                  MCE, MAB,
+                                                  ShowMCInst);
     AsmStreamer.reset(S);
     break;
   }
   case CGFT_ObjectFile: {
     // Create the code emitter for the target if it exists.  If not, .o file
     // emission fails.
-    MCCodeEmitter *MCE = getTarget().createMCCodeEmitter(MII, MRI, STI,
-                                                         *Context);
-    MCAsmBackend *MAB = getTarget().createMCAsmBackend(MRI, getTargetTriple(),
-                                                       TargetCPU);
-    if (!MCE || !MAB)
+    MCCodeEmitter *MCE = getTarget().createMCCodeEmitter(*getInstrInfo(), MRI,
+                                                         STI, *Context);
+    MCAsmBackend *MAB = getTarget().createMCAsmBackend(getTargetTriple(), TargetCPU);
+    if (MCE == 0 || MAB == 0)
       return true;
 
-    AsmStreamer.reset(getTarget().createMCObjectStreamer(
-        getTargetTriple(), *Context, *MAB, Out, MCE, STI,
-        Options.MCOptions.MCRelaxAll, Options.MCOptions.MCNoExecStack));
+    AsmStreamer.reset(getTarget().createMCObjectStreamer(getTargetTriple(),
+                                                         *Context, *MAB, Out,
+                                                         MCE, hasMCRelaxAll(),
+                                                         hasMCNoExecStack()));
+    AsmStreamer.get()->InitSections();
     break;
   }
   case CGFT_Null:
     // The Null output is intended for use for performance analysis and testing,
     // not real users.
-    AsmStreamer.reset(getTarget().createNullStreamer(*Context));
+    AsmStreamer.reset(createNullStreamer(*Context));
     break;
   }
 
   // Create the AsmPrinter, which takes ownership of AsmStreamer if successful.
   FunctionPass *Printer = getTarget().createAsmPrinter(*this, *AsmStreamer);
-  if (!Printer)
+  if (Printer == 0)
     return true;
 
   // If successful, createAsmPrinter took ownership of AsmStreamer.
-  AsmStreamer.release();
+  AsmStreamer.take();
 
   PM.add(Printer);
 
+  PM.add(createGCInfoDeleter());
   return false;
+}
+
+/// addPassesToEmitMachineCode - Add passes to the specified pass manager to
+/// get machine code emitted.  This uses a JITCodeEmitter object to handle
+/// actually outputting the machine code and resolving things like the address
+/// of functions.  This method should returns true if machine code emission is
+/// not supported.
+///
+bool LLVMTargetMachine::addPassesToEmitMachineCode(PassManagerBase &PM,
+                                                   JITCodeEmitter &JCE,
+                                                   bool DisableVerify) {
+  // Add common CodeGen passes.
+  MCContext *Context = addPassesToGenerateCode(this, PM, DisableVerify, 0, 0);
+  if (!Context)
+    return true;
+
+  addCodeEmitter(PM, JCE);
+  PM.add(createGCInfoDeleter());
+
+  return false; // success!
 }
 
 /// addPassesToEmitMC - Add passes to the specified pass manager to get
@@ -236,36 +253,37 @@ bool LLVMTargetMachine::addPassesToEmitMC(PassManagerBase &PM,
                                           raw_ostream &Out,
                                           bool DisableVerify) {
   // Add common CodeGen passes.
-  Ctx = addPassesToGenerateCode(this, PM, DisableVerify, nullptr, nullptr);
+  Ctx = addPassesToGenerateCode(this, PM, DisableVerify, 0, 0);
   if (!Ctx)
     return true;
 
-  if (Options.MCOptions.MCSaveTempLabels)
+  if (hasMCSaveTempLabels())
     Ctx->setAllowTemporaryLabels(false);
 
   // Create the code emitter for the target if it exists.  If not, .o file
   // emission fails.
-  const MCRegisterInfo &MRI = *getSubtargetImpl()->getRegisterInfo();
+  const MCRegisterInfo &MRI = *getRegisterInfo();
   const MCSubtargetInfo &STI = getSubtarget<MCSubtargetInfo>();
-  MCCodeEmitter *MCE = getTarget().createMCCodeEmitter(
-      *getSubtargetImpl()->getInstrInfo(), MRI, STI, *Ctx);
-  MCAsmBackend *MAB = getTarget().createMCAsmBackend(MRI, getTargetTriple(),
-                                                     TargetCPU);
-  if (!MCE || !MAB)
+  MCCodeEmitter *MCE = getTarget().createMCCodeEmitter(*getInstrInfo(), MRI,
+                                                       STI, *Ctx);
+  MCAsmBackend *MAB = getTarget().createMCAsmBackend(getTargetTriple(), TargetCPU);
+  if (MCE == 0 || MAB == 0)
     return true;
 
-  std::unique_ptr<MCStreamer> AsmStreamer;
-  AsmStreamer.reset(getTarget().createMCObjectStreamer(
-      getTargetTriple(), *Ctx, *MAB, Out, MCE, STI,
-      Options.MCOptions.MCRelaxAll, Options.MCOptions.MCNoExecStack));
+  OwningPtr<MCStreamer> AsmStreamer;
+  AsmStreamer.reset(getTarget().createMCObjectStreamer(getTargetTriple(), *Ctx,
+                                                       *MAB, Out, MCE,
+                                                       hasMCRelaxAll(),
+                                                       hasMCNoExecStack()));
+  AsmStreamer.get()->InitSections();
 
   // Create the AsmPrinter, which takes ownership of AsmStreamer if successful.
   FunctionPass *Printer = getTarget().createAsmPrinter(*this, *AsmStreamer);
-  if (!Printer)
+  if (Printer == 0)
     return true;
 
   // If successful, createAsmPrinter took ownership of AsmStreamer.
-  AsmStreamer.release();
+  AsmStreamer.take();
 
   PM.add(Printer);
 

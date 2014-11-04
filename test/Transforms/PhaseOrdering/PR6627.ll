@@ -1,4 +1,4 @@
-; RUN: opt -O3 -S < %s | FileCheck %s
+; RUN: opt -O3 -S %s | FileCheck %s
 ; XFAIL: *
 
 declare i32 @doo(...)
@@ -42,7 +42,7 @@ if.then:                                          ; preds = %land.lhs.true17
 if.end:
   ret void
 
-; CHECK-LABEL: @test2(
+; CHECK: @test2
 ; CHECK: %x1 = load i32* %xx, align 4
 ; CHECK-NEXT: icmp eq i32 %x1, 1179403647
 ; CHECK-NEXT: br i1 {{.*}}, label %if.then, label %if.end 
@@ -86,7 +86,7 @@ if.then:                                          ; preds = %land.lhs.true17
 if.end:
   ret void
 
-; CHECK-LABEL: @test2a(
+; CHECK: @test2a
 ; CHECK: %x1 = load i32* {{.*}}, align 4
 ; CHECK-NEXT: icmp eq i32 %x1, 1179403647
 ; CHECK-NEXT: br i1 {{.*}}, label %if.then, label %if.end 

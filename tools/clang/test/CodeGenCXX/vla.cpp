@@ -9,14 +9,14 @@ template<typename T> int S<T>::n = 5;
 int f() {
   // Make sure that the reference here is enough to trigger the instantiation of
   // the static data member.
-  // CHECK: @_ZN1SIiE1nE = linkonce_odr global i32 5
+  // CHECK: @_ZN1SIiE1nE = weak_odr global i32 5
   int a[S<int>::n];
   return sizeof a;
 }
 
 // rdar://problem/9506377
 void test0(void *array, int n) {
-  // CHECK-LABEL: define void @_Z5test0Pvi(
+  // CHECK: define void @_Z5test0Pvi(
   // CHECK:      [[ARRAY:%.*]] = alloca i8*, align 8
   // CHECK-NEXT: [[N:%.*]] = alloca i32, align 4
   // CHECK-NEXT: [[REF:%.*]] = alloca i16*, align 8

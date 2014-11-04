@@ -15,11 +15,9 @@
 #define LLVM_TARGET_TARGETINSTRINFO_H
 
 #include "llvm/ADT/SmallSet.h"
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/CodeGen/MachineCombinerPattern.h"
 #include "llvm/MC/MCInstrInfo.h"
-#include "llvm/Target/TargetRegisterInfo.h"
+#include "llvm/CodeGen/DFAPacketizer.h"
+#include "llvm/CodeGen/MachineFunction.h"
 
 namespace llvm {
 
@@ -30,8 +28,7 @@ class MachineMemOperand;
 class MachineRegisterInfo;
 class MDNode;
 class MCInst;
-struct MCSchedModel;
-class MCSymbolRefExpr;
+class MCSchedModel;
 class SDNode;
 class ScheduleHazardRecognizer;
 class SelectionDAG;
@@ -39,8 +36,6 @@ class ScheduleDAG;
 class TargetRegisterClass;
 class TargetRegisterInfo;
 class BranchProbability;
-class TargetSubtargetInfo;
-class DFAPacketizer;
 
 template<class T> class SmallVectorImpl;
 
@@ -71,7 +66,7 @@ public:
   /// rematerializable, meaning it has no side effects and requires no operands
   /// that aren't always available.
   bool isTriviallyReMaterializable(const MachineInstr *MI,
-                                   AliasAnalysis *AA = nullptr) const {
+                                   AliasAnalysis *AA = 0) const {
     return MI->getOpcode() == TargetOpcode::IMPLICIT_DEF ||
            (MI->getDesc().isRematerializable() &&
             (isReallyTriviallyReMaterializable(MI, AA) ||
@@ -148,7 +143,9 @@ public:
   /// missed.
   virtual bool hasLoadFromStackSlot(const MachineInstr *MI,
                                     const MachineMemOperand *&MMO,
-                                    int &FrameIndex) const;
+                                    int &FrameIndex) const {
+    return 0;
+  }
 
   /// isStoreToStackSlot - If the specified machine instruction is a direct
   /// store to a stack slot, return the virtual or physical register number of
@@ -176,40 +173,8 @@ public:
   /// stack.  This is just a hint, as some cases may be missed.
   virtual bool hasStoreToStackSlot(const MachineInstr *MI,
                                    const MachineMemOperand *&MMO,
-                                   int &FrameIndex) const;
-
-  /// isStackSlotCopy - Return true if the specified machine instruction
-  /// is a copy of one stack slot to another and has no other effect.
-  /// Provide the identity of the two frame indices.
-  virtual bool isStackSlotCopy(const MachineInstr *MI, int &DestFrameIndex,
-                               int &SrcFrameIndex) const {
-    return false;
-  }
-
-  /// Compute the size in bytes and offset within a stack slot of a spilled
-  /// register or subregister.
-  ///
-  /// \param [out] Size in bytes of the spilled value.
-  /// \param [out] Offset in bytes within the stack slot.
-  /// \returns true if both Size and Offset are successfully computed.
-  ///
-  /// Not all subregisters have computable spill slots. For example,
-  /// subregisters registers may not be byte-sized, and a pair of discontiguous
-  /// subregisters has no single offset.
-  ///
-  /// Targets with nontrivial bigendian implementations may need to override
-  /// this, particularly to support spilled vector registers.
-  virtual bool getStackSlotRange(const TargetRegisterClass *RC, unsigned SubIdx,
-                                 unsigned &Size, unsigned &Offset,
-                                 const TargetMachine *TM) const;
-
-  /// isAsCheapAsAMove - Return true if the instruction is as cheap as a move
-  /// instruction.
-  ///
-  /// Targets for different archs need to override this, and different
-  /// micro-architectures can also be finely tuned inside.
-  virtual bool isAsCheapAsAMove(const MachineInstr *MI) const {
-    return MI->isAsCheapAsAMove();
+                                   int &FrameIndex) const {
+    return 0;
   }
 
   /// reMaterialize - Re-issue the specified 'original' instruction at the
@@ -221,7 +186,7 @@ public:
                              MachineBasicBlock::iterator MI,
                              unsigned DestReg, unsigned SubIdx,
                              const MachineInstr *Orig,
-                             const TargetRegisterInfo &TRI) const;
+                             const TargetRegisterInfo &TRI) const = 0;
 
   /// duplicate - Create a duplicate of the Orig instruction in MF. This is like
   /// MachineFunction::CloneMachineInstr(), but the target may update operands
@@ -229,7 +194,7 @@ public:
   ///
   /// The instruction must be duplicable as indicated by isNotDuplicable().
   virtual MachineInstr *duplicate(MachineInstr *Orig,
-                                  MachineFunction &MF) const;
+                                  MachineFunction &MF) const = 0;
 
   /// convertToThreeAddress - This method must be implemented by targets that
   /// set the M_CONVERTIBLE_TO_3_ADDR flag.  When this flag is set, the target
@@ -244,7 +209,7 @@ public:
   virtual MachineInstr *
   convertToThreeAddress(MachineFunction::iterator &MFI,
                    MachineBasicBlock::iterator &MBBI, LiveVariables *LV) const {
-    return nullptr;
+    return 0;
   }
 
   /// commuteInstruction - If a target has any instructions that are
@@ -256,92 +221,13 @@ public:
   /// method for a non-commutable instruction, but there may be some cases
   /// where this method fails and returns null.
   virtual MachineInstr *commuteInstruction(MachineInstr *MI,
-                                           bool NewMI = false) const;
+                                           bool NewMI = false) const = 0;
 
   /// findCommutedOpIndices - If specified MI is commutable, return the two
   /// operand indices that would swap value. Return false if the instruction
   /// is not in a form which this routine understands.
   virtual bool findCommutedOpIndices(MachineInstr *MI, unsigned &SrcOpIdx1,
-                                     unsigned &SrcOpIdx2) const;
-
-  /// A pair composed of a register and a sub-register index.
-  /// Used to give some type checking when modeling Reg:SubReg.
-  struct RegSubRegPair {
-    unsigned Reg;
-    unsigned SubReg;
-    RegSubRegPair(unsigned Reg = 0, unsigned SubReg = 0)
-        : Reg(Reg), SubReg(SubReg) {}
-  };
-  /// A pair composed of a pair of a register and a sub-register index,
-  /// and another sub-register index.
-  /// Used to give some type checking when modeling Reg:SubReg1, SubReg2.
-  struct RegSubRegPairAndIdx : RegSubRegPair {
-    unsigned SubIdx;
-    RegSubRegPairAndIdx(unsigned Reg = 0, unsigned SubReg = 0,
-                        unsigned SubIdx = 0)
-        : RegSubRegPair(Reg, SubReg), SubIdx(SubIdx) {}
-  };
-
-  /// Build the equivalent inputs of a REG_SEQUENCE for the given \p MI
-  /// and \p DefIdx.
-  /// \p [out] InputRegs of the equivalent REG_SEQUENCE. Each element of
-  /// the list is modeled as <Reg:SubReg, SubIdx>.
-  /// E.g., REG_SEQUENCE vreg1:sub1, sub0, vreg2, sub1 would produce
-  /// two elements:
-  /// - vreg1:sub1, sub0
-  /// - vreg2<:0>, sub1
-  ///
-  /// \returns true if it is possible to build such an input sequence
-  /// with the pair \p MI, \p DefIdx. False otherwise.
-  ///
-  /// \pre MI.isRegSequence() or MI.isRegSequenceLike().
-  ///
-  /// \note The generic implementation does not provide any support for
-  /// MI.isRegSequenceLike(). In other words, one has to override
-  /// getRegSequenceLikeInputs for target specific instructions.
-  bool
-  getRegSequenceInputs(const MachineInstr &MI, unsigned DefIdx,
-                       SmallVectorImpl<RegSubRegPairAndIdx> &InputRegs) const;
-
-  /// Build the equivalent inputs of a EXTRACT_SUBREG for the given \p MI
-  /// and \p DefIdx.
-  /// \p [out] InputReg of the equivalent EXTRACT_SUBREG.
-  /// E.g., EXTRACT_SUBREG vreg1:sub1, sub0, sub1 would produce:
-  /// - vreg1:sub1, sub0
-  ///
-  /// \returns true if it is possible to build such an input sequence
-  /// with the pair \p MI, \p DefIdx. False otherwise.
-  ///
-  /// \pre MI.isExtractSubreg() or MI.isExtractSubregLike().
-  ///
-  /// \note The generic implementation does not provide any support for
-  /// MI.isExtractSubregLike(). In other words, one has to override
-  /// getExtractSubregLikeInputs for target specific instructions.
-  bool
-  getExtractSubregInputs(const MachineInstr &MI, unsigned DefIdx,
-                         RegSubRegPairAndIdx &InputReg) const;
-
-  /// Build the equivalent inputs of a INSERT_SUBREG for the given \p MI
-  /// and \p DefIdx.
-  /// \p [out] BaseReg and \p [out] InsertedReg contain
-  /// the equivalent inputs of INSERT_SUBREG.
-  /// E.g., INSERT_SUBREG vreg0:sub0, vreg1:sub1, sub3 would produce:
-  /// - BaseReg: vreg0:sub0
-  /// - InsertedReg: vreg1:sub1, sub3
-  ///
-  /// \returns true if it is possible to build such an input sequence
-  /// with the pair \p MI, \p DefIdx. False otherwise.
-  ///
-  /// \pre MI.isInsertSubreg() or MI.isInsertSubregLike().
-  ///
-  /// \note The generic implementation does not provide any support for
-  /// MI.isInsertSubregLike(). In other words, one has to override
-  /// getInsertSubregLikeInputs for target specific instructions.
-  bool
-  getInsertSubregInputs(const MachineInstr &MI, unsigned DefIdx,
-                        RegSubRegPair &BaseReg,
-                        RegSubRegPairAndIdx &InsertedReg) const;
-
+                                     unsigned &SrcOpIdx2) const = 0;
 
   /// produceSameValue - Return true if two machine instructions would produce
   /// identical values. By default, this is only true when the two instructions
@@ -350,7 +236,7 @@ public:
   /// aggressive checks.
   virtual bool produceSameValue(const MachineInstr *MI0,
                                 const MachineInstr *MI1,
-                                const MachineRegisterInfo *MRI = nullptr) const;
+                                const MachineRegisterInfo *MRI = 0) const = 0;
 
   /// AnalyzeBranch - Analyze the branching code at the end of MBB, returning
   /// true if it cannot be understood (e.g. it's a switch dispatch or isn't
@@ -412,21 +298,7 @@ public:
   /// after it, replacing it with an unconditional branch to NewDest. This is
   /// used by the tail merging pass.
   virtual void ReplaceTailWithBranchTo(MachineBasicBlock::iterator Tail,
-                                       MachineBasicBlock *NewDest) const;
-
-  /// getUnconditionalBranch - Get an instruction that performs an unconditional
-  /// branch to the given symbol.
-  virtual void
-  getUnconditionalBranch(MCInst &MI,
-                         const MCSymbolRefExpr *BranchTarget) const {
-    llvm_unreachable("Target didn't implement "
-                     "TargetInstrInfo::getUnconditionalBranch!");
-  }
-
-  /// getTrap - Get a machine trap instruction
-  virtual void getTrap(MCInst &MI) const {
-    llvm_unreachable("Target didn't implement TargetInstrInfo::getTrap!");
-  }
+                                       MachineBasicBlock *NewDest) const = 0;
 
   /// isLegalToSplitMBBAt - Return true if it's legal to split the given basic
   /// block at the specified instruction (i.e. instruction would be the start
@@ -496,10 +368,11 @@ public:
   /// condition code in Cond.
   ///
   /// When successful, also return the latency in cycles from TrueReg,
-  /// FalseReg, and Cond to the destination register. In most cases, a select
-  /// instruction will be 1 cycle, so CondCycles = TrueCycles = FalseCycles = 1
-  ///
-  /// Some x86 implementations have 2-cycle cmov instructions.
+  /// FalseReg, and Cond to the destination register. The Cond latency should
+  /// compensate for a conditional branch being removed. For example, if a
+  /// conditional branch has a 3 cycle latency from the condition code read,
+  /// and a cmov instruction has a 2 cycle latency from the condition code
+  /// read, CondCycles should be returned as -1.
   ///
   /// @param MBB         Block where select instruction would be inserted.
   /// @param Cond        Condition returned by AnalyzeBranch.
@@ -562,7 +435,7 @@ public:
                              SmallVectorImpl<MachineOperand> &Cond,
                              unsigned &TrueOp, unsigned &FalseOp,
                              bool &Optimizable) const {
-    assert(MI && MI->getDesc().isSelect() && "MI must be a select instruction");
+    assert(MI && MI->isSelect() && "MI must be a select instruction");
     return true;
   }
 
@@ -637,6 +510,22 @@ public:
     return false;
   }
 
+  /// emitFrameIndexDebugValue - Emit a target-dependent form of
+  /// DBG_VALUE encoding the address of a frame index.  Addresses would
+  /// normally be lowered the same way as other addresses on the target,
+  /// e.g. in load instructions.  For targets that do not support this
+  /// the debug info is simply lost.
+  /// If you add this for a target you should handle this DBG_VALUE in the
+  /// target-specific AsmPrinter code as well; you will probably get invalid
+  /// assembly output if you don't.
+  virtual MachineInstr *emitFrameIndexDebugValue(MachineFunction &MF,
+                                                 int FrameIx,
+                                                 uint64_t Offset,
+                                                 const MDNode *MDPtr,
+                                                 DebugLoc dl) const {
+    return 0;
+  }
+
   /// foldMemoryOperand - Attempt to fold a load or store of the specified stack
   /// slot into the specified machine instruction for the specified operand(s).
   /// If this is possible, a new instruction is returned with the specified
@@ -654,42 +543,6 @@ public:
                                   const SmallVectorImpl<unsigned> &Ops,
                                   MachineInstr* LoadMI) const;
 
-  /// hasPattern - return true when there is potentially a faster code sequence
-  /// for an instruction chain ending in \p Root. All potential pattern are
-  /// returned in the \p Pattern vector. Pattern should be sorted in priority
-  /// order since the pattern evaluator stops checking as soon as it finds a
-  /// faster sequence.
-  /// \param Root - Instruction that could be combined with one of its operands
-  /// \param Pattern - Vector of possible combination pattern
-
-  virtual bool hasPattern(
-      MachineInstr &Root,
-      SmallVectorImpl<MachineCombinerPattern::MC_PATTERN> &Pattern) const {
-    return false;
-  }
-
-  /// genAlternativeCodeSequence - when hasPattern() finds a pattern this
-  /// function generates the instructions that could replace the original code
-  /// sequence. The client has to decide whether the actual replacementment is
-  /// beneficial or not.
-  /// \param Root - Instruction that could be combined with one of its operands
-  /// \param P - Combination pattern for Root
-  /// \param InsInstrs - Vector of new instructions that implement P
-  /// \param DelInstrs - Old instructions, including Root, that could be replaced
-  /// by InsInstr
-  /// \param InstrIdxForVirtReg - map of virtual register to instruction in
-  /// InsInstr that defines it
-  virtual void genAlternativeCodeSequence(
-      MachineInstr &Root, MachineCombinerPattern::MC_PATTERN P,
-      SmallVectorImpl<MachineInstr *> &InsInstrs,
-      SmallVectorImpl<MachineInstr *> &DelInstrs,
-      DenseMap<unsigned, unsigned> &InstrIdxForVirtReg) const {
-    return;
-  }
-
-  /// useMachineCombiner - return true when a target supports MachineCombiner
-  virtual bool useMachineCombiner() const { return false; }
-
 protected:
   /// foldMemoryOperandImpl - Target-dependent implementation for
   /// foldMemoryOperand. Target-independent code in foldMemoryOperand will
@@ -698,7 +551,7 @@ protected:
                                           MachineInstr* MI,
                                           const SmallVectorImpl<unsigned> &Ops,
                                           int FrameIndex) const {
-    return nullptr;
+    return 0;
   }
 
   /// foldMemoryOperandImpl - Target-dependent implementation for
@@ -708,50 +561,7 @@ protected:
                                               MachineInstr* MI,
                                           const SmallVectorImpl<unsigned> &Ops,
                                               MachineInstr* LoadMI) const {
-    return nullptr;
-  }
-
-  /// \brief Target-dependent implementation of getRegSequenceInputs.
-  ///
-  /// \returns true if it is possible to build the equivalent
-  /// REG_SEQUENCE inputs with the pair \p MI, \p DefIdx. False otherwise.
-  ///
-  /// \pre MI.isRegSequenceLike().
-  ///
-  /// \see TargetInstrInfo::getRegSequenceInputs.
-  virtual bool getRegSequenceLikeInputs(
-      const MachineInstr &MI, unsigned DefIdx,
-      SmallVectorImpl<RegSubRegPairAndIdx> &InputRegs) const {
-    return false;
-  }
-
-  /// \brief Target-dependent implementation of getExtractSubregInputs.
-  ///
-  /// \returns true if it is possible to build the equivalent
-  /// EXTRACT_SUBREG inputs with the pair \p MI, \p DefIdx. False otherwise.
-  ///
-  /// \pre MI.isExtractSubregLike().
-  ///
-  /// \see TargetInstrInfo::getExtractSubregInputs.
-  virtual bool getExtractSubregLikeInputs(
-      const MachineInstr &MI, unsigned DefIdx,
-      RegSubRegPairAndIdx &InputReg) const {
-    return false;
-  }
-
-  /// \brief Target-dependent implementation of getInsertSubregInputs.
-  ///
-  /// \returns true if it is possible to build the equivalent
-  /// INSERT_SUBREG inputs with the pair \p MI, \p DefIdx. False otherwise.
-  ///
-  /// \pre MI.isInsertSubregLike().
-  ///
-  /// \see TargetInstrInfo::getInsertSubregInputs.
-  virtual bool
-  getInsertSubregLikeInputs(const MachineInstr &MI, unsigned DefIdx,
-                            RegSubRegPair &BaseReg,
-                            RegSubRegPairAndIdx &InsertedReg) const {
-    return false;
+    return 0;
   }
 
 public:
@@ -759,7 +569,7 @@ public:
   /// folding is possible.
   virtual
   bool canFoldMemoryOperand(const MachineInstr *MI,
-                            const SmallVectorImpl<unsigned> &Ops) const;
+                            const SmallVectorImpl<unsigned> &Ops) const =0;
 
   /// unfoldMemoryOperand - Separate a single instruction which folded a load or
   /// a store or a load and a store into two or more instruction. If this is
@@ -783,7 +593,7 @@ public:
   /// value.
   virtual unsigned getOpcodeAfterMemoryUnfold(unsigned Opc,
                                       bool UnfoldLoad, bool UnfoldStore,
-                                      unsigned *LoadRegIndex = nullptr) const {
+                                      unsigned *LoadRegIndex = 0) const {
     return 0;
   }
 
@@ -811,28 +621,6 @@ public:
     return false;
   }
 
-  /// \brief Get the base register and byte offset of a load/store instr.
-  virtual bool getLdStBaseRegImmOfs(MachineInstr *LdSt,
-                                    unsigned &BaseReg, unsigned &Offset,
-                                    const TargetRegisterInfo *TRI) const {
-    return false;
-  }
-
-  virtual bool enableClusterLoads() const { return false; }
-
-  virtual bool shouldClusterLoads(MachineInstr *FirstLdSt,
-                                  MachineInstr *SecondLdSt,
-                                  unsigned NumLoads) const {
-    return false;
-  }
-
-  /// \brief Can this target fuse the given instructions if they are scheduled
-  /// adjacent.
-  virtual bool shouldScheduleAdjacent(MachineInstr* First,
-                                      MachineInstr *Second) const {
-    return false;
-  }
-
   /// ReverseBranchCondition - Reverses the branch condition of the specified
   /// condition list, returning false on success and true if it cannot be
   /// reversed.
@@ -847,8 +635,10 @@ public:
                           MachineBasicBlock::iterator MI) const;
 
 
-  /// Return the noop instruction to use for a noop.
-  virtual void getNoopForMachoTarget(MCInst &NopInst) const;
+  /// getNoopForMachoTarget - Return the noop instruction to use for a noop.
+  virtual void getNoopForMachoTarget(MCInst &NopInst) const {
+    // Default to just using 'nop' string.
+  }
 
 
   /// isPredicated - Returns true if the instruction is already predicated.
@@ -859,13 +649,13 @@ public:
 
   /// isUnpredicatedTerminator - Returns true if the instruction is a
   /// terminator instruction that has not been predicated.
-  virtual bool isUnpredicatedTerminator(const MachineInstr *MI) const;
+  virtual bool isUnpredicatedTerminator(const MachineInstr *MI) const = 0;
 
   /// PredicateInstruction - Convert the instruction into a predicated
   /// instruction. It returns true if the operation was successful.
   virtual
   bool PredicateInstruction(MachineInstr *MI,
-                        const SmallVectorImpl<MachineOperand> &Pred) const;
+                        const SmallVectorImpl<MachineOperand> &Pred) const = 0;
 
   /// SubsumesPredicate - Returns true if the first specified predicate
   /// subsumes the second, e.g. GE subsumes GT.
@@ -901,7 +691,7 @@ public:
   /// terminators.
   virtual bool isSchedulingBoundary(const MachineInstr *MI,
                                     const MachineBasicBlock *MBB,
-                                    const MachineFunction &MF) const;
+                                    const MachineFunction &MF) const = 0;
 
   /// Measure the specified inline asm to determine an approximation of its
   /// length.
@@ -912,26 +702,22 @@ public:
   /// use for this target when scheduling the machine instructions before
   /// register allocation.
   virtual ScheduleHazardRecognizer*
-  CreateTargetHazardRecognizer(const TargetSubtargetInfo *STI,
-                               const ScheduleDAG *DAG) const;
+  CreateTargetHazardRecognizer(const TargetMachine *TM,
+                               const ScheduleDAG *DAG) const = 0;
 
   /// CreateTargetMIHazardRecognizer - Allocate and return a hazard recognizer
   /// to use for this target when scheduling the machine instructions before
   /// register allocation.
   virtual ScheduleHazardRecognizer*
   CreateTargetMIHazardRecognizer(const InstrItineraryData*,
-                                 const ScheduleDAG *DAG) const;
+                                 const ScheduleDAG *DAG) const = 0;
 
   /// CreateTargetPostRAHazardRecognizer - Allocate and return a hazard
   /// recognizer to use for this target when scheduling the machine instructions
   /// after register allocation.
   virtual ScheduleHazardRecognizer*
   CreateTargetPostRAHazardRecognizer(const InstrItineraryData*,
-                                     const ScheduleDAG *DAG) const;
-
-  /// Provide a global flag for disabling the PreRA hazard recognizer that
-  /// targets may choose to honor.
-  bool usePreRAHazardRecognizer() const;
+                                     const ScheduleDAG *DAG) const = 0;
 
   /// analyzeCompare - For a comparison instruction, return the source registers
   /// in SrcReg and SrcReg2 if having two register operands, and the value it
@@ -952,7 +738,6 @@ public:
                                     const MachineRegisterInfo *MRI) const {
     return false;
   }
-  virtual bool optimizeCondBranch(MachineInstr *MI) const { return false; }
 
   /// optimizeLoadInstr - Try to remove the load by folding it to a register
   /// operand at the use. We fold the load instructions if and only if the
@@ -965,15 +750,11 @@ public:
                         const MachineRegisterInfo *MRI,
                         unsigned &FoldAsLoadDefReg,
                         MachineInstr *&DefMI) const {
-    return nullptr;
+    return 0;
   }
 
   /// FoldImmediate - 'Reg' is known to be defined by a move immediate
   /// instruction, try to fold the immediate into the use instruction.
-  /// If MRI->hasOneNonDBGUse(Reg) is true, and this function returns true,
-  /// then the caller may assume that DefMI has been erased from its parent
-  /// block. The caller may assume that it will not be erased by this
-  /// function otherwise.
   virtual bool FoldImmediate(MachineInstr *UseMI, MachineInstr *DefMI,
                              unsigned Reg, MachineRegisterInfo *MRI) const {
     return false;
@@ -984,7 +765,7 @@ public:
   /// IssueWidth is the number of microops that can be dispatched each
   /// cycle. An instruction with zero microops takes no dispatch resources.
   virtual unsigned getNumMicroOps(const InstrItineraryData *ItinData,
-                                  const MachineInstr *MI) const;
+                                  const MachineInstr *MI) const = 0;
 
   /// isZeroCost - Return true for pseudo instructions that don't consume any
   /// machine resources in their current form. These are common cases that the
@@ -996,7 +777,7 @@ public:
 
   virtual int getOperandLatency(const InstrItineraryData *ItinData,
                                 SDNode *DefNode, unsigned DefIdx,
-                                SDNode *UseNode, unsigned UseIdx) const;
+                                SDNode *UseNode, unsigned UseIdx) const = 0;
 
   /// getOperandLatency - Compute and return the use operand latency of a given
   /// pair of def and use.
@@ -1009,33 +790,33 @@ public:
   virtual int getOperandLatency(const InstrItineraryData *ItinData,
                                 const MachineInstr *DefMI, unsigned DefIdx,
                                 const MachineInstr *UseMI,
-                                unsigned UseIdx) const;
+                                unsigned UseIdx) const = 0;
 
   /// computeOperandLatency - Compute and return the latency of the given data
   /// dependent def and use when the operand indices are already known.
+  ///
+  /// FindMin may be set to get the minimum vs. expected latency.
   unsigned computeOperandLatency(const InstrItineraryData *ItinData,
                                  const MachineInstr *DefMI, unsigned DefIdx,
-                                 const MachineInstr *UseMI, unsigned UseIdx)
-    const;
+                                 const MachineInstr *UseMI, unsigned UseIdx,
+                                 bool FindMin = false) const;
 
   /// getInstrLatency - Compute the instruction latency of a given instruction.
   /// If the instruction has higher cost when predicated, it's returned via
   /// PredCost.
   virtual unsigned getInstrLatency(const InstrItineraryData *ItinData,
                                    const MachineInstr *MI,
-                                   unsigned *PredCost = nullptr) const;
-
-  virtual unsigned getPredicationCost(const MachineInstr *MI) const;
+                                   unsigned *PredCost = 0) const = 0;
 
   virtual int getInstrLatency(const InstrItineraryData *ItinData,
-                              SDNode *Node) const;
+                              SDNode *Node) const = 0;
 
   /// Return the default expected latency for a def based on it's opcode.
-  unsigned defaultDefLatency(const MCSchedModel &SchedModel,
+  unsigned defaultDefLatency(const MCSchedModel *SchedModel,
                              const MachineInstr *DefMI) const;
 
   int computeDefOperandLatency(const InstrItineraryData *ItinData,
-                               const MachineInstr *DefMI) const;
+                               const MachineInstr *DefMI, bool FindMin) const;
 
   /// isHighLatencyDef - Return true if this opcode has high latency to its
   /// result.
@@ -1058,7 +839,7 @@ public:
   /// if the target considered it 'low'.
   virtual
   bool hasLowDefLatency(const InstrItineraryData *ItinData,
-                        const MachineInstr *DefMI, unsigned DefIdx) const;
+                        const MachineInstr *DefMI, unsigned DefIdx) const = 0;
 
   /// verifyInstruction - Perform target specific instruction verification.
   virtual
@@ -1144,26 +925,6 @@ public:
     return 0;
   }
 
-  /// \brief Return the minimum clearance before an instruction that reads an
-  /// unused register.
-  ///
-  /// For example, AVX instructions may copy part of an register operand into
-  /// the unused high bits of the destination register.
-  ///
-  /// vcvtsi2sdq %rax, %xmm0<undef>, %xmm14
-  ///
-  /// In the code above, vcvtsi2sdq copies %xmm0[127:64] into %xmm14 creating a
-  /// false dependence on any previous write to %xmm0.
-  ///
-  /// This hook works similarly to getPartialRegUpdateClearance, except that it
-  /// does not take an operand index. Instead sets \p OpNum to the index of the
-  /// unused register.
-  virtual unsigned getUndefRegClearance(const MachineInstr *MI, unsigned &OpNum,
-                                        const TargetRegisterInfo *TRI) const {
-    // The default implementation returns 0 for no undef register dependency.
-    return 0;
-  }
-
   /// breakPartialRegDependency - Insert a dependency-breaking instruction
   /// before MI to eliminate an unwanted dependency on OpNum.
   ///
@@ -1186,27 +947,91 @@ public:
                             const TargetRegisterInfo *TRI) const {}
 
   /// Create machine specific model for scheduling.
-  virtual DFAPacketizer *
-  CreateTargetScheduleState(const TargetSubtargetInfo &) const {
-    return nullptr;
-  }
-
-  // areMemAccessesTriviallyDisjoint - Sometimes, it is possible for the target
-  // to tell, even without aliasing information, that two MIs access different
-  // memory addresses. This function returns true if two MIs access different
-  // memory addresses, and false otherwise.
-  virtual bool
-  areMemAccessesTriviallyDisjoint(MachineInstr *MIa, MachineInstr *MIb,
-                                  AliasAnalysis *AA = nullptr) const {
-    assert(MIa && (MIa->mayLoad() || MIa->mayStore()) &&
-           "MIa must load from or modify a memory location");
-    assert(MIb && (MIb->mayLoad() || MIb->mayStore()) &&
-           "MIb must load from or modify a memory location");
-    return false;
+  virtual DFAPacketizer*
+    CreateTargetScheduleState(const TargetMachine*, const ScheduleDAG*) const {
+    return NULL;
   }
 
 private:
   int CallFrameSetupOpcode, CallFrameDestroyOpcode;
+};
+
+/// TargetInstrInfoImpl - This is the default implementation of
+/// TargetInstrInfo, which just provides a couple of default implementations
+/// for various methods.  This separated out because it is implemented in
+/// libcodegen, not in libtarget.
+class TargetInstrInfoImpl : public TargetInstrInfo {
+protected:
+  TargetInstrInfoImpl(int CallFrameSetupOpcode = -1,
+                      int CallFrameDestroyOpcode = -1)
+    : TargetInstrInfo(CallFrameSetupOpcode, CallFrameDestroyOpcode) {}
+public:
+  virtual void ReplaceTailWithBranchTo(MachineBasicBlock::iterator OldInst,
+                                       MachineBasicBlock *NewDest) const;
+  virtual MachineInstr *commuteInstruction(MachineInstr *MI,
+                                           bool NewMI = false) const;
+  virtual bool findCommutedOpIndices(MachineInstr *MI, unsigned &SrcOpIdx1,
+                                     unsigned &SrcOpIdx2) const;
+  virtual bool canFoldMemoryOperand(const MachineInstr *MI,
+                                    const SmallVectorImpl<unsigned> &Ops) const;
+  virtual bool hasLoadFromStackSlot(const MachineInstr *MI,
+                                    const MachineMemOperand *&MMO,
+                                    int &FrameIndex) const;
+  virtual bool hasStoreToStackSlot(const MachineInstr *MI,
+                                   const MachineMemOperand *&MMO,
+                                   int &FrameIndex) const;
+  virtual bool isUnpredicatedTerminator(const MachineInstr *MI) const;
+  virtual bool PredicateInstruction(MachineInstr *MI,
+                            const SmallVectorImpl<MachineOperand> &Pred) const;
+  virtual void reMaterialize(MachineBasicBlock &MBB,
+                             MachineBasicBlock::iterator MI,
+                             unsigned DestReg, unsigned SubReg,
+                             const MachineInstr *Orig,
+                             const TargetRegisterInfo &TRI) const;
+  virtual MachineInstr *duplicate(MachineInstr *Orig,
+                                  MachineFunction &MF) const;
+  virtual bool produceSameValue(const MachineInstr *MI0,
+                                const MachineInstr *MI1,
+                                const MachineRegisterInfo *MRI) const;
+  virtual bool isSchedulingBoundary(const MachineInstr *MI,
+                                    const MachineBasicBlock *MBB,
+                                    const MachineFunction &MF) const;
+
+  virtual int getOperandLatency(const InstrItineraryData *ItinData,
+                                SDNode *DefNode, unsigned DefIdx,
+                                SDNode *UseNode, unsigned UseIdx) const;
+
+  virtual int getInstrLatency(const InstrItineraryData *ItinData,
+                              SDNode *Node) const;
+
+  virtual unsigned getNumMicroOps(const InstrItineraryData *ItinData,
+                                  const MachineInstr *MI) const;
+
+  virtual unsigned getInstrLatency(const InstrItineraryData *ItinData,
+                                   const MachineInstr *MI,
+                                   unsigned *PredCost = 0) const;
+
+  virtual
+  bool hasLowDefLatency(const InstrItineraryData *ItinData,
+                        const MachineInstr *DefMI, unsigned DefIdx) const;
+
+  virtual int getOperandLatency(const InstrItineraryData *ItinData,
+                                const MachineInstr *DefMI, unsigned DefIdx,
+                                const MachineInstr *UseMI,
+                                unsigned UseIdx) const;
+
+  bool usePreRAHazardRecognizer() const;
+
+  virtual ScheduleHazardRecognizer *
+  CreateTargetHazardRecognizer(const TargetMachine*, const ScheduleDAG*) const;
+
+  virtual ScheduleHazardRecognizer *
+  CreateTargetMIHazardRecognizer(const InstrItineraryData*,
+                                 const ScheduleDAG*) const;
+
+  virtual ScheduleHazardRecognizer *
+  CreateTargetPostRAHazardRecognizer(const InstrItineraryData*,
+                                     const ScheduleDAG*) const;
 };
 
 } // End llvm namespace

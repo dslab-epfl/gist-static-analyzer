@@ -31,9 +31,9 @@ typename remove_reference<T>::type&& move(T &&x) {
   return static_cast<typename remove_reference<T>::type&&>(x); 
 }
 
-// CHECK-LABEL: define void @_Z12library_moveRU8__strongP11objc_objectS2_
+// CHECK: define void @_Z12library_moveRU8__strongP11objc_objectS2_
 void library_move(__strong id &x, __strong id &y) {
-  // CHECK: call dereferenceable({{[0-9]+}}) i8** @_Z4moveIRU8__strongP11objc_objectEON16remove_referenceIT_E4typeEOS5_
+  // CHECK: call i8** @_Z4moveIRU8__strongP11objc_objectEON16remove_referenceIT_E4typeEOS5_
   // CHECK: load i8**
   // CHECK: store i8* null, i8**
   // CHECK: load i8***
@@ -44,9 +44,9 @@ void library_move(__strong id &x, __strong id &y) {
   x = move(y);
 }
 
-// CHECK-LABEL: define void @_Z12library_moveRU8__strongP11objc_object
+// CHECK: define void @_Z12library_moveRU8__strongP11objc_object
 void library_move(__strong id &y) {
-  // CHECK: [[Y:%[a-zA-Z0-9]+]] = call dereferenceable({{[0-9]+}}) i8** @_Z4moveIRU8__strongP11objc_objectEON16remove_referenceIT_E4typeEOS5_
+  // CHECK: [[Y:%[a-zA-Z0-9]+]] = call i8** @_Z4moveIRU8__strongP11objc_objectEON16remove_referenceIT_E4typeEOS5_
   // Load the object
   // CHECK-NEXT: [[OBJ:%[a-zA-Z0-9]+]] = load i8** [[Y]]
   // Null out y
@@ -62,10 +62,10 @@ void library_move(__strong id &y) {
   // CHECK-NEXT: ret void
 }
 
-// CHECK-LABEL: define void @_Z10const_moveRKU8__strongP11objc_object(
+// CHECK: define void @_Z10const_moveRKU8__strongP11objc_object(
 void const_move(const __strong id &x) {
   // CHECK:      [[Y:%.*]] = alloca i8*,
-  // CHECK:      [[X:%.*]] = call dereferenceable({{[0-9]+}}) i8** @_Z4moveIRKU8__strongP11objc_objectEON16remove_referenceIT_E4typeEOS5_(
+  // CHECK:      [[X:%.*]] = call i8** @_Z4moveIRKU8__strongP11objc_objectEON16remove_referenceIT_E4typeEOS5_(
   // CHECK-NEXT: [[T0:%.*]] = load i8** [[X]]
   // CHECK-NEXT: [[T1:%.*]] = call i8* @objc_retain(i8* [[T0]])
   // CHECK-NEXT: store i8* [[T1]], i8** [[Y]]

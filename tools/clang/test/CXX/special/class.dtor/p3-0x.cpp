@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -std=c++11 -triple %itanium_abi_triple -fexceptions -fcxx-exceptions -emit-llvm -o - %s | FileCheck %s
+// RUN: %clang_cc1 -std=c++11 -fexceptions -fcxx-exceptions -emit-llvm -o - %s | FileCheck %s
 
 struct A {
   ~A();
@@ -164,16 +164,14 @@ void tsw() {
   Sw<int> swi;
   Sw<B> swb;
 }
-// CHECK-NOT: define linkonce_odr {{.*}} @_ZN2SwI1BED1Ev({{.*}} #
+// CHECK-NOT: define linkonce_odr {{.*}} @_ZN2SwI1BED1Ev({{.*}} nounwind
 // CHECK: define linkonce_odr {{.*}} @_ZN2SwI1BED1Ev({{.*}}
 // CHECK: _ZTIi
 // CHECK: __cxa_call_unexpected
-// CHECK: define linkonce_odr {{.*}} @_ZN2SwIiED1Ev({{.*}} [[ATTRGRP:#[0-9]+]]
+// CHECK: define linkonce_odr {{.*}} @_ZN2SwIiED1Ev({{.*}} nounwind
 
 template <typename T>
 struct TVC : VX
 { virtual ~TVC(); };
 template <typename T>
 TVC<T>::~TVC() {}
-
-// CHECK: attributes [[ATTRGRP]] = { nounwind{{.*}} }

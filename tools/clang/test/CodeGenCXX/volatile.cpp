@@ -11,11 +11,11 @@ namespace test0 {
 
   volatile A *array;
 
-  // CHECK-LABEL: define void @_ZN5test04testENS_1AE(
+  // CHECK: define void @_ZN5test04testENS_1AE(
   void test(A t) {
     // CHECK:      [[ARR:%.*]] = load [[A:%.*]]** @_ZN5test05arrayE, align 8
     // CHECK-NEXT: [[IDX:%.*]] = getelementptr inbounds [[A]]* [[ARR]], i64 0
-    // CHECK-NEXT: [[TMP:%.*]] = call dereferenceable({{[0-9]+}}) [[A]]* @_ZNV5test01AaSERVKS0_([[A]]* [[IDX]], [[A]]* dereferenceable({{[0-9]+}}) [[T:%.*]])
+    // CHECK-NEXT: [[TMP:%.*]] = call [[A]]* @_ZNV5test01AaSERVKS0_([[A]]* [[IDX]], [[A]]* [[T:%.*]])
     // CHECK-NEXT: ret void
     array[0] = t;
   }
@@ -24,7 +24,7 @@ namespace test0 {
 namespace test1 {
   volatile int *x;
 
-  // CHECK-LABEL: define void @_ZN5test14testEv()
+  // CHECK: define void @_ZN5test14testEv()
   void test() {
     // CHECK:      [[TMP:%.*]] = load i32** @_ZN5test11xE, align 8
     // CHECK-NEXT: ret void

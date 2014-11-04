@@ -22,15 +22,14 @@
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
-#include "llvm/CodeGen/MachineRegisterInfo.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/GlobalVariable.h"
+#include "llvm/Function.h"
+#include "llvm/GlobalVariable.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCInst.h"
 using namespace llvm;
 
 ARMInstrInfo::ARMInstrInfo(const ARMSubtarget &STI)
-  : ARMBaseInstrInfo(STI), RI(STI) {
+  : ARMBaseInstrInfo(STI), RI(*this, STI) {
 }
 
 /// getNoopForMachoTarget - Return the noop instruction to use for a noop.
@@ -90,14 +89,6 @@ unsigned ARMInstrInfo::getUnindexedOpcode(unsigned Opc) const {
   return 0;
 }
 
-void ARMInstrInfo::expandLoadStackGuard(MachineBasicBlock::iterator MI,
-                                        Reloc::Model RM) const {
-  if (RM == Reloc::PIC_)
-    expandLoadStackGuardBase(MI, ARM::LDRLIT_ga_pcrel, ARM::LDRi12, RM);
-  else
-    expandLoadStackGuardBase(MI, ARM::LDRLIT_ga_abs, ARM::LDRi12, RM);
-}
-
 namespace {
   /// ARMCGBR - Create Global Base Reg pass. This initializes the PIC
   /// global base register for ARM ELF.
@@ -105,7 +96,7 @@ namespace {
     static char ID;
     ARMCGBR() : MachineFunctionPass(ID) {}
 
-    bool runOnMachineFunction(MachineFunction &MF) override {
+    virtual bool runOnMachineFunction(MachineFunction &MF) {
       ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
       if (AFI->getGlobalBaseReg() == 0)
         return false;
@@ -115,51 +106,37 @@ namespace {
       if (TM->getRelocationModel() != Reloc::PIC_)
         return false;
 
-      LLVMContext *Context = &MF.getFunction()->getContext();
-      unsigned ARMPCLabelIndex = AFI->createPICLabelUId();
-      unsigned PCAdj = TM->getSubtarget<ARMSubtarget>().isThumb() ? 4 : 8;
-      ARMConstantPoolValue *CPV = ARMConstantPoolSymbol::Create(
-          *Context, "_GLOBAL_OFFSET_TABLE_", ARMPCLabelIndex, PCAdj);
-
-      unsigned Align =
-          TM->getSubtargetImpl()->getDataLayout()->getPrefTypeAlignment(
-              Type::getInt32PtrTy(*Context));
+      LLVMContext* Context = &MF.getFunction()->getContext();
+      GlobalValue *GV = new GlobalVariable(Type::getInt32Ty(*Context), false,
+                                           GlobalValue::ExternalLinkage, 0,
+                                           "_GLOBAL_OFFSET_TABLE_");
+      unsigned Id = AFI->createPICLabelUId();
+      ARMConstantPoolValue *CPV = ARMConstantPoolConstant::Create(GV, Id);
+      unsigned Align = TM->getDataLayout()->getPrefTypeAlignment(GV->getType());
       unsigned Idx = MF.getConstantPool()->getConstantPoolIndex(CPV, Align);
 
       MachineBasicBlock &FirstMBB = MF.front();
       MachineBasicBlock::iterator MBBI = FirstMBB.begin();
       DebugLoc DL = FirstMBB.findDebugLoc(MBBI);
-      unsigned TempReg =
-          MF.getRegInfo().createVirtualRegister(&ARM::rGPRRegClass);
+      unsigned GlobalBaseReg = AFI->getGlobalBaseReg();
       unsigned Opc = TM->getSubtarget<ARMSubtarget>().isThumb2() ?
                      ARM::t2LDRpci : ARM::LDRcp;
-      const TargetInstrInfo &TII = *TM->getSubtargetImpl()->getInstrInfo();
+      const TargetInstrInfo &TII = *TM->getInstrInfo();
       MachineInstrBuilder MIB = BuildMI(FirstMBB, MBBI, DL,
-                                        TII.get(Opc), TempReg)
+                                        TII.get(Opc), GlobalBaseReg)
                                 .addConstantPoolIndex(Idx);
       if (Opc == ARM::LDRcp)
         MIB.addImm(0);
       AddDefaultPred(MIB);
 
-      // Fix the GOT address by adding pc.
-      unsigned GlobalBaseReg = AFI->getGlobalBaseReg();
-      Opc = TM->getSubtarget<ARMSubtarget>().isThumb2() ? ARM::tPICADD
-                                                        : ARM::PICADD;
-      MIB = BuildMI(FirstMBB, MBBI, DL, TII.get(Opc), GlobalBaseReg)
-                .addReg(TempReg)
-                .addImm(ARMPCLabelIndex);
-      if (Opc == ARM::PICADD)
-        AddDefaultPred(MIB);
-
-
       return true;
     }
 
-    const char *getPassName() const override {
+    virtual const char *getPassName() const {
       return "ARM PIC Global Base Reg Initialization";
     }
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.setPreservesCFG();
       MachineFunctionPass::getAnalysisUsage(AU);
     }

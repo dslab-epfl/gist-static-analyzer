@@ -13,104 +13,112 @@
 
 #include "X86TargetMachine.h"
 #include "X86.h"
-#include "llvm/CodeGen/Passes.h"
-#include "llvm/IR/Function.h"
 #include "llvm/PassManager.h"
+#include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/Passes.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FormattedStream.h"
-#include "llvm/Support/TargetRegistry.h"
 #include "llvm/Target/TargetOptions.h"
+#include "llvm/Support/TargetRegistry.h"
 using namespace llvm;
 
 extern "C" void LLVMInitializeX86Target() {
   // Register the target.
-  RegisterTargetMachine<X86TargetMachine> X(TheX86_32Target);
-  RegisterTargetMachine<X86TargetMachine> Y(TheX86_64Target);
+  RegisterTargetMachine<X86_32TargetMachine> X(TheX86_32Target);
+  RegisterTargetMachine<X86_64TargetMachine> Y(TheX86_64Target);
 }
 
-void X86TargetMachine::anchor() { }
+void X86_32TargetMachine::anchor() { }
+
+X86_32TargetMachine::X86_32TargetMachine(const Target &T, StringRef TT,
+                                         StringRef CPU, StringRef FS,
+                                         const TargetOptions &Options,
+                                         Reloc::Model RM, CodeModel::Model CM,
+                                         CodeGenOpt::Level OL)
+  : X86TargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, false),
+    DL(getSubtargetImpl()->isTargetDarwin() ?
+               "e-p:32:32-f64:32:64-i64:32:64-f80:128:128-f128:128:128-"
+               "n8:16:32-S128" :
+               (getSubtargetImpl()->isTargetCygMing() ||
+                getSubtargetImpl()->isTargetWindows()) ?
+               "e-p:32:32-f64:64:64-i64:64:64-f80:32:32-f128:128:128-"
+               "n8:16:32-S32" :
+               "e-p:32:32-f64:32:64-i64:32:64-f80:32:32-f128:128:128-"
+               "n8:16:32-S128"),
+    InstrInfo(*this),
+    TSInfo(*this),
+    TLInfo(*this),
+    JITInfo(*this),
+    STTI(&TLInfo), VTTI(&TLInfo) {
+}
+
+void X86_64TargetMachine::anchor() { }
+
+X86_64TargetMachine::X86_64TargetMachine(const Target &T, StringRef TT,
+                                         StringRef CPU, StringRef FS,
+                                         const TargetOptions &Options,
+                                         Reloc::Model RM, CodeModel::Model CM,
+                                         CodeGenOpt::Level OL)
+  : X86TargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, true),
+    DL("e-p:64:64-s:64-f64:64:64-i64:64:64-f80:128:128-f128:128:128-"
+               "n8:16:32:64-S128"),
+    InstrInfo(*this),
+    TSInfo(*this),
+    TLInfo(*this),
+    JITInfo(*this),
+    STTI(&TLInfo), VTTI(&TLInfo){
+}
 
 /// X86TargetMachine ctor - Create an X86 target.
 ///
-X86TargetMachine::X86TargetMachine(const Target &T, StringRef TT, StringRef CPU,
-                                   StringRef FS, const TargetOptions &Options,
+X86TargetMachine::X86TargetMachine(const Target &T, StringRef TT,
+                                   StringRef CPU, StringRef FS,
+                                   const TargetOptions &Options,
                                    Reloc::Model RM, CodeModel::Model CM,
-                                   CodeGenOpt::Level OL)
-    : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
-      Subtarget(TT, CPU, FS, *this, Options.StackAlignmentOverride) {
+                                   CodeGenOpt::Level OL,
+                                   bool is64Bit)
+  : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
+    Subtarget(TT, CPU, FS, Options.StackAlignmentOverride, is64Bit),
+    FrameLowering(*this, Subtarget),
+    InstrItins(Subtarget.getInstrItineraryData()){
+  // Determine the PICStyle based on the target selected.
+  if (getRelocationModel() == Reloc::Static) {
+    // Unless we're in PIC or DynamicNoPIC mode, set the PIC style to None.
+    Subtarget.setPICStyle(PICStyles::None);
+  } else if (Subtarget.is64Bit()) {
+    // PIC in 64 bit mode is always rip-rel.
+    Subtarget.setPICStyle(PICStyles::RIPRel);
+  } else if (Subtarget.isTargetCygMing()) {
+    Subtarget.setPICStyle(PICStyles::None);
+  } else if (Subtarget.isTargetDarwin()) {
+    if (getRelocationModel() == Reloc::PIC_)
+      Subtarget.setPICStyle(PICStyles::StubPIC);
+    else {
+      assert(getRelocationModel() == Reloc::DynamicNoPIC);
+      Subtarget.setPICStyle(PICStyles::StubDynamicNoPIC);
+    }
+  } else if (Subtarget.isTargetELF()) {
+    Subtarget.setPICStyle(PICStyles::GOT);
+  }
+
   // default to hard float ABI
   if (Options.FloatABIType == FloatABI::Default)
     this->Options.FloatABIType = FloatABI::Hard;
-
-  // Windows stack unwinder gets confused when execution flow "falls through"
-  // after a call to 'noreturn' function.
-  // To prevent that, we emit a trap for 'unreachable' IR instructions.
-  // (which on X86, happens to be the 'ud2' instruction)
-  if (Subtarget.isTargetWin64())
-    this->Options.TrapUnreachable = true;
-
-  initAsmInfo();
-}
-
-const X86Subtarget *
-X86TargetMachine::getSubtargetImpl(const Function &F) const {
-  AttributeSet FnAttrs = F.getAttributes();
-  Attribute CPUAttr =
-      FnAttrs.getAttribute(AttributeSet::FunctionIndex, "target-cpu");
-  Attribute FSAttr =
-      FnAttrs.getAttribute(AttributeSet::FunctionIndex, "target-features");
-
-  std::string CPU = !CPUAttr.hasAttribute(Attribute::None)
-                        ? CPUAttr.getValueAsString().str()
-                        : TargetCPU;
-  std::string FS = !FSAttr.hasAttribute(Attribute::None)
-                       ? FSAttr.getValueAsString().str()
-                       : TargetFS;
-
-  // FIXME: This is related to the code below to reset the target options,
-  // we need to know whether or not the soft float flag is set on the
-  // function before we can generate a subtarget. We also need to use
-  // it as a key for the subtarget since that can be the only difference
-  // between two functions.
-  Attribute SFAttr =
-      FnAttrs.getAttribute(AttributeSet::FunctionIndex, "use-soft-float");
-  bool SoftFloat = !SFAttr.hasAttribute(Attribute::None)
-                       ? SFAttr.getValueAsString() == "true"
-                       : Options.UseSoftFloat;
-
-  auto &I = SubtargetMap[CPU + FS + (SoftFloat ? "use-soft-float=true"
-                                               : "use-soft-float=false")];
-  if (!I) {
-    // This needs to be done before we create a new subtarget since any
-    // creation will depend on the TM and the code generation flags on the
-    // function that reside in TargetOptions.
-    resetTargetOptions(F);
-    I = llvm::make_unique<X86Subtarget>(TargetTriple, CPU, FS, *this,
-                                        Options.StackAlignmentOverride);
-  }
-  return I.get();
 }
 
 //===----------------------------------------------------------------------===//
 // Command line options for x86
 //===----------------------------------------------------------------------===//
 static cl::opt<bool>
-UseVZeroUpper("x86-use-vzeroupper", cl::Hidden,
+UseVZeroUpper("x86-use-vzeroupper",
   cl::desc("Minimize AVX to SSE transition penalty"),
   cl::init(true));
 
-//===----------------------------------------------------------------------===//
-// X86 Analysis Pass Setup
-//===----------------------------------------------------------------------===//
-
-void X86TargetMachine::addAnalysisPasses(PassManagerBase &PM) {
-  // Add first the target-independent BasicTTI pass, then our X86 pass. This
-  // allows the X86 pass to delegate to the target independent layer when
-  // appropriate.
-  PM.add(createBasicTargetTransformInfoPass(this));
-  PM.add(createX86TargetTransformInfoPass(this));
-}
-
+// Temporary option to control early if-conversion for x86 while adding machine
+// models.
+static cl::opt<bool>
+X86EarlyIfConv("x86-early-ifcvt",
+	       cl::desc("Enable early if-conversion on X86"));
 
 //===----------------------------------------------------------------------===//
 // Pass Pipeline Configuration
@@ -131,23 +139,20 @@ public:
     return *getX86TargetMachine().getSubtargetImpl();
   }
 
-  void addIRPasses() override;
-  bool addInstSelector() override;
-  bool addILPOpts() override;
-  bool addPreRegAlloc() override;
-  bool addPostRegAlloc() override;
-  bool addPreEmitPass() override;
+  virtual bool addInstSelector();
+  virtual bool addPreRegAlloc();
+  virtual bool addPostRegAlloc();
+  virtual bool addPreEmitPass();
 };
 } // namespace
 
 TargetPassConfig *X86TargetMachine::createPassConfig(PassManagerBase &PM) {
-  return new X86PassConfig(this, PM);
-}
+  X86PassConfig *PC = new X86PassConfig(this, PM);
 
-void X86PassConfig::addIRPasses() {
-  addPass(createAtomicExpandPass(&getX86TargetMachine()));
+  if (X86EarlyIfConv && Subtarget.hasCMov())
+    PC->enablePass(&EarlyIfConverterID);
 
-  TargetPassConfig::addIRPasses();
+  return PC;
 }
 
 bool X86PassConfig::addInstSelector() {
@@ -158,17 +163,15 @@ bool X86PassConfig::addInstSelector() {
   if (getX86Subtarget().isTargetELF() && getOptLevel() != CodeGenOpt::None)
     addPass(createCleanupLocalDynamicTLSPass());
 
-  addPass(createX86GlobalBaseRegPass());
+  // For 32-bit, prepend instructions to set the "global base reg" for PIC.
+  if (!getX86Subtarget().is64Bit())
+    addPass(createGlobalBaseRegPass());
 
   return false;
 }
 
-bool X86PassConfig::addILPOpts() {
-  addPass(&EarlyIfConverterID);
-  return true;
-}
-
 bool X86PassConfig::addPreRegAlloc() {
+  addPass(createX86MaxStackAlignmentHeuristicPass());
   return false;  // -print-machineinstr shouldn't print after this.
 }
 
@@ -184,16 +187,17 @@ bool X86PassConfig::addPreEmitPass() {
     ShouldPrint = true;
   }
 
-  if (UseVZeroUpper) {
+  if (getX86Subtarget().hasAVX() && UseVZeroUpper) {
     addPass(createX86IssueVZeroUpperPass());
     ShouldPrint = true;
   }
 
-  if (getOptLevel() != CodeGenOpt::None) {
-    addPass(createX86PadShortFunctions());
-    addPass(createX86FixupLEAs());
-    ShouldPrint = true;
-  }
-
   return ShouldPrint;
+}
+
+bool X86TargetMachine::addCodeEmitter(PassManagerBase &PM,
+                                      JITCodeEmitter &JCE) {
+  PM.add(createX86JITCodeEmitterPass(*this, JCE));
+
+  return false;
 }

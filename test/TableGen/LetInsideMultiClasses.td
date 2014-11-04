@@ -1,10 +1,5 @@
-// RUN: llvm-tblgen %s | FileCheck %s
+// RUN: llvm-tblgen %s | grep "bit IsDouble = 1;" | count 3
 // XFAIL: vg_leak
-
-// CHECK: bit IsDouble = 1;
-// CHECK: bit IsDouble = 1;
-// CHECK: bit IsDouble = 1;
-// CHECK-NOT: bit IsDouble = 1;
 
 class Instruction<bits<4> opc, string Name> {
   bits<4> opcode = opc;

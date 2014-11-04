@@ -1,4 +1,4 @@
-//===- InstrEmitter.h - Emit MachineInstrs for the SelectionDAG -*- C++ -*--==//
+//===---- InstrEmitter.h - Emit MachineInstrs for the SelectionDAG class ---==//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -13,22 +13,22 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_CODEGEN_SELECTIONDAG_INSTREMITTER_H
-#define LLVM_LIB_CODEGEN_SELECTIONDAG_INSTREMITTER_H
+#ifndef INSTREMITTER_H
+#define INSTREMITTER_H
 
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/SelectionDAG.h"
+#include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/ADT/DenseMap.h"
 
 namespace llvm {
 
-class MachineInstrBuilder;
 class MCInstrDesc;
 class SDDbgValue;
 
 class InstrEmitter {
   MachineFunction *MF;
   MachineRegisterInfo *MRI;
+  const TargetMachine *TM;
   const TargetInstrInfo *TII;
   const TargetRegisterInfo *TRI;
   const TargetLowering *TLI;
@@ -48,8 +48,7 @@ class InstrEmitter {
   unsigned getDstOfOnlyCopyToRegUse(SDNode *Node,
                                     unsigned ResNo) const;
 
-  void CreateVirtualRegisters(SDNode *Node,
-                              MachineInstrBuilder &MIB,
+  void CreateVirtualRegisters(SDNode *Node, MachineInstr *MI,
                               const MCInstrDesc &II,
                               bool IsClone, bool IsCloned,
                               DenseMap<SDValue, unsigned> &VRBaseMap);
@@ -62,8 +61,7 @@ class InstrEmitter {
   /// AddRegisterOperand - Add the specified register as an operand to the
   /// specified machine instr. Insert register copies if the register is
   /// not in the required register class.
-  void AddRegisterOperand(MachineInstrBuilder &MIB,
-                          SDValue Op,
+  void AddRegisterOperand(MachineInstr *MI, SDValue Op,
                           unsigned IIOpNum,
                           const MCInstrDesc *II,
                           DenseMap<SDValue, unsigned> &VRBaseMap,
@@ -73,8 +71,7 @@ class InstrEmitter {
   /// specifies the instruction information for the node, and IIOpNum is the
   /// operand number (in the II) that we are adding. IIOpNum and II are used for
   /// assertions only.
-  void AddOperand(MachineInstrBuilder &MIB,
-                  SDValue Op,
+  void AddOperand(MachineInstr *MI, SDValue Op,
                   unsigned IIOpNum,
                   const MCInstrDesc *II,
                   DenseMap<SDValue, unsigned> &VRBaseMap,
@@ -84,7 +81,7 @@ class InstrEmitter {
   /// supports SubIdx sub-registers.  Emit a copy if that isn't possible.
   /// Return the virtual register to use.
   unsigned ConstrainForSubReg(unsigned VReg, unsigned SubIdx,
-                              MVT VT, DebugLoc DL);
+                              EVT VT, DebugLoc DL);
 
   /// EmitSubregNode - Generate machine code for subreg nodes.
   ///

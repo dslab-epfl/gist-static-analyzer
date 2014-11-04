@@ -1,9 +1,8 @@
+.. _getting_started:
+
 ====================================
 Getting Started with the LLVM System  
 ====================================
-
-.. contents::
-   :local:
 
 Overview
 ========
@@ -69,28 +68,34 @@ Here's the short story for getting up and running quickly with LLVM:
    * ``../llvm/configure [options]``
      Some common options:
 
-     * ``--prefix=directory`` --- Specify for *directory* the full pathname of
-       where you want the LLVM tools and libraries to be installed (default
-       ``/usr/local``).
+     * ``--prefix=directory`` ---
 
-     * ``--enable-optimized`` --- Compile with optimizations enabled (default
-       is NO).
+       Specify for *directory* the full pathname of where you want the LLVM
+       tools and libraries to be installed (default ``/usr/local``).
 
-     * ``--enable-assertions`` --- Compile with assertion checks enabled
-       (default is YES).
+     * ``--enable-optimized`` ---
+
+       Compile with optimizations enabled (default is NO).
+
+     * ``--enable-assertions`` ---
+
+       Compile with assertion checks enabled (default is YES).
 
    * ``make [-j]`` --- The ``-j`` specifies the number of jobs (commands) to run
      simultaneously.  This builds both LLVM and Clang for Debug+Asserts mode.
-     The ``--enable-optimized`` configure option is used to specify a Release
+     The --enabled-optimized configure option is used to specify a Release
      build.
 
    * ``make check-all`` --- This run the regression tests to ensure everything
      is in working order.
+  
+   * ``make update`` --- This command is used to update all the svn repositories
+     at once, rather then having to ``cd`` into the individual repositories and
+     running ``svn update``.
 
-   * It is also possible to use `CMake <CMake.html>`_ instead of the makefiles.
-     With CMake it is possible to generate project files for several IDEs:
-     Xcode, Eclipse CDT4, CodeBlocks, Qt-Creator (use the CodeBlocks
-     generator), KDevelop3.
+   * It is also possible to use CMake instead of the makefiles. With CMake it is
+     also possible to generate project files for several IDEs: Eclipse CDT4,
+     CodeBlocks, Qt-Creator (use the CodeBlocks generator), KDevelop3.
 
    * If you get an "internal compiler error (ICE)" or test failures, see
      `below`.
@@ -110,32 +115,76 @@ software you will need.
 Hardware
 --------
 
-LLVM is known to work on the following host platforms:
+LLVM is known to work on the following platforms:
 
-================== ===================== =============
-OS                 Arch                  Compilers               
-================== ===================== =============
-Linux              x86\ :sup:`1`         GCC, Clang              
-Linux              amd64                 GCC, Clang              
-Linux              ARM\ :sup:`4`         GCC, Clang              
-Linux              PowerPC               GCC, Clang              
-Solaris            V9 (Ultrasparc)       GCC                     
-FreeBSD            x86\ :sup:`1`         GCC, Clang              
-FreeBSD            amd64                 GCC, Clang              
-MacOS X\ :sup:`2`  PowerPC               GCC                     
-MacOS X            x86                   GCC, Clang              
-Cygwin/Win32       x86\ :sup:`1, 3`      GCC                     
-Windows            x86\ :sup:`1`         Visual Studio           
-Windows x64        x86-64                Visual Studio           
-================== ===================== =============
++-----------------+----------------------+-------------------------+
+|OS               |  Arch                | Compilers               |
++=================+======================+=========================+
+|AuroraUX         | x86\ :sup:`1`        | GCC                     |
++-----------------+----------------------+-------------------------+
+|Linux            | x86\ :sup:`1`        | GCC                     |
++-----------------+----------------------+-------------------------+
+|Linux            | amd64                | GCC                     |
++-----------------+----------------------+-------------------------+
+|Solaris          | V9 (Ultrasparc)      | GCC                     |
++-----------------+----------------------+-------------------------+
+|FreeBSD          | x86\ :sup:`1`        | GCC                     |
++-----------------+----------------------+-------------------------+
+|FreeBSD          | amd64                | GCC                     |
++-----------------+----------------------+-------------------------+
+|MacOS X\ :sup:`2`| PowerPC              | GCC                     |
++-----------------+----------------------+-------------------------+
+|MacOS X\ :sup:`9`| x86                  | GCC                     |
++-----------------+----------------------+-------------------------+
+|Cygwin/Win32     | x86\ :sup:`1, 8, 11` | GCC 3.4.X, binutils 2.20|
++-----------------+----------------------+-------------------------+
+
+LLVM has partial support for the following platforms:
+
++-------------------+----------------------+-------------------------------------------+
+|OS                 |  Arch                | Compilers                                 |
++===================+======================+===========================================+
+| Windows           | x86\ :sup:`1`        | Visual Studio 2000 or higher\ :sup:`4,5`  |
++-------------------+----------------------+-------------------------------------------+
+| AIX\ :sup:`3,4`   | PowerPC              | GCC                                       |
++-------------------+----------------------+-------------------------------------------+
+| Linux\ :sup:`3,5` | PowerPC              | GCC                                       |
++-------------------+----------------------+-------------------------------------------+
+| Linux\ :sup:`7`   | Alpha                | GCC                                       |
++-------------------+----------------------+-------------------------------------------+
+| Linux\ :sup:`7`   | Itanium (IA-64)      | GCC                                       |
++-------------------+----------------------+-------------------------------------------+
+| HP-UX\ :sup:`7`   | Itanium (IA-64)      | HP aCC                                    |
++-------------------+----------------------+-------------------------------------------+
+| Windows x64       | x86-64               | mingw-w64's GCC-4.5.x\ :sup:`12`          |
++-------------------+----------------------+-------------------------------------------+
 
 .. note::
 
+  Code generation supported for Pentium processors and up
+
   #. Code generation supported for Pentium processors and up
   #. Code generation supported for 32-bit ABI only
+  #. No native code generation
+  #. Build is not complete: one or more tools do not link or function
+  #. The GCC-based C/C++ frontend does not build
+  #. The port is done using the MSYS shell.
+  #. Native code generation exists but is not complete.
+  #. Binutils 2.20 or later is required to build the assembler generated by LLVM properly.
+  #. Xcode 2.5 and gcc 4.0.1 (Apple Build 5370) will trip internal LLVM assert
+     messages when compiled for Release at optimization levels greater than 0
+     (i.e., ``-O1`` and higher).  Add ``OPTIMIZE_OPTION="-O0"`` to the build
+     command line if compiling for LLVM Release or bootstrapping the LLVM
+     toolchain.
+  #. For MSYS/MinGW on Windows, be sure to install the MSYS version of the perl
+     package, and be sure it appears in your path before any Windows-based
+     versions such as Strawberry Perl and ActivePerl, as these have
+     Windows-specifics that will cause the build to fail.
   #. To use LLVM modules on Win32-based system, you may configure LLVM
      with ``--enable-shared``.
-  #. MCJIT not working well pre-v7, old JIT engine not supported any more.
+
+  #. To compile SPU backend, you need to add ``LDFLAGS=-Wl,--stack,16777216`` to
+     configure.
 
 Note that you will need about 1-3 GB of space for a full LLVM build in Debug
 mode, depending on the system (it is so large because of all the debugging
@@ -159,31 +208,47 @@ for the software package that LLVM depends on. The Version column provides
 "known to work" versions of the package. The Notes column describes how LLVM
 uses the package and provides other details.
 
-=========================================================== ============ ==========================================
-Package                                                     Version      Notes
-=========================================================== ============ ==========================================
-`GNU Make <http://savannah.gnu.org/projects/make>`_         3.79, 3.79.1 Makefile/build processor
-`GCC <http://gcc.gnu.org/>`_                                >=4.7.0      C/C++ compiler\ :sup:`1`
-`python <http://www.python.org/>`_                          >=2.5        Automated test suite\ :sup:`2`
-`GNU M4 <http://savannah.gnu.org/projects/m4>`_             1.4          Macro processor for configuration\ :sup:`3`
-`GNU Autoconf <http://www.gnu.org/software/autoconf/>`_     2.60         Configuration script builder\ :sup:`3`
-`GNU Automake <http://www.gnu.org/software/automake/>`_     1.9.6        aclocal macro generator\ :sup:`3`
-`libtool <http://savannah.gnu.org/projects/libtool>`_       1.5.22       Shared library manager\ :sup:`3`
-`zlib <http://zlib.net>`_                                   >=1.2.3.4    Compression library\ :sup:`4`
-=========================================================== ============ ==========================================
++--------------------------------------------------------------+-----------------+---------------------------------------------+
+| Package                                                      | Version         | Notes                                       |
++==============================================================+=================+=============================================+
+| `GNU Make <http://savannah.gnu.org/projects/make>`_          | 3.79, 3.79.1    | Makefile/build processor                    |
++--------------------------------------------------------------+-----------------+---------------------------------------------+
+| `GCC <http://gcc.gnu.org/>`_                                 | 3.4.2           | C/C++ compiler\ :sup:`1`                    |
++--------------------------------------------------------------+-----------------+---------------------------------------------+
+| `TeXinfo <http://www.gnu.org/software/texinfo/>`_            | 4.5             | For building the CFE                        |
++--------------------------------------------------------------+-----------------+---------------------------------------------+
+| `SVN <http://subversion.tigris.org/project_packages.html>`_  | >=1.3           | Subversion access to LLVM\ :sup:`2`         |
++--------------------------------------------------------------+-----------------+---------------------------------------------+
+| `DejaGnu <http://savannah.gnu.org/projects/dejagnu>`_        | 1.4.2           | Automated test suite\ :sup:`3`              |
++--------------------------------------------------------------+-----------------+---------------------------------------------+
+| `tcl <http://www.tcl.tk/software/tcltk/>`_                   | 8.3, 8.4        | Automated test suite\ :sup:`3`              |
++--------------------------------------------------------------+-----------------+---------------------------------------------+
+| `expect <http://expect.nist.gov/>`_                          | 5.38.0          | Automated test suite\ :sup:`3`              |
++--------------------------------------------------------------+-----------------+---------------------------------------------+
+| `perl <http://www.perl.com/download.csp>`_                   | >=5.6.0         | Utilities                                   |
++--------------------------------------------------------------+-----------------+---------------------------------------------+
+| `GNU M4 <http://savannah.gnu.org/projects/m4>`_              | 1.4             | Macro processor for configuration\ :sup:`4` |
++--------------------------------------------------------------+-----------------+---------------------------------------------+
+| `GNU Autoconf <http://www.gnu.org/software/autoconf/>`_      | 2.60            | Configuration script builder\ :sup:`4`      |
++--------------------------------------------------------------+-----------------+---------------------------------------------+
+| `GNU Automake <http://www.gnu.org/software/automake/>`_      | 1.9.6           | aclocal macro generator\ :sup:`4`           |
++--------------------------------------------------------------+-----------------+---------------------------------------------+
+| `libtool <http://savannah.gnu.org/projects/libtool>`_        | 1.5.22          | Shared library manager\ :sup:`4`            |
++--------------------------------------------------------------+-----------------+---------------------------------------------+
 
 .. note::
 
    #. Only the C and C++ languages are needed so there's no need to build the
       other languages for LLVM's purposes. See `below` for specific version
       info.
+   #. You only need Subversion if you intend to build from the latest LLVM
+      sources. If you're working from a release distribution, you don't need
+      Subversion.
    #. Only needed if you want to run the automated test suite in the
       ``llvm/test`` directory.
    #. If you want to make changes to the configure scripts, you will need GNU
       autoconf (2.60), and consequently, GNU M4 (version 1.4 or higher). You
       will also need automake (1.9.6). We only use aclocal from that package.
-   #. Optional, adds compression / uncompression capabilities to selected LLVM
-      tools.
 
 Additionally, your compilation host is expected to have the usual plethora of
 Unix utilities. Specifically:
@@ -216,35 +281,92 @@ Unix utilities. Specifically:
 .. _below:
 .. _check here:
 
-Host C++ Toolchain, both Compiler and Standard Library
-------------------------------------------------------
+Broken versions of GCC and other tools
+--------------------------------------
 
 LLVM is very demanding of the host C++ compiler, and as such tends to expose
-bugs in the compiler. We are also planning to follow improvements and
-developments in the C++ language and library reasonably closely. As such, we
-require a modern host C++ toolchain, both compiler and standard library, in
-order to build LLVM.
+bugs in the compiler.  In particular, several versions of GCC crash when trying
+to compile LLVM.  We routinely use GCC 4.2 (and higher) or Clang.  Other
+versions of GCC will probably work as well.  GCC versions listed here are known
+to not work.  If you are using one of these versions, please try to upgrade your
+GCC to something more recent.  If you run into a problem with a version of GCC
+not listed here, please `let us know <mailto:llvmdev@cs.uiuc.edu>`_.  Please use
+the "``gcc -v``" command to find out which version of GCC you are using.
 
-For the most popular host toolchains we check for specific minimum versions in
-our build systems:
+**GCC versions prior to 3.0**: GCC 2.96.x and before had several problems in the
+STL that effectively prevent it from compiling LLVM.
 
-* Clang 3.1
-* GCC 4.7
-* Visual Studio 2012
+**GCC 3.2.2 and 3.2.3**: These versions of GCC fails to compile LLVM with a
+bogus template error.  This was fixed in later GCCs.
 
-Anything older than these toolchains *may* work, but will require forcing the
-build system with a special option and is not really a supported host platform.
-Also note that older versions of these compilers have often crashed or
-miscompiled LLVM.
+**GCC 3.3.2**: This version of GCC suffered from a `serious bug
+<http://gcc.gnu.org/PR13392>`_ which causes it to crash in the
+"``convert_from_eh_region_ranges_1``" GCC function.
 
-For less widely used host toolchains such as ICC or xlC, be aware that a very
-recent version may be required to support all of the C++ features used in LLVM.
+**Cygwin GCC 3.3.3**: The version of GCC 3.3.3 commonly shipped with Cygwin does
+not work.
 
-We track certain versions of software that are *known* to fail when used as
-part of the host toolchain. These even include linkers at times.
+**SuSE GCC 3.3.3**: The version of GCC 3.3.3 shipped with SuSE 9.1 (and possibly
+others) does not compile LLVM correctly (it appears that exception handling is
+broken in some cases).  Please download the FSF 3.3.3 or upgrade to a newer
+version of GCC.
 
-**GCC 4.6.3 on ARM**: Miscompiles ``llvm-readobj`` at ``-O3``. A test failure
-in ``test/Object/readobj-shared-object.test`` is one symptom of the problem.
+**GCC 3.4.0 on linux/x86 (32-bit)**: GCC miscompiles portions of the code
+generator, causing an infinite loop in the llvm-gcc build when built with
+optimizations enabled (i.e. a release build).
+
+**GCC 3.4.2 on linux/x86 (32-bit)**: GCC miscompiles portions of the code
+generator at -O3, as with 3.4.0.  However gcc 3.4.2 (unlike 3.4.0) correctly
+compiles LLVM at -O2.  A work around is to build release LLVM builds with
+"``make ENABLE_OPTIMIZED=1 OPTIMIZE_OPTION=-O2 ...``"
+
+**GCC 3.4.x on X86-64/amd64**: GCC `miscompiles portions of LLVM
+<http://llvm.org/PR1056>`__.
+
+**GCC 3.4.4 (CodeSourcery ARM 2005q3-2)**: this compiler miscompiles LLVM when
+building with optimizations enabled.  It appears to work with "``make
+ENABLE_OPTIMIZED=1 OPTIMIZE_OPTION=-O1``" or build a debug build.
+
+**IA-64 GCC 4.0.0**: The IA-64 version of GCC 4.0.0 is known to miscompile LLVM.
+
+**Apple Xcode 2.3**: GCC crashes when compiling LLVM at -O3 (which is the
+default with ENABLE_OPTIMIZED=1.  To work around this, build with
+"``ENABLE_OPTIMIZED=1 OPTIMIZE_OPTION=-O2``".
+
+**GCC 4.1.1**: GCC fails to build LLVM with template concept check errors
+compiling some files.  At the time of this writing, GCC mainline (4.2) did not
+share the problem.
+
+**GCC 4.1.1 on X86-64/amd64**: GCC `miscompiles portions of LLVM
+<http://llvm.org/PR1063>`__ when compiling llvm itself into 64-bit code.  LLVM
+will appear to mostly work but will be buggy, e.g. failing portions of its
+testsuite.
+
+**GCC 4.1.2 on OpenSUSE**: Seg faults during libstdc++ build and on x86_64
+platforms compiling md5.c gets a mangled constant.
+
+**GCC 4.1.2 (20061115 (prerelease) (Debian 4.1.1-21)) on Debian**: Appears to
+miscompile parts of LLVM 2.4. One symptom is ValueSymbolTable complaining about
+symbols remaining in the table on destruction.
+
+**GCC 4.1.2 20071124 (Red Hat 4.1.2-42)**: Suffers from the same symptoms as the
+previous one. It appears to work with ENABLE_OPTIMIZED=0 (the default).
+
+**Cygwin GCC 4.3.2 20080827 (beta) 2**: Users `reported
+<http://llvm.org/PR4145>`_ various problems related with link errors when using
+this GCC version.
+
+**Debian GCC 4.3.2 on X86**: Crashes building some files in LLVM 2.6.
+
+**GCC 4.3.3 (Debian 4.3.3-10) on ARM**: Miscompiles parts of LLVM 2.6 when
+optimizations are turned on. The symptom is an infinite loop in
+``FoldingSetImpl::RemoveNode`` while running the code generator.
+
+**SUSE 11 GCC 4.3.4**: Miscompiles LLVM, causing crashes in ValueHandle logic.
+
+**GCC 4.3.5 and GCC 4.4.5 on ARM**: These can miscompile ``value >> 1`` even at
+``-O0``. A test failure in ``test/Assembler/alignstack.ll`` is one symptom of
+the problem.
 
 **GNU ld 2.16.X**. Some 2.16.X versions of the ld linker will produce very long
 warning messages complaining that some "``.gnu.linkonce.t.*``" symbol was
@@ -261,102 +383,6 @@ to a newer version (2.17.50.0.4 or later).
 intermittent failures when building LLVM with position independent code.  The
 symptom is an error about cyclic dependencies.  We recommend upgrading to a
 newer version of Gold.
-
-**Clang 3.0 with libstdc++ 4.7.x**: a few Linux distributions (Ubuntu 12.10,
-Fedora 17) have both Clang 3.0 and libstdc++ 4.7 in their repositories.  Clang
-3.0 does not implement a few builtins that are used in this library.  We
-recommend using the system GCC to compile LLVM and Clang in this case.
-
-**Clang 3.0 on Mageia 2**.  There's a packaging issue: Clang can not find at
-least some (``cxxabi.h``) libstdc++ headers.
-
-**Clang in C++11 mode and libstdc++ 4.7.2**.  This version of libstdc++
-contained `a bug <http://gcc.gnu.org/bugzilla/show_bug.cgi?id=53841>`__ which
-causes Clang to refuse to compile condition_variable header file.  At the time
-of writing, this breaks LLD build.
-
-Getting a Modern Host C++ Toolchain
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-This section mostly applies to Linux and older BSDs. On Mac OS X, you should
-have a sufficiently modern Xcode, or you will likely need to upgrade until you
-do. On Windows, just use Visual Studio 2012 as the host compiler, it is
-explicitly supported and widely available. FreeBSD 10.0 and newer have a modern
-Clang as the system compiler.
-
-However, some Linux distributions and some other or older BSDs sometimes have
-extremely old versions of GCC. These steps attempt to help you upgrade you
-compiler even on such a system. However, if at all possible, we encourage you
-to use a recent version of a distribution with a modern system compiler that
-meets these requirements. Note that it is tempting to to install a prior
-version of Clang and libc++ to be the host compiler, however libc++ was not
-well tested or set up to build on Linux until relatively recently. As
-a consequence, this guide suggests just using libstdc++ and a modern GCC as the
-initial host in a bootstrap, and then using Clang (and potentially libc++).
-
-The first step is to get a recent GCC toolchain installed. The most common
-distribution on which users have struggled with the version requirements is
-Ubuntu Precise, 12.04 LTS. For this distribution, one easy option is to install
-the `toolchain testing PPA`_ and use it to install a modern GCC. There is
-a really nice discussions of this on the `ask ubuntu stack exchange`_. However,
-not all users can use PPAs and there are many other distributions, so it may be
-necessary (or just useful, if you're here you *are* doing compiler development
-after all) to build and install GCC from source. It is also quite easy to do
-these days.
-
-.. _toolchain testing PPA:
-  https://launchpad.net/~ubuntu-toolchain-r/+archive/test
-.. _ask ubuntu stack exchange:
-  http://askubuntu.com/questions/271388/how-to-install-gcc-4-8-in-ubuntu-12-04-from-the-terminal
-
-Easy steps for installing GCC 4.8.2:
-
-.. code-block:: console
-
-  % wget ftp://ftp.gnu.org/gnu/gcc/gcc-4.8.2/gcc-4.8.2.tar.bz2
-  % tar -xvjf gcc-4.8.2.tar.bz2
-  % cd gcc-4.8.2
-  % ./contrib/download_prerequisites
-  % cd ..
-  % mkdir gcc-4.8.2-build
-  % cd gcc-4.8.2-build
-  % $PWD/../gcc-4.8.2/configure --prefix=$HOME/toolchains --enable-languages=c,c++
-  % make -j$(nproc)
-  % make install
-
-For more details, check out the excellent `GCC wiki entry`_, where I got most
-of this information from.
-
-.. _GCC wiki entry:
-  http://gcc.gnu.org/wiki/InstallingGCC
-
-Once you have a GCC toolchain, configure your build of LLVM to use the new
-toolchain for your host compiler and C++ standard library. Because the new
-version of libstdc++ is not on the system library search path, you need to pass
-extra linker flags so that it can be found at link time (``-L``) and at runtime
-(``-rpath``). If you are using CMake, this invocation should produce working
-binaries:
-
-.. code-block:: console
-
-  % mkdir build
-  % cd build
-  % CC=$HOME/toolchains/bin/gcc CXX=$HOME/toolchains/bin/g++ \
-    cmake .. -DCMAKE_CXX_LINK_FLAGS="-Wl,-rpath,$HOME/toolchains/lib64 -L$HOME/toolchains/lib64"
-
-If you fail to set rpath, most LLVM binaries will fail on startup with a message
-from the loader similar to ``libstdc++.so.6: version `GLIBCXX_3.4.20' not
-found``. This means you need to tweak the -rpath linker flag.
-
-When you build Clang, you will need to give *it* access to modern C++11
-standard library in order to use it as your new host in part of a bootstrap.
-There are two easy ways to do this, either build (and install) libc++ along
-with Clang and then use it with the ``-stdlib=libc++`` compile and link flag,
-or install Clang into the same prefix (``$HOME/toolchains`` above) as GCC.
-Clang will look within its own prefix for libstdc++ and use it if found. You
-can also add an explicit prefix for Clang to look in for a GCC toolchain with
-the ``--gcc-toolchain=/opt/my/gcc/prefix`` flag, passing it to both compile and
-link commands when using your just-built-Clang to bootstrap.
 
 .. _Getting Started with LLVM:
 
@@ -424,7 +450,14 @@ The files are as follows, with *x.y* marking the version number:
 
   Source release for the LLVM test-suite.
 
-.. _checkout:
+``llvm-gcc-4.2-x.y.source.tar.gz``
+
+  Source release of the llvm-gcc-4.2 front end.  See README.LLVM in the root
+  directory for build instructions.
+
+``llvm-gcc-4.2-x.y-platform.tar.gz``
+
+  Binary release of the llvm-gcc-4.2 front end for a specific platform.
 
 Checkout LLVM from Subversion
 -----------------------------
@@ -446,9 +479,6 @@ you can checkout it from the '``tags``' directory (instead of '``trunk``'). The
 following releases are located in the following subdirectories of the '``tags``'
 directory:
 
-* Release 3.4: **RELEASE_34/final**
-* Release 3.3: **RELEASE_33/final**
-* Release 3.2: **RELEASE_32/final**
 * Release 3.1: **RELEASE_31/final**
 * Release 3.0: **RELEASE_30/final**
 * Release 2.9: **RELEASE_29/final**
@@ -475,7 +505,7 @@ directory:
 If you would like to get the LLVM test suite (a separate package as of 1.4), you
 get it from the Subversion repository:
 
-.. code-block:: console
+.. code-block:: bash
 
   % cd llvm/projects
   % svn co http://llvm.org/svn/llvm-project/test-suite/trunk test-suite
@@ -484,46 +514,33 @@ By placing it in the ``llvm/projects``, it will be automatically configured by
 the LLVM configure script as well as automatically updated when you run ``svn
 update``.
 
-Git Mirror
+GIT mirror
 ----------
 
-Git mirrors are available for a number of LLVM subprojects. These mirrors sync
+GIT mirrors are available for a number of LLVM subprojects. These mirrors sync
 automatically with each Subversion commit and contain all necessary git-svn
 marks (so, you can recreate git-svn metadata locally). Note that right now
-mirrors reflect only ``trunk`` for each project. You can do the read-only Git
+mirrors reflect only ``trunk`` for each project. You can do the read-only GIT
 clone of LLVM via:
 
-.. code-block:: console
+.. code-block:: bash
 
   % git clone http://llvm.org/git/llvm.git
 
 If you want to check out clang too, run:
 
-.. code-block:: console
+.. code-block:: bash
 
+  % git clone http://llvm.org/git/llvm.git
   % cd llvm/tools
   % git clone http://llvm.org/git/clang.git
-
-If you want to check out compiler-rt too, run:
-
-.. code-block:: console
-
-  % cd llvm/projects
-  % git clone http://llvm.org/git/compiler-rt.git
-
-If you want to check out the Test Suite Source Code (optional), run:
-
-.. code-block:: console
-
-  % cd llvm/projects
-  % git clone http://llvm.org/git/test-suite.git
 
 Since the upstream repository is in Subversion, you should use ``git
 pull --rebase`` instead of ``git pull`` to avoid generating a non-linear history
 in your clone.  To configure ``git pull`` to pass ``--rebase`` by default on the
 master branch, run the following command:
 
-.. code-block:: console
+.. code-block:: bash
 
   % git config branch.master.rebase true
 
@@ -536,13 +553,13 @@ Assume ``master`` points the upstream and ``mybranch`` points your working
 branch, and ``mybranch`` is rebased onto ``master``.  At first you may check
 sanity of whitespaces:
 
-.. code-block:: console
+.. code-block:: bash
 
   % git diff --check master..mybranch
 
 The easiest way to generate a patch is as below:
 
-.. code-block:: console
+.. code-block:: bash
 
   % git diff master..mybranch > /path/to/mybranch.diff
 
@@ -553,20 +570,20 @@ could be accepted with ``patch -p1 -N``.
 But you may generate patchset with git-format-patch. It generates by-each-commit
 patchset. To generate patch files to attach to your article:
 
-.. code-block:: console
+.. code-block:: bash
 
   % git format-patch --no-attach master..mybranch -o /path/to/your/patchset
 
 If you would like to send patches directly, you may use git-send-email or
 git-imap-send. Here is an example to generate the patchset in Gmail's [Drafts].
 
-.. code-block:: console
+.. code-block:: bash
 
   % git format-patch --attach master..mybranch --stdout | git imap-send
 
 Then, your .git/config should have [imap] sections.
 
-.. code-block:: ini
+.. code-block:: bash
 
   [imap]
         host = imaps://imap.gmail.com
@@ -586,7 +603,7 @@ For developers to work with git-svn
 
 To set up clone from which you can submit code using ``git-svn``, run:
 
-.. code-block:: console
+.. code-block:: bash
 
   % git clone http://llvm.org/git/llvm.git
   % cd llvm
@@ -602,12 +619,10 @@ To set up clone from which you can submit code using ``git-svn``, run:
   % git config svn-remote.svn.fetch :refs/remotes/origin/master
   % git svn rebase -l
 
-Likewise for compiler-rt and test-suite.
-
 To update this clone without generating git-svn tags that conflict with the
-upstream Git repo, run:
+upstream git repo, run:
 
-.. code-block:: console
+.. code-block:: bash
 
   % git fetch && (cd tools/clang && git fetch)  # Get matching revisions of both trees.
   % git checkout master
@@ -616,49 +631,19 @@ upstream Git repo, run:
      git checkout master &&
      git svn rebase -l)
 
-Likewise for compiler-rt and test-suite.
-
 This leaves your working directories on their master branches, so you'll need to
 ``checkout`` each working branch individually and ``rebase`` it on top of its
-parent branch.
-
-For those who wish to be able to update an llvm repo/revert patches easily using
-git-svn, please look in the directory for the scripts ``git-svnup`` and
-``git-svnrevert``.
-
-To perform the aforementioned update steps go into your source directory and
-just type ``git-svnup`` or ``git svnup`` and everything will just work.
-
-If one wishes to revert a commit with git-svn, but do not want the git hash to
-escape into the commit message, one can use the script ``git-svnrevert`` or
-``git svnrevert`` which will take in the git hash for the commit you want to
-revert, look up the appropriate svn revision, and output a message where all
-references to the git hash have been replaced with the svn revision.
-
-To commit back changes via git-svn, use ``git svn dcommit``:
-
-.. code-block:: console
-
-  % git svn dcommit
-
-Note that git-svn will create one SVN commit for each Git commit you have pending,
-so squash and edit each commit before executing ``dcommit`` to make sure they all
-conform to the coding standards and the developers' policy.
-
-On success, ``dcommit`` will rebase against the HEAD of SVN, so to avoid conflict,
-please make sure your current branch is up-to-date (via fetch/rebase) before
-proceeding.
+parent branch.  (Note: This script is intended for relative newbies to git.  If
+you have more experience, you can likely improve on it.)
 
 The git-svn metadata can get out of sync after you mess around with branches and
 ``dcommit``. When that happens, ``git svn dcommit`` stops working, complaining
 about files with uncommitted changes. The fix is to rebuild the metadata:
 
-.. code-block:: console
+.. code-block:: bash
 
   % rm -rf .git/svn
   % git svn rebase -l
-
-Please, refer to the Git-SVN manual (``man git-svn``) for more information.
 
 Local LLVM Configuration
 ------------------------
@@ -676,15 +661,14 @@ configure the build system:
 | Variable   | Purpose                                                   |
 +============+===========================================================+
 | CC         | Tells ``configure`` which C compiler to use.  By default, |
-|            | ``configure`` will check ``PATH`` for ``clang`` and GCC C |
-|            | compilers (in this order).  Use this variable to override |
-|            | ``configure``\'s  default behavior.                       |
+|            | ``configure`` will look for the first GCC C compiler in   |
+|            | ``PATH``.  Use this variable to override ``configure``\'s |
+|            | default behavior.                                         |
 +------------+-----------------------------------------------------------+
 | CXX        | Tells ``configure`` which C++ compiler to use.  By        |
-|            | default, ``configure`` will check ``PATH`` for            |
-|            | ``clang++`` and GCC C++ compilers (in this order).  Use   |
-|            | this variable to override  ``configure``'s default        |
-|            | behavior.                                                 |
+|            | default, ``configure`` will look for the first GCC C++    |
+|            | compiler in ``PATH``.  Use this variable to override      |
+|            | ``configure``'s default behavior.                         |
 +------------+-----------------------------------------------------------+
 
 The following options can be used to set or enable LLVM specific options:
@@ -693,7 +677,7 @@ The following options can be used to set or enable LLVM specific options:
 
   Enables optimized compilation (debugging symbols are removed and GCC
   optimization flags are enabled). Note that this is the default setting if you
-  are using the LLVM distribution. The default behavior of a Subversion
+  are using the LLVM distribution. The default behavior of an Subversion
   checkout is to use an unoptimized build (also known as a debug build).
 
 ``--enable-debug-runtime``
@@ -711,12 +695,14 @@ The following options can be used to set or enable LLVM specific options:
 
   Controls which targets will be built and linked into llc. The default value
   for ``target_options`` is "all" which builds and links all available targets.
-  The "host" target is selected as the target of the build host. You can also
-  specify a comma separated list of target names that you want available in llc.
-  The target names use all lower case. The current set of targets is:
+  The value "host-only" can be specified to build only a native compiler (no
+  cross-compiler targets available). The "native" target is selected as the
+  target of the build host. You can also specify a comma separated list of
+  target names that you want available in llc. The target names use all lower
+  case. The current set of targets is:
 
-    ``aarch64, arm, arm64, cpp, hexagon, mips, mipsel, mips64, mips64el, msp430,
-    powerpc, nvptx, r600, sparc, systemz, x86, x86_64, xcore``.
+    ``arm, cpp, hexagon, mblaze, mips, mipsel, msp430, powerpc, ptx, sparc, spu,
+    x86, x86_64, xcore``.
 
 ``--enable-doxygen``
 
@@ -725,17 +711,24 @@ The following options can be used to set or enable LLVM specific options:
   generating the documentation can take a long time and producess 100s of
   megabytes of output.
 
+``--with-udis86``
+
+  LLVM can use external disassembler library for various purposes (now it's used
+  only for examining code produced by JIT). This option will enable usage of
+  `udis86 <http://udis86.sourceforge.net/>`_ x86 (both 32 and 64 bits)
+  disassembler library.
+
 To configure LLVM, follow these steps:
 
 #. Change directory into the object root directory:
 
-   .. code-block:: console
+   .. code-block:: bash
 
      % cd OBJ_ROOT
 
 #. Run the ``configure`` script located in the LLVM source tree:
 
-   .. code-block:: console
+   .. code-block:: bash
 
      % SRC_ROOT/configure --prefix=/install/path [other options]
 
@@ -747,7 +740,7 @@ builds:
 
 Debug Builds
 
-  These builds are the default when one is using a Subversion checkout and
+  These builds are the default when one is using an Subversion checkout and
   types ``gmake`` (unless the ``--enable-optimized`` option was used during
   configuration).  The build system will compile the tools and libraries with
   debugging information.  To get a Debug Build using the LLVM distribution the
@@ -771,7 +764,7 @@ Profile Builds
 Once you have LLVM configured, you can build it by entering the *OBJ_ROOT*
 directory and issuing the following command:
 
-.. code-block:: console
+.. code-block:: bash
 
   % gmake
 
@@ -782,7 +775,7 @@ If you have multiple processors in your machine, you may wish to use some of the
 parallel build options provided by GNU Make.  For example, you could use the
 command:
 
-.. code-block:: console
+.. code-block:: bash
 
   % gmake -j2
 
@@ -849,49 +842,18 @@ any subdirectories that it contains.  Entering any directory inside the LLVM
 object tree and typing ``gmake`` should rebuild anything in or below that
 directory that is out of date.
 
-This does not apply to building the documentation.
-LLVM's (non-Doxygen) documentation is produced with the
-`Sphinx <http://sphinx-doc.org/>`_ documentation generation system.
-There are some HTML documents that have not yet been converted to the new
-system (which uses the easy-to-read and easy-to-write
-`reStructuredText <http://sphinx-doc.org/rest.html>`_ plaintext markup
-language).
-The generated documentation is built in the ``SRC_ROOT/docs`` directory using
-a special makefile.
-For instructions on how to install Sphinx, see
-`Sphinx Introduction for LLVM Developers
-<http://lld.llvm.org/sphinx_intro.html>`_.
-After following the instructions there for installing Sphinx, build the LLVM
-HTML documentation by doing the following:
-
-.. code-block:: console
-
-  $ cd SRC_ROOT/docs
-  $ make -f Makefile.sphinx
-
-This creates a ``_build/html`` sub-directory with all of the HTML files, not
-just the generated ones.
-This directory corresponds to ``llvm.org/docs``.
-For example, ``_build/html/SphinxQuickstartTemplate.html`` corresponds to
-``llvm.org/docs/SphinxQuickstartTemplate.html``.
-The :doc:`SphinxQuickstartTemplate` is useful when creating a new document.
-
 Cross-Compiling LLVM
 --------------------
 
 It is possible to cross-compile LLVM itself. That is, you can create LLVM
 executables and libraries to be hosted on a platform different from the platform
-where they are built (a Canadian Cross build). To configure a cross-compile,
+where they are build (a Canadian Cross build). To configure a cross-compile,
 supply the configure script with ``--build`` and ``--host`` options that are
 different. The values of these options must be legal target triples that your
 GCC compiler supports.
 
 The result of such a build is executables that are not runnable on on the build
 host (--build option) but can be executed on the compile host (--host option).
-
-Check :doc:`HowToCrossCompileLLVM` and `Clang docs on how to cross-compile in general
-<http://clang.llvm.org/docs/CrossCompilation.html>`_ for more information
-about cross-compiling.
 
 The Location of LLVM Object Files
 ---------------------------------
@@ -904,13 +866,13 @@ This is accomplished in the typical autoconf manner:
 
 * Change directory to where the LLVM object files should live:
 
-  .. code-block:: console
+  .. code-block:: bash
 
     % cd OBJ_ROOT
 
 * Run the ``configure`` script found in the LLVM source directory:
 
-  .. code-block:: console
+  .. code-block:: bash
 
     % SRC_ROOT/configure
 
@@ -951,12 +913,12 @@ Optional Configuration Items
 ----------------------------
 
 If you're running on a Linux system that supports the `binfmt_misc
-<http://en.wikipedia.org/wiki/binfmt_misc>`_
+<http://www.tat.physik.uni-tuebingen.de/~rguenth/linux/binfmt_misc.html>`_
 module, and you have root access on the system, you can set your system up to
 execute LLVM bitcode files directly. To do this, use commands like this (the
 first command may not be required if you are already using the module):
 
-.. code-block:: console
+.. code-block:: bash
 
   % mount -t binfmt_misc none /proc/sys/fs/binfmt_misc
   % echo ':llvm:M::BC::/path/to/lli:' > /proc/sys/fs/binfmt_misc/register
@@ -966,7 +928,7 @@ first command may not be required if you are already using the module):
 This allows you to execute LLVM bitcode files directly.  On Debian, you can also
 use this command instead of the 'echo' command above:
 
-.. code-block:: console
+.. code-block:: bash
 
   % sudo update-binfmts --install llvm /path/to/lli --magic 'BC'
 
@@ -1028,7 +990,7 @@ different `tools`_.
   This directory holds the source code for the LLVM assembly language parser
   library.
 
-``llvm/lib/Bitcode/``
+``llvm/lib/BitCode/``
 
   This directory holds code for reading and write LLVM bitcode.
 
@@ -1082,7 +1044,8 @@ different `tools`_.
 
 This directory contains projects that are not strictly part of LLVM but are
 shipped with LLVM. This is also the directory where you should create your own
-LLVM-based projects.
+LLVM-based projects. See ``llvm/projects/sample`` for an example of how to set
+up your own project.
 
 ``llvm/runtime``
 ----------------
@@ -1110,8 +1073,8 @@ module that must be checked out (usually to ``projects/test-suite``).  This
 module contains a comprehensive correctness, performance, and benchmarking test
 suite for LLVM. It is a separate Subversion module because not every LLVM user
 is interested in downloading or building such a comprehensive test suite. For
-further details on this test suite, please see the :doc:`Testing Guide
-<TestingGuide>` document.
+further details on this test suite, please see the `Testing
+Guide <TestingGuide.html>`_ document.
 
 .. _tools:
 
@@ -1256,7 +1219,7 @@ Example with clang
 
 #. Next, compile the C file into a native executable:
 
-   .. code-block:: console
+   .. code-block:: bash
 
      % clang hello.c -o hello
 
@@ -1265,9 +1228,9 @@ Example with clang
      Clang works just like GCC by default.  The standard -S and -c arguments
      work as usual (producing a native .s or .o file, respectively).
 
-#. Next, compile the C file into an LLVM bitcode file:
+#. Next, compile the C file into a LLVM bitcode file:
 
-   .. code-block:: console
+   .. code-block:: bash
 
      % clang -O3 -emit-llvm hello.c -c -o hello.bc
 
@@ -1277,42 +1240,42 @@ Example with clang
 
 #. Run the program in both forms. To run the program, use:
 
-   .. code-block:: console
+   .. code-block:: bash
 
       % ./hello
  
    and
 
-   .. code-block:: console
+   .. code-block:: bash
 
      % lli hello.bc
 
-   The second examples shows how to invoke the LLVM JIT, :doc:`lli
-   <CommandGuide/lli>`.
+   The second examples shows how to invoke the LLVM JIT, `lli
+   <CommandGuide/html/lli.html>`_.
 
 #. Use the ``llvm-dis`` utility to take a look at the LLVM assembly code:
 
-   .. code-block:: console
+   .. code-block:: bash
 
      % llvm-dis < hello.bc | less
 
 #. Compile the program to native assembly using the LLC code generator:
 
-   .. code-block:: console
+   .. code-block:: bash
 
      % llc hello.bc -o hello.s
 
 #. Assemble the native assembly language file into a program:
 
-   .. code-block:: console
+   .. code-block:: bash
 
-     % /opt/SUNWspro/bin/cc -xarch=v9 hello.s -o hello.native   # On Solaris
+     **Solaris:** % /opt/SUNWspro/bin/cc -xarch=v9 hello.s -o hello.native
 
-     % gcc hello.s -o hello.native                              # On others
+     **Others:**  % gcc hello.s -o hello.native
 
 #. Execute the native code program:
 
-   .. code-block:: console
+   .. code-block:: bash
 
      % ./hello.native
 

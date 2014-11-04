@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_MIPS_MIPSSELECTIONDAGINFO_H
-#define LLVM_LIB_TARGET_MIPS_MIPSSELECTIONDAGINFO_H
+#ifndef MIPSSELECTIONDAGINFO_H
+#define MIPSSELECTIONDAGINFO_H
 
 #include "llvm/Target/TargetSelectionDAGInfo.h"
 
@@ -22,7 +22,7 @@ class MipsTargetMachine;
 
 class MipsSelectionDAGInfo : public TargetSelectionDAGInfo {
 public:
-  explicit MipsSelectionDAGInfo(const DataLayout &DL);
+  explicit MipsSelectionDAGInfo(const MipsTargetMachine &TM);
   ~MipsSelectionDAGInfo();
 };
 

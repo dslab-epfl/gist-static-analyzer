@@ -1,4 +1,4 @@
-//===- unittest/Tooling/RefactoringCallbacksTest.cpp ----------------------===//
+//===- unittest/ASTMatchers/RefactoringCallbacksTest.cpp ------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,10 +7,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/ASTMatchers/ASTMatchers.h"
+#include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/Tooling/RefactoringCallbacks.h"
 #include "RewriterTestContext.h"
-#include "clang/ASTMatchers/ASTMatchFinder.h"
-#include "clang/ASTMatchers/ASTMatchers.h"
 #include "gtest/gtest.h"
 
 namespace clang {
@@ -25,7 +25,7 @@ void expectRewritten(const std::string &Code,
                      RefactoringCallback &Callback) {
   MatchFinder Finder;
   Finder.addMatcher(AMatcher, &Callback);
-  std::unique_ptr<tooling::FrontendActionFactory> Factory(
+  OwningPtr<tooling::FrontendActionFactory> Factory(
       tooling::newFrontendActionFactory(&Finder));
   ASSERT_TRUE(tooling::runToolOnCode(Factory->create(), Code))
       << "Parsing error in \"" << Code << "\"";

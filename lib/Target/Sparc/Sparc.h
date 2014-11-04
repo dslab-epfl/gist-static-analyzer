@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_SPARC_SPARC_H
-#define LLVM_LIB_TARGET_SPARC_SPARC_H
+#ifndef TARGET_SPARC_H
+#define TARGET_SPARC_H
 
 #include "MCTargetDesc/SparcMCTargetDesc.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -23,16 +23,11 @@ namespace llvm {
   class FunctionPass;
   class SparcTargetMachine;
   class formatted_raw_ostream;
-  class AsmPrinter;
-  class MCInst;
-  class MachineInstr;
 
   FunctionPass *createSparcISelDag(SparcTargetMachine &TM);
   FunctionPass *createSparcDelaySlotFillerPass(TargetMachine &TM);
+  FunctionPass *createSparcFPMoverPass(TargetMachine &TM);
 
-  void LowerSparcMachineInstrToMCInst(const MachineInstr *MI,
-                                      MCInst &OutMI,
-                                      AsmPrinter &AP);
 } // end namespace llvm;
 
 namespace llvm {
@@ -40,8 +35,8 @@ namespace llvm {
   // values must be kept in sync with the ones in the .td file.
   namespace SPCC {
     enum CondCodes {
-      ICC_A   =  8   ,  // Always
-      ICC_N   =  0   ,  // Never
+      //ICC_A   =  8   ,  // Always
+      //ICC_N   =  0   ,  // Never
       ICC_NE  =  9   ,  // Not Equal
       ICC_E   =  1   ,  // Equal
       ICC_G   = 10   ,  // Greater
@@ -56,9 +51,9 @@ namespace llvm {
       ICC_NEG =  6   ,  // Negative
       ICC_VC  = 15   ,  // Overflow Clear
       ICC_VS  =  7   ,  // Overflow Set
-
-      FCC_A   =  8+16,  // Always
-      FCC_N   =  0+16,  // Never
+      
+      //FCC_A   =  8+16,  // Always
+      //FCC_N   =  0+16,  // Never
       FCC_U   =  7+16,  // Unordered
       FCC_G   =  6+16,  // Greater
       FCC_UG  =  5+16,  // Unordered or Greater
@@ -75,11 +70,9 @@ namespace llvm {
       FCC_O   = 15+16   // Ordered
     };
   }
-
+  
   inline static const char *SPARCCondCodeToString(SPCC::CondCodes CC) {
     switch (CC) {
-    case SPCC::ICC_A:   return "a";
-    case SPCC::ICC_N:   return "n";
     case SPCC::ICC_NE:  return "ne";
     case SPCC::ICC_E:   return "e";
     case SPCC::ICC_G:   return "g";
@@ -94,8 +87,6 @@ namespace llvm {
     case SPCC::ICC_NEG: return "neg";
     case SPCC::ICC_VC:  return "vc";
     case SPCC::ICC_VS:  return "vs";
-    case SPCC::FCC_A:   return "a";
-    case SPCC::FCC_N:   return "n";
     case SPCC::FCC_U:   return "u";
     case SPCC::FCC_G:   return "g";
     case SPCC::FCC_UG:  return "ug";
@@ -113,22 +104,5 @@ namespace llvm {
     }
     llvm_unreachable("Invalid cond code");
   }
-
-  inline static unsigned HI22(int64_t imm) {
-    return (unsigned)((imm >> 10) & ((1 << 22)-1));
-  }
-
-  inline static unsigned LO10(int64_t imm) {
-    return (unsigned)(imm & 0x3FF);
-  }
-
-  inline static unsigned HIX22(int64_t imm) {
-    return HI22(~imm);
-  }
-
-  inline static unsigned LOX10(int64_t imm) {
-    return ~LO10(~imm);
-  }
-
 }  // end namespace llvm
 #endif

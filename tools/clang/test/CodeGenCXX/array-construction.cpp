@@ -1,7 +1,8 @@
-// RUN: %clang_cc1 -triple x86_64-apple-darwin -std=c++11 -emit-llvm %s -o - | \
-// RUN: FileCheck %s
-// RUN: %clang_cc1 -triple i386-apple-darwin -std=c++11 -emit-llvm %s -o - | \
-// RUN: FileCheck %s
+// REQUIRES: x86-registered-target,x86-64-registered-target
+// RUN: %clang_cc1 -triple x86_64-apple-darwin -std=c++11 -S %s -o %t-64.s
+// RUN: FileCheck -check-prefix LP64 --input-file=%t-64.s %s
+// RUN: %clang_cc1 -triple i386-apple-darwin -std=c++11 -S %s -o %t-32.s
+// RUN: FileCheck -check-prefix LP32 --input-file=%t-32.s %s
 
 extern "C" int printf(...);
 
@@ -30,4 +31,7 @@ int main() {
               h, i, j, array[h][i][j].i, array[h][i][j].f);
 }
 
-// CHECK: call void @_ZN4xptoC1Ev
+// CHECK-LP64: callq    __ZN4xptoC1Ev
+
+// CHECK-LP32: calll     L__ZN4xptoC1Ev
+

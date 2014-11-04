@@ -4,7 +4,4 @@ namespace N {
     namespace {
         int x;
     }
-
-    void f();
-    void f(int);
 }

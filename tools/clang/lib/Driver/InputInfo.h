@@ -7,11 +7,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_LIB_DRIVER_INPUTINFO_H
-#define LLVM_CLANG_LIB_DRIVER_INPUTINFO_H
+#ifndef CLANG_LIB_DRIVER_INPUTINFO_H_
+#define CLANG_LIB_DRIVER_INPUTINFO_H_
 
 #include "clang/Driver/Types.h"
-#include "llvm/Option/Arg.h"
+
 #include <cassert>
 #include <string>
 
@@ -35,7 +35,7 @@ class InputInfo {
 
   union {
     const char *Filename;
-    const llvm::opt::Arg *InputArg;
+    const Arg *InputArg;
   } Data;
   Class Kind;
   types::ID Type;
@@ -50,9 +50,8 @@ public:
     : Kind(Filename), Type(_Type), BaseInput(_BaseInput) {
     Data.Filename = _Filename;
   }
-  InputInfo(const llvm::opt::Arg *_InputArg, types::ID _Type,
-            const char *_BaseInput)
-      : Kind(InputArg), Type(_Type), BaseInput(_BaseInput) {
+  InputInfo(const Arg *_InputArg, types::ID _Type, const char *_BaseInput)
+    : Kind(InputArg), Type(_Type), BaseInput(_BaseInput) {
     Data.InputArg = _InputArg;
   }
 
@@ -66,7 +65,7 @@ public:
     assert(isFilename() && "Invalid accessor.");
     return Data.Filename;
   }
-  const llvm::opt::Arg &getInputArg() const {
+  const Arg &getInputArg() const {
     assert(isInputArg() && "Invalid accessor.");
     return *Data.InputArg;
   }

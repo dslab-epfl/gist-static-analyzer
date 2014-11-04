@@ -9,14 +9,14 @@
 
 #include "MipsTargetObjectFile.h"
 #include "MipsSubtarget.h"
-#include "llvm/IR/DataLayout.h"
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/GlobalVariable.h"
+#include "llvm/DerivedTypes.h"
+#include "llvm/GlobalVariable.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCSectionELF.h"
+#include "llvm/DataLayout.h"
+#include "llvm/Target/TargetMachine.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ELF.h"
-#include "llvm/Target/TargetMachine.h"
 using namespace llvm;
 
 static cl::opt<unsigned>
@@ -37,6 +37,7 @@ void MipsTargetObjectFile::Initialize(MCContext &Ctx, const TargetMachine &TM){
     getContext().getELFSection(".sbss", ELF::SHT_NOBITS,
                                ELF::SHF_WRITE |ELF::SHF_ALLOC,
                                SectionKind::getBSS());
+
 }
 
 // A address must be loaded from a small section if its size is less than the
@@ -81,15 +82,14 @@ IsGlobalInSmallSection(const GlobalValue *GV, const TargetMachine &TM,
     return false;
 
   Type *Ty = GV->getType()->getElementType();
-  return IsInSmallSection(
-      TM.getSubtargetImpl()->getDataLayout()->getTypeAllocSize(Ty));
+  return IsInSmallSection(TM.getDataLayout()->getTypeAllocSize(Ty));
 }
 
 
 
 const MCSection *MipsTargetObjectFile::
 SelectSectionForGlobal(const GlobalValue *GV, SectionKind Kind,
-                       Mangler &Mang, const TargetMachine &TM) const {
+                       Mangler *Mang, const TargetMachine &TM) const {
   // TODO: Could also support "weak" symbols as well with ".gnu.linkonce.s.*"
   // sections?
 

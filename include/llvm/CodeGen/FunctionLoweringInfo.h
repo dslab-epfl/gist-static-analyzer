@@ -15,15 +15,19 @@
 #ifndef LLVM_CODEGEN_FUNCTIONLOWERINGINFO_H
 #define LLVM_CODEGEN_FUNCTIONLOWERINGINFO_H
 
+#include "llvm/InlineAsm.h"
+#include "llvm/Instructions.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/IndexedMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/Analysis/BranchProbabilityInfo.h"
+#include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/CodeGen/ISDOpcodes.h"
-#include "llvm/IR/InlineAsm.h"
-#include "llvm/IR/Instructions.h"
+#include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/Support/CallSite.h"
 #include "llvm/Target/TargetRegisterInfo.h"
 #include <vector>
 
@@ -31,7 +35,6 @@ namespace llvm {
 
 class AllocaInst;
 class BasicBlock;
-class BranchProbabilityInfo;
 class CallInst;
 class Function;
 class GlobalVariable;
@@ -41,8 +44,6 @@ class MachineBasicBlock;
 class MachineFunction;
 class MachineModuleInfo;
 class MachineRegisterInfo;
-class SelectionDAG;
-class MVT;
 class TargetLowering;
 class Value;
 
@@ -52,9 +53,9 @@ class Value;
 ///
 class FunctionLoweringInfo {
 public:
+  const TargetLowering &TLI;
   const Function *Fn;
   MachineFunction *MF;
-  const TargetLowering *TLI;
   MachineRegisterInfo *RegInfo;
   BranchProbabilityInfo *BPI;
   /// CanLowerReturn - true iff the function's return value can be lowered to
@@ -107,10 +108,6 @@ public:
                     KnownZero(1, 0) {}
   };
 
-  /// Record the preferred extend type (ISD::SIGN_EXTEND or ISD::ZERO_EXTEND)
-  /// for a value.
-  DenseMap<const Value *, ISD::NodeType> PreferredExtendType;
-
   /// VisitedBBs - The set of basic blocks visited thus far by instruction
   /// selection.
   SmallPtrSet<const BasicBlock*, 4> VisitedBBs;
@@ -120,17 +117,13 @@ public:
   /// TODO: This isn't per-function state, it's per-basic-block state. But
   /// there's no other convenient place for it to live right now.
   std::vector<std::pair<MachineInstr*, unsigned> > PHINodesToUpdate;
-  unsigned OrigNumPHINodesToUpdate;
 
-  /// If the current MBB is a landing pad, the exception pointer and exception
-  /// selector registers are copied into these virtual registers by
-  /// SelectionDAGISel::PrepareEHLandingPad().
-  unsigned ExceptionPointerVirtReg, ExceptionSelectorVirtReg;
+  explicit FunctionLoweringInfo(const TargetLowering &TLI);
 
   /// set - Initialize this FunctionLoweringInfo with the given Function
   /// and its associated MachineFunction.
   ///
-  void set(const Function &Fn, MachineFunction &MF, SelectionDAG *DAG);
+  void set(const Function &Fn, MachineFunction &MF);
 
   /// clear - Clear out all the function-specific state. This returns this
   /// FunctionLoweringInfo to an empty state, ready to be used for a
@@ -143,7 +136,7 @@ public:
     return ValueMap.count(V);
   }
 
-  unsigned CreateReg(MVT VT);
+  unsigned CreateReg(EVT VT);
   
   unsigned CreateRegs(Type *Ty);
   
@@ -157,11 +150,11 @@ public:
   /// register is a PHI destination and the PHI's LiveOutInfo is not valid.
   const LiveOutInfo *GetLiveOutRegInfo(unsigned Reg) {
     if (!LiveOutRegInfo.inBounds(Reg))
-      return nullptr;
+      return NULL;
 
     const LiveOutInfo *LOI = &LiveOutRegInfo[Reg];
     if (!LOI->IsValid)
-      return nullptr;
+      return NULL;
 
     return LOI;
   }

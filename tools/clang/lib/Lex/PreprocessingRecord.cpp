@@ -14,8 +14,8 @@
 #include "clang/Lex/PreprocessingRecord.h"
 #include "clang/Lex/MacroInfo.h"
 #include "clang/Lex/Token.h"
-#include "llvm/Support/Capacity.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/Capacity.h"
 
 using namespace clang;
 
@@ -38,9 +38,14 @@ InclusionDirective::InclusionDirective(PreprocessingRecord &PPRec,
   this->FileName = StringRef(Memory, FileName.size());
 }
 
-PreprocessingRecord::PreprocessingRecord(SourceManager &SM)
+PreprocessingRecord::PreprocessingRecord(SourceManager &SM,
+                                         bool RecordConditionalDirectives)
   : SourceMgr(SM),
-    ExternalSource(nullptr) {
+    RecordCondDirectives(RecordConditionalDirectives), CondDirectiveNextIdx(0),
+    ExternalSource(0)
+{
+  if (RecordCondDirectives)
+    CondDirectiveStack.push_back(CondDirectiveNextIdx++);
 }
 
 /// \brief Returns a pair of [Begin, End) iterators of preprocessed entities
@@ -92,10 +97,8 @@ bool PreprocessingRecord::isEntityInFileID(iterator PPEI, FileID FID) {
 
   int Pos = PPEI.Position;
   if (Pos < 0) {
-    if (unsigned(-Pos-1) >= LoadedPreprocessedEntities.size()) {
-      assert(0 && "Out-of bounds loaded preprocessed entity");
-      return false;
-    }
+    assert(unsigned(-Pos-1) < LoadedPreprocessedEntities.size() &&
+           "Out-of bounds loaded preprocessed entity");
     assert(ExternalSource && "No external source to load from");
     unsigned LoadedIndex = LoadedPreprocessedEntities.size()+Pos;
     if (PreprocessedEntity *PPE = LoadedPreprocessedEntities[LoadedIndex])
@@ -103,8 +106,8 @@ bool PreprocessingRecord::isEntityInFileID(iterator PPEI, FileID FID) {
 
     // See if the external source can see if the entity is in the file without
     // deserializing it.
-    Optional<bool> IsInFile =
-        ExternalSource->isPreprocessedEntityInFileID(LoadedIndex, FID);
+    llvm::Optional<bool>
+      IsInFile = ExternalSource->isPreprocessedEntityInFileID(LoadedIndex, FID);
     if (IsInFile.hasValue())
       return IsInFile.getValue();
 
@@ -115,10 +118,8 @@ bool PreprocessingRecord::isEntityInFileID(iterator PPEI, FileID FID) {
                                           FID, SourceMgr);
   }
 
-  if (unsigned(Pos) >= PreprocessedEntities.size()) {
-    assert(0 && "Out-of bounds local preprocessed entity");
-    return false;
-  }
+  assert(unsigned(Pos) < PreprocessedEntities.size() &&
+         "Out-of bounds local preprocessed entity");
   return isPreprocessedEntityIfInFileID(PreprocessedEntities[Pos],
                                         FID, SourceMgr);
 }
@@ -248,11 +249,11 @@ PreprocessingRecord::addPreprocessedEntity(PreprocessedEntity *Entity) {
   assert(Entity);
   SourceLocation BeginLoc = Entity->getSourceRange().getBegin();
 
-  if (isa<MacroDefinition>(Entity)) {
+  if (!isa<class InclusionDirective>(Entity)) {
     assert((PreprocessedEntities.empty() ||
             !SourceMgr.isBeforeInTranslationUnit(BeginLoc,
                    PreprocessedEntities.back()->getSourceRange().getBegin())) &&
-           "a macro definition was encountered out-of-order");
+           "a macro directive was encountered out-of-order");
     PreprocessedEntities.push_back(Entity);
     return getPPEntityID(PreprocessedEntities.size()-1, /*isLoaded=*/false);
   }
@@ -267,15 +268,7 @@ PreprocessingRecord::addPreprocessedEntity(PreprocessedEntity *Entity) {
 
   // The entity's location is not after the previous one; this can happen with
   // include directives that form the filename using macros, e.g:
-  // "#include MACRO(STUFF)"
-  // or with macro expansions inside macro arguments where the arguments are
-  // not expanded in the same order as listed, e.g:
-  // \code
-  //  #define M1 1
-  //  #define M2 2
-  //  #define FM(x,y) y x
-  //  FM(M1, M2)
-  // \endcode
+  // "#include MACRO(STUFF)".
 
   typedef std::vector<PreprocessedEntity *>::iterator pp_iter;
 
@@ -320,8 +313,8 @@ unsigned PreprocessingRecord::allocateLoadedEntities(unsigned NumEntities) {
 }
 
 void PreprocessingRecord::RegisterMacroDefinition(MacroInfo *Macro,
-                                                  MacroDefinition *Def) {
-  MacroDefinitions[Macro] = Def;
+                                                  PPEntityID PPID) {
+  MacroDefinitions[Macro] = PPID;
 }
 
 /// \brief Retrieve the preprocessed entity at the given ID.
@@ -334,7 +327,7 @@ PreprocessedEntity *PreprocessingRecord::getPreprocessedEntity(PPEntityID PPID){
   }
 
   if (PPID.ID == 0)
-    return nullptr;
+    return 0;
   unsigned Index = PPID.ID - 1;
   assert(Index < PreprocessedEntities.size() &&
          "Out-of bounds local preprocessed entity");
@@ -358,17 +351,19 @@ PreprocessingRecord::getLoadedPreprocessedEntity(unsigned Index) {
 }
 
 MacroDefinition *PreprocessingRecord::findMacroDefinition(const MacroInfo *MI) {
-  llvm::DenseMap<const MacroInfo *, MacroDefinition *>::iterator Pos
+  llvm::DenseMap<const MacroInfo *, PPEntityID>::iterator Pos
     = MacroDefinitions.find(MI);
   if (Pos == MacroDefinitions.end())
-    return nullptr;
-
-  return Pos->second;
+    return 0;
+  
+  PreprocessedEntity *Entity = getPreprocessedEntity(Pos->second);
+  if (Entity->isInvalid())
+    return 0;
+  return cast<MacroDefinition>(Entity);
 }
 
-void PreprocessingRecord::addMacroExpansion(const Token &Id,
-                                            const MacroInfo *MI,
-                                            SourceRange Range) {
+void PreprocessingRecord::MacroExpands(const Token &Id, const MacroInfo* MI,
+                                       SourceRange Range) {
   // We don't record nested macro expansions.
   if (Id.getLocation().isMacroID())
     return;
@@ -381,56 +376,17 @@ void PreprocessingRecord::addMacroExpansion(const Token &Id,
                        new (*this) MacroExpansion(Def, Range));
 }
 
-void PreprocessingRecord::Ifdef(SourceLocation Loc, const Token &MacroNameTok,
-                                const MacroDirective *MD) {
-  // This is not actually a macro expansion but record it as a macro reference.
-  if (MD)
-    addMacroExpansion(MacroNameTok, MD->getMacroInfo(),
-                      MacroNameTok.getLocation());
-}
-
-void PreprocessingRecord::Ifndef(SourceLocation Loc, const Token &MacroNameTok,
-                                 const MacroDirective *MD) {
-  // This is not actually a macro expansion but record it as a macro reference.
-  if (MD)
-    addMacroExpansion(MacroNameTok, MD->getMacroInfo(),
-                      MacroNameTok.getLocation());
-}
-
-void PreprocessingRecord::Defined(const Token &MacroNameTok,
-                                  const MacroDirective *MD,
-                                  SourceRange Range) {
-  // This is not actually a macro expansion but record it as a macro reference.
-  if (MD)
-    addMacroExpansion(MacroNameTok, MD->getMacroInfo(),
-                      MacroNameTok.getLocation());
-}
-
-void PreprocessingRecord::SourceRangeSkipped(SourceRange Range) {
-  SkippedRanges.push_back(Range);
-}
-
-void PreprocessingRecord::MacroExpands(const Token &Id,const MacroDirective *MD,
-                                       SourceRange Range,
-                                       const MacroArgs *Args) {
-  addMacroExpansion(Id, MD->getMacroInfo(), Range);
-}
-
 void PreprocessingRecord::MacroDefined(const Token &Id,
-                                       const MacroDirective *MD) {
-  const MacroInfo *MI = MD->getMacroInfo();
+                                       const MacroInfo *MI) {
   SourceRange R(MI->getDefinitionLoc(), MI->getDefinitionEndLoc());
   MacroDefinition *Def
       = new (*this) MacroDefinition(Id.getIdentifierInfo(), R);
-  addPreprocessedEntity(Def);
-  MacroDefinitions[MI] = Def;
+  MacroDefinitions[MI] = addPreprocessedEntity(Def);
 }
 
 void PreprocessingRecord::MacroUndefined(const Token &Id,
-                                         const MacroDirective *MD) {
-  // Note: MI may be null (when #undef'ining an undefined macro).
-  if (MD)
-    MacroDefinitions.erase(MD->getMacroInfo());
+                                         const MacroInfo *MI) {
+  MacroDefinitions.erase(MI);
 }
 
 void PreprocessingRecord::InclusionDirective(
@@ -480,6 +436,95 @@ void PreprocessingRecord::InclusionDirective(
                                             (bool)Imported,
                                             File, SourceRange(HashLoc, EndLoc));
   addPreprocessedEntity(ID);
+}
+
+bool PreprocessingRecord::rangeIntersectsConditionalDirective(
+                                                      SourceRange Range) const {
+  if (Range.isInvalid())
+    return false;
+
+  CondDirectiveLocsTy::const_iterator
+    low = std::lower_bound(CondDirectiveLocs.begin(), CondDirectiveLocs.end(),
+                           Range.getBegin(), CondDirectiveLoc::Comp(SourceMgr));
+  if (low == CondDirectiveLocs.end())
+    return false;
+
+  if (SourceMgr.isBeforeInTranslationUnit(Range.getEnd(), low->getLoc()))
+    return false;
+
+  CondDirectiveLocsTy::const_iterator
+    upp = std::upper_bound(low, CondDirectiveLocs.end(),
+                           Range.getEnd(), CondDirectiveLoc::Comp(SourceMgr));
+  unsigned uppIdx;
+  if (upp != CondDirectiveLocs.end())
+    uppIdx = upp->getIdx();
+  else
+    uppIdx = 0;
+
+  return low->getIdx() != uppIdx;
+}
+
+unsigned PreprocessingRecord::findCondDirectiveIdx(SourceLocation Loc) const {
+  if (Loc.isInvalid())
+    return 0;
+
+  CondDirectiveLocsTy::const_iterator
+    low = std::lower_bound(CondDirectiveLocs.begin(), CondDirectiveLocs.end(),
+                           Loc, CondDirectiveLoc::Comp(SourceMgr));
+  if (low == CondDirectiveLocs.end())
+    return 0;
+  return low->getIdx();
+}
+
+void PreprocessingRecord::addCondDirectiveLoc(CondDirectiveLoc DirLoc) {
+  // Ignore directives in system headers.
+  if (SourceMgr.isInSystemHeader(DirLoc.getLoc()))
+    return;
+
+  assert(CondDirectiveLocs.empty() ||
+         SourceMgr.isBeforeInTranslationUnit(CondDirectiveLocs.back().getLoc(),
+                                             DirLoc.getLoc()));
+  CondDirectiveLocs.push_back(DirLoc);
+}
+
+void PreprocessingRecord::If(SourceLocation Loc, SourceRange ConditionRange) {
+  if (RecordCondDirectives) {
+    addCondDirectiveLoc(CondDirectiveLoc(Loc, CondDirectiveStack.back()));
+    CondDirectiveStack.push_back(CondDirectiveNextIdx++);
+  }
+}
+
+void PreprocessingRecord::Ifdef(SourceLocation Loc, const Token &MacroNameTok) {
+  if (RecordCondDirectives) {
+    addCondDirectiveLoc(CondDirectiveLoc(Loc, CondDirectiveStack.back()));
+    CondDirectiveStack.push_back(CondDirectiveNextIdx++);
+  }
+}
+
+void PreprocessingRecord::Ifndef(SourceLocation Loc,const Token &MacroNameTok) {
+  if (RecordCondDirectives) {
+    addCondDirectiveLoc(CondDirectiveLoc(Loc, CondDirectiveStack.back()));
+    CondDirectiveStack.push_back(CondDirectiveNextIdx++);
+  }
+}
+
+void PreprocessingRecord::Elif(SourceLocation Loc, SourceRange ConditionRange,
+                               SourceLocation IfLoc) {
+  if (RecordCondDirectives)
+    addCondDirectiveLoc(CondDirectiveLoc(Loc, CondDirectiveStack.back()));
+}
+
+void PreprocessingRecord::Else(SourceLocation Loc, SourceLocation IfLoc) {
+  if (RecordCondDirectives)
+    addCondDirectiveLoc(CondDirectiveLoc(Loc, CondDirectiveStack.back()));
+}
+
+void PreprocessingRecord::Endif(SourceLocation Loc, SourceLocation IfLoc) {
+  if (RecordCondDirectives) {
+    addCondDirectiveLoc(CondDirectiveLoc(Loc, CondDirectiveStack.back()));
+    assert(!CondDirectiveStack.empty());
+    CondDirectiveStack.pop_back();
+  }
 }
 
 size_t PreprocessingRecord::getTotalMemory() const {

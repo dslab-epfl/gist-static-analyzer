@@ -6,8 +6,7 @@ typedef __typeof(sizeof(int)) size_t;
 extern FILE *stdin;
 typedef long ssize_t;
 ssize_t getline(char ** __restrict, size_t * __restrict, FILE * __restrict);
-int printf(const char * __restrict, ...);
-int snprintf(char *, size_t, const char *, ...);
+int  printf(const char * __restrict, ...);
 void free(void *ptr);
 
 struct GetLineTestStruct {
@@ -26,10 +25,3 @@ void getlineTest(void) {
   }
   free(line);
 }
-
-class opaque;
-void testOpaqueClass(opaque *obj) {
-  char buf[20];
-  snprintf(buf, 20, "%p", obj); // don't crash trying to load *obj
-}
-

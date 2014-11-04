@@ -10,11 +10,10 @@
 |* Implements the diagnostic functions of the Clang C interface.              *|
 |*                                                                            *|
 \*===----------------------------------------------------------------------===*/
-#ifndef LLVM_CLANG_TOOLS_LIBCLANG_CINDEXDIAGNOSTIC_H
-#define LLVM_CLANG_TOOLS_LIBCLANG_CINDEXDIAGNOSTIC_H
+#ifndef LLVM_CLANG_CINDEX_DIAGNOSTIC_H
+#define LLVM_CLANG_CINDEX_DIAGNOSTIC_H
 
 #include "clang-c/Index.h"
-#include <memory>
 #include <vector>
 #include <assert.h>
 
@@ -25,25 +24,27 @@ class StoredDiagnostic;
 class CXDiagnosticImpl;
   
 class CXDiagnosticSetImpl {
-  std::vector<std::unique_ptr<CXDiagnosticImpl>> Diagnostics;
+  std::vector<CXDiagnosticImpl *> Diagnostics;
   const bool IsExternallyManaged;
 public:
   CXDiagnosticSetImpl(bool isManaged = false)
     : IsExternallyManaged(isManaged) {}
 
   virtual ~CXDiagnosticSetImpl();
-
+  
   size_t getNumDiagnostics() const {
     return Diagnostics.size();
   }
   
   CXDiagnosticImpl *getDiagnostic(unsigned i) const {
     assert(i < getNumDiagnostics());
-    return Diagnostics[i].get();
+    return Diagnostics[i];
   }
-
-  void appendDiagnostic(std::unique_ptr<CXDiagnosticImpl> D);
-
+  
+  void appendDiagnostic(CXDiagnosticImpl *D) {
+    Diagnostics.push_back(D);
+  }
+  
   bool empty() const {
     return Diagnostics.empty();
   }
@@ -98,9 +99,9 @@ public:
 protected:
   CXDiagnosticImpl(Kind k) : K(k) {}
   CXDiagnosticSetImpl ChildDiags;
-
-  void append(std::unique_ptr<CXDiagnosticImpl> D) {
-    ChildDiags.appendDiagnostic(std::move(D));
+  
+  void append(CXDiagnosticImpl *D) {
+    ChildDiags.appendDiagnostic(D);
   }
   
 private:
@@ -120,35 +121,35 @@ struct CXStoredDiagnostic : public CXDiagnosticImpl {
   virtual ~CXStoredDiagnostic() {}
   
   /// \brief Return the severity of the diagnostic.
-  CXDiagnosticSeverity getSeverity() const override;
-
+  virtual CXDiagnosticSeverity getSeverity() const;
+  
   /// \brief Return the location of the diagnostic.
-  CXSourceLocation getLocation() const override;
+  virtual CXSourceLocation getLocation() const;
 
   /// \brief Return the spelling of the diagnostic.
-  CXString getSpelling() const override;
+  virtual CXString getSpelling() const;
 
   /// \brief Return the text for the diagnostic option.
-  CXString getDiagnosticOption(CXString *Disable) const override;
-
+  virtual CXString getDiagnosticOption(CXString *Disable) const;
+  
   /// \brief Return the category of the diagnostic.
-  unsigned getCategory() const override;
-
+  virtual unsigned getCategory() const;
+  
   /// \brief Return the category string of the diagnostic.
-  CXString getCategoryText() const override;
+  virtual CXString getCategoryText() const;
 
   /// \brief Return the number of source ranges for the diagnostic.
-  unsigned getNumRanges() const override;
-
+  virtual unsigned getNumRanges() const;
+  
   /// \brief Return the source ranges for the diagnostic.
-  CXSourceRange getRange(unsigned Range) const override;
+  virtual CXSourceRange getRange(unsigned Range) const;
 
   /// \brief Return the number of FixIts.
-  unsigned getNumFixIts() const override;
+  virtual unsigned getNumFixIts() const;
 
   /// \brief Return the FixIt information (source range and inserted text).
-  CXString getFixIt(unsigned FixIt,
-                    CXSourceRange *ReplacementRange) const override;
+  virtual CXString getFixIt(unsigned FixIt,
+                            CXSourceRange *ReplacementRange) const;
 
   static bool classof(const CXDiagnosticImpl *D) {
     return D->getKind() == StoredDiagnosticKind;
@@ -162,4 +163,4 @@ CXDiagnosticSetImpl *lazyCreateDiags(CXTranslationUnit TU,
 
 } // end namespace clang
 
-#endif
+#endif // LLVM_CLANG_CINDEX_DIAGNOSTIC_H

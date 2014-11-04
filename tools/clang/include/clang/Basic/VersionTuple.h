@@ -18,41 +18,35 @@
 #include "clang/Basic/LLVM.h"
 #include "llvm/ADT/Optional.h"
 #include <string>
-#include <tuple>
 
 namespace clang {
 
 /// \brief Represents a version number in the form major[.minor[.subminor]].
 class VersionTuple {
-  unsigned Major : 31;
+  unsigned Major;
   unsigned Minor : 31;
   unsigned Subminor : 31;
   unsigned HasMinor : 1;
   unsigned HasSubminor : 1;
-  unsigned UsesUnderscores : 1;
 
 public:
   VersionTuple() 
-    : Major(0), Minor(0), Subminor(0), HasMinor(false), HasSubminor(false),
-      UsesUnderscores(false) { }
+    : Major(0), Minor(0), Subminor(0), HasMinor(false), HasSubminor(false) { }
 
   explicit VersionTuple(unsigned Major)
-    : Major(Major), Minor(0), Subminor(0), HasMinor(false), HasSubminor(false),
-      UsesUnderscores(false)
+    : Major(Major), Minor(0), Subminor(0), HasMinor(false), HasSubminor(false)
   { }
 
-  explicit VersionTuple(unsigned Major, unsigned Minor,
-                        bool UsesUnderscores = false)
+  explicit VersionTuple(unsigned Major, unsigned Minor)
     : Major(Major), Minor(Minor), Subminor(0), HasMinor(true), 
-      HasSubminor(false), UsesUnderscores(UsesUnderscores)
+      HasSubminor(false)
   { }
 
-  explicit VersionTuple(unsigned Major, unsigned Minor, unsigned Subminor,
-                        bool UsesUnderscores = false)
+  explicit VersionTuple(unsigned Major, unsigned Minor, unsigned Subminor)
     : Major(Major), Minor(Minor), Subminor(Subminor), HasMinor(true), 
-      HasSubminor(true), UsesUnderscores(UsesUnderscores)
+      HasSubminor(true)
   { }
-  
+
   /// \brief Determine whether this version information is empty
   /// (e.g., all version components are zero).
   bool empty() const { return Major == 0 && Minor == 0 && Subminor == 0; }
@@ -61,27 +55,19 @@ public:
   unsigned getMajor() const { return Major; }
 
   /// \brief Retrieve the minor version number, if provided.
-  Optional<unsigned> getMinor() const {
+  llvm::Optional<unsigned> getMinor() const { 
     if (!HasMinor)
-      return None;
+      return llvm::Optional<unsigned>();
     return Minor;
   }
 
   /// \brief Retrieve the subminor version number, if provided.
-  Optional<unsigned> getSubminor() const {
+  llvm::Optional<unsigned> getSubminor() const { 
     if (!HasSubminor)
-      return None;
+      return llvm::Optional<unsigned>();
     return Subminor;
   }
 
-  bool usesUnderscores() const {
-    return UsesUnderscores;
-  }
-
-  void UseDotAsSeparator() {
-    UsesUnderscores = false;
-  }
-  
   /// \brief Determine if two version numbers are equivalent. If not
   /// provided, minor and subminor version numbers are considered to be zero.
   friend bool operator==(const VersionTuple& X, const VersionTuple &Y) {
@@ -101,8 +87,13 @@ public:
   /// If not provided, minor and subminor version numbers are considered to be
   /// zero.
   friend bool operator<(const VersionTuple &X, const VersionTuple &Y) {
-    return std::tie(X.Major, X.Minor, X.Subminor) <
-           std::tie(Y.Major, Y.Minor, Y.Subminor);
+    if (X.Major != Y.Major)
+      return X.Major < Y.Major;
+
+    if (X.Minor != Y.Minor)
+      return X.Minor < Y.Minor;
+
+    return X.Subminor < Y.Subminor;
   }
 
   /// \brief Determine whether one version number follows another.

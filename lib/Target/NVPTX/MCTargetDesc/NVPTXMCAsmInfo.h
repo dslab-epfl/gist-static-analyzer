@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_NVPTX_MCTARGETDESC_NVPTXMCASMINFO_H
-#define LLVM_LIB_TARGET_NVPTX_MCTARGETDESC_NVPTXMCASMINFO_H
+#ifndef NVPTX_MCASM_INFO_H
+#define NVPTX_MCASM_INFO_H
 
 #include "llvm/MC/MCAsmInfo.h"
 
@@ -23,8 +23,8 @@ class StringRef;
 class NVPTXMCAsmInfo : public MCAsmInfo {
   virtual void anchor();
 public:
-  explicit NVPTXMCAsmInfo(StringRef TT);
+  explicit NVPTXMCAsmInfo(const Target &T, const StringRef &TT);
 };
 } // namespace llvm
 
-#endif
+#endif // NVPTX_MCASM_INFO_H

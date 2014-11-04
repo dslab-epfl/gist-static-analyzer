@@ -1,7 +1,5 @@
 // RUN: %clang_cc1 %s -Wno-private-extern -triple i386-pc-linux-gnu -verify -fsyntax-only
 
-
-
 void f() {
   int i;
 
@@ -15,9 +13,6 @@ void f() {
   asm ("foo\n" : "=a" (i) : "[" (i)); // expected-error {{invalid input constraint '[' in asm}}
   asm ("foo\n" : "=a" (i) : "[foo" (i)); // expected-error {{invalid input constraint '[foo' in asm}}
   asm ("foo\n" : "=a" (i) : "[symbolic_name]" (i)); // expected-error {{invalid input constraint '[symbolic_name]' in asm}}
-
-  asm ("foo\n" : : "" (i)); // expected-error {{invalid input constraint '' in asm}}
-  asm ("foo\n" : "=a" (i) : "" (i)); // expected-error {{invalid input constraint '' in asm}}
 }
 
 void clobbers() {
@@ -97,6 +92,8 @@ void test9(int i) {
   asm("" : [foo] "=r" (i), "=r"(i) : "[foo]1"(i)); // expected-error{{invalid input constraint '[foo]1' in asm}}
 }
 
+register int g asm("dx"); // expected-error{{global register variables are not supported}}
+
 void test10(void){
   static int g asm ("g_asm") = 0;
   extern int gg asm ("gg_asm");
@@ -107,7 +104,6 @@ void test10(void){
 
   register int r asm ("cx");
   register int rr asm ("rr_asm"); // expected-error{{unknown register name 'rr_asm' in asm}}
-  register int rrr asm ("%"); // expected-error{{unknown register name '%' in asm}}
 }
 
 // This is just an assert because of the boolean conversion.
@@ -126,41 +122,4 @@ void test12(void) {
 void test13(void) {
   void *esp;
   __asm__ volatile ("mov %%esp, %o" : "=r"(esp) : : ); // expected-error {{invalid % escape in inline assembly string}}
-}
-
-// <rdar://problem/12700799>
-struct S;  // expected-note 2 {{forward declaration of 'struct S'}}
-void test14(struct S *s) {
-  __asm("": : "a"(*s)); // expected-error {{dereference of pointer to incomplete type 'struct S'}}
-  __asm("": "=a" (*s) :); // expected-error {{dereference of pointer to incomplete type 'struct S'}}
-}
-
-// PR15759.
-double test15() {
-  double ret = 0;
-  __asm("0.0":"="(ret)); // expected-error {{invalid output constraint '=' in asm}}
-  __asm("0.0":"=&"(ret)); // expected-error {{invalid output constraint '=&' in asm}}
-  __asm("0.0":"+?"(ret)); // expected-error {{invalid output constraint '+?' in asm}}
-  __asm("0.0":"+!"(ret)); // expected-error {{invalid output constraint '+!' in asm}}
-  __asm("0.0":"+#"(ret)); // expected-error {{invalid output constraint '+#' in asm}}
-  __asm("0.0":"+*"(ret)); // expected-error {{invalid output constraint '+*' in asm}}
-  __asm("0.0":"=%"(ret)); // expected-error {{invalid output constraint '=%' in asm}}
-  __asm("0.0":"=,="(ret)); // expected-error {{invalid output constraint '=,=' in asm}}
-  __asm("0.0":"=,g"(ret)); // no-error
-  __asm("0.0":"=g"(ret)); // no-error
-  return ret;
-}
-
-// PR19837
-struct foo {
-  int a;
-  char b;
-};
-register struct foo bar asm("sp"); // expected-error {{bad type for named register variable}}
-register float baz asm("sp"); // expected-error {{bad type for named register variable}}
-
-double f_output_constraint(void) {
-  double result;
-  __asm("foo1": "=f" (result)); // expected-error {{invalid output constraint '=f' in asm}}
-  return result;
 }

@@ -1,6 +1,6 @@
-; RUN: llc < %s -march=x86-64 -mattr=+sse4.2  | FileCheck %s
+; RUN: llc < %s -march=x86-64 -mattr=+sse42  | FileCheck %s
 ; CHECK: movdqa
-; CHECK: pslld $2
+; CHECK: pmulld
 ; CHECK: psubd
 
 ; widen a v3i32 to v4i32 to do a vector multiple and a subtraction

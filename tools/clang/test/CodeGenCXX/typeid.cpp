@@ -27,14 +27,11 @@ extern A &a;
 // CHECK: @_ZN5Test14a_tiE = global
 const std::type_info &a_ti = typeid(a);
 
-// CHECK: @_ZN5Test18A10_c_tiE = constant %"class.std::type_info"* bitcast ({ i8*, i8* }* @_ZTIA10_c to %"class.std::type_info"*), align 8
-const std::type_info &A10_c_ti = typeid(char const[10]);
-
-// CHECK-LABEL: define i8* @_ZN5Test11fEv
+// CHECK: define i8* @_ZN5Test11fEv
 const char *f() {
   try {
     // CHECK: br i1
-    // CHECK: invoke void @__cxa_bad_typeid() [[NR:#[0-9]+]]
+    // CHECK: invoke void @__cxa_bad_typeid() noreturn
     return typeid(*static_cast<A *>(0)).name();
   } catch (...) {
     // CHECK:      landingpad { i8*, i32 } personality i8* bitcast (i32 (...)* @__gxx_personality_v0 to i8*)
@@ -45,5 +42,3 @@ const char *f() {
 }
 
 }
-
-// CHECK: attributes [[NR]] = { noreturn }

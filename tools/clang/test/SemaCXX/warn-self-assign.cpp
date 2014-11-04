@@ -8,9 +8,6 @@ void f() {
   b = a = b;
   a = a = a; // expected-warning{{explicitly assigning}}
   a = b = b = a;
-  a &= a; // expected-warning{{explicitly assigning}}
-  a |= a; // expected-warning{{explicitly assigning}}
-  a ^= a;
 }
 
 // Dummy type.

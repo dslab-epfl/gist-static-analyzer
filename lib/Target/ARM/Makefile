@@ -15,8 +15,8 @@ TARGET = ARM
 BUILT_SOURCES = ARMGenRegisterInfo.inc ARMGenInstrInfo.inc \
 		ARMGenAsmWriter.inc ARMGenAsmMatcher.inc \
                 ARMGenDAGISel.inc ARMGenSubtargetInfo.inc \
-                ARMGenCallingConv.inc \
-                ARMGenFastISel.inc ARMGenMCCodeEmitter.inc \
+                ARMGenCodeEmitter.inc ARMGenCallingConv.inc \
+                ARMGenEDInfo.inc ARMGenFastISel.inc ARMGenMCCodeEmitter.inc \
                 ARMGenMCPseudoLowering.inc ARMGenDisassemblerTables.inc
 
 DIRS = InstPrinter AsmParser Disassembler TargetInfo MCTargetDesc

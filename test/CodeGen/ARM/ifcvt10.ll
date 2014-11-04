@@ -1,4 +1,4 @@
-; RUN: llc < %s -mtriple=arm-apple-ios -arm-atomic-cfg-tidy=0 -mcpu=cortex-a9 | FileCheck %s
+; RUN: llc < %s -mtriple=arm-apple-ios -mcpu=cortex-a9 | FileCheck %s
 ; rdar://8402126
 ; Make sure if-converter is not predicating vldmia and ldmia. These are
 ; micro-coded and would have long issue latency even if predicated on
@@ -6,7 +6,7 @@
 
 define void @t(double %a, double %b, double %c, double %d, i32* nocapture %solutions, double* nocapture %x) nounwind {
 entry:
-; CHECK-LABEL: t:
+; CHECK: t:
 ; CHECK: vpop {d8}
 ; CHECK-NOT: vpopne
 ; CHECK: pop {r7, pc}

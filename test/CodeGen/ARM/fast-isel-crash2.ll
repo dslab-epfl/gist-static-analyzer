@@ -1,5 +1,4 @@
-; RUN: llc < %s -O0 -verify-machineinstrs -mtriple=thumbv7-apple-darwin
-; RUN: llc < %s -O0 -verify-machineinstrs -mtriple=armv7-linux-gnueabi
+; RUN: llc < %s -O0 -mtriple=thumbv7-apple-darwin
 ; rdar://9515076
 ; (Make sure this doesn't crash.)
 

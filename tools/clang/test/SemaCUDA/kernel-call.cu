@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -fsyntax-only -verify %s
 
-#include "Inputs/cuda.h"
+#include "cuda.h"
 
 __global__ void g1(int x) {}
 

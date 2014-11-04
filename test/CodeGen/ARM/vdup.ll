@@ -1,8 +1,7 @@
-; RUN: llc -mtriple=arm-eabi -float-abi=soft -mattr=+neon -verify-machineinstrs %s -o - \
-; RUN:	| FileCheck %s
+; RUN: llc < %s -march=arm -mattr=+neon | FileCheck %s
 
 define <8 x i8> @v_dup8(i8 %A) nounwind {
-;CHECK-LABEL: v_dup8:
+;CHECK: v_dup8:
 ;CHECK: vdup.8
 	%tmp1 = insertelement <8 x i8> zeroinitializer, i8 %A, i32 0
 	%tmp2 = insertelement <8 x i8> %tmp1, i8 %A, i32 1
@@ -16,7 +15,7 @@ define <8 x i8> @v_dup8(i8 %A) nounwind {
 }
 
 define <4 x i16> @v_dup16(i16 %A) nounwind {
-;CHECK-LABEL: v_dup16:
+;CHECK: v_dup16:
 ;CHECK: vdup.16
 	%tmp1 = insertelement <4 x i16> zeroinitializer, i16 %A, i32 0
 	%tmp2 = insertelement <4 x i16> %tmp1, i16 %A, i32 1
@@ -26,7 +25,7 @@ define <4 x i16> @v_dup16(i16 %A) nounwind {
 }
 
 define <2 x i32> @v_dup32(i32 %A) nounwind {
-;CHECK-LABEL: v_dup32:
+;CHECK: v_dup32:
 ;CHECK: vdup.32
 	%tmp1 = insertelement <2 x i32> zeroinitializer, i32 %A, i32 0
 	%tmp2 = insertelement <2 x i32> %tmp1, i32 %A, i32 1
@@ -34,7 +33,7 @@ define <2 x i32> @v_dup32(i32 %A) nounwind {
 }
 
 define <2 x float> @v_dupfloat(float %A) nounwind {
-;CHECK-LABEL: v_dupfloat:
+;CHECK: v_dupfloat:
 ;CHECK: vdup.32
 	%tmp1 = insertelement <2 x float> zeroinitializer, float %A, i32 0
 	%tmp2 = insertelement <2 x float> %tmp1, float %A, i32 1
@@ -42,7 +41,7 @@ define <2 x float> @v_dupfloat(float %A) nounwind {
 }
 
 define <16 x i8> @v_dupQ8(i8 %A) nounwind {
-;CHECK-LABEL: v_dupQ8:
+;CHECK: v_dupQ8:
 ;CHECK: vdup.8
 	%tmp1 = insertelement <16 x i8> zeroinitializer, i8 %A, i32 0
 	%tmp2 = insertelement <16 x i8> %tmp1, i8 %A, i32 1
@@ -64,7 +63,7 @@ define <16 x i8> @v_dupQ8(i8 %A) nounwind {
 }
 
 define <8 x i16> @v_dupQ16(i16 %A) nounwind {
-;CHECK-LABEL: v_dupQ16:
+;CHECK: v_dupQ16:
 ;CHECK: vdup.16
 	%tmp1 = insertelement <8 x i16> zeroinitializer, i16 %A, i32 0
 	%tmp2 = insertelement <8 x i16> %tmp1, i16 %A, i32 1
@@ -78,7 +77,7 @@ define <8 x i16> @v_dupQ16(i16 %A) nounwind {
 }
 
 define <4 x i32> @v_dupQ32(i32 %A) nounwind {
-;CHECK-LABEL: v_dupQ32:
+;CHECK: v_dupQ32:
 ;CHECK: vdup.32
 	%tmp1 = insertelement <4 x i32> zeroinitializer, i32 %A, i32 0
 	%tmp2 = insertelement <4 x i32> %tmp1, i32 %A, i32 1
@@ -88,7 +87,7 @@ define <4 x i32> @v_dupQ32(i32 %A) nounwind {
 }
 
 define <4 x float> @v_dupQfloat(float %A) nounwind {
-;CHECK-LABEL: v_dupQfloat:
+;CHECK: v_dupQfloat:
 ;CHECK: vdup.32
 	%tmp1 = insertelement <4 x float> zeroinitializer, float %A, i32 0
 	%tmp2 = insertelement <4 x float> %tmp1, float %A, i32 1
@@ -100,7 +99,7 @@ define <4 x float> @v_dupQfloat(float %A) nounwind {
 ; Check to make sure it works with shuffles, too.
 
 define <8 x i8> @v_shuffledup8(i8 %A) nounwind {
-;CHECK-LABEL: v_shuffledup8:
+;CHECK: v_shuffledup8:
 ;CHECK: vdup.8
 	%tmp1 = insertelement <8 x i8> undef, i8 %A, i32 0
 	%tmp2 = shufflevector <8 x i8> %tmp1, <8 x i8> undef, <8 x i32> zeroinitializer
@@ -108,7 +107,7 @@ define <8 x i8> @v_shuffledup8(i8 %A) nounwind {
 }
 
 define <4 x i16> @v_shuffledup16(i16 %A) nounwind {
-;CHECK-LABEL: v_shuffledup16:
+;CHECK: v_shuffledup16:
 ;CHECK: vdup.16
 	%tmp1 = insertelement <4 x i16> undef, i16 %A, i32 0
 	%tmp2 = shufflevector <4 x i16> %tmp1, <4 x i16> undef, <4 x i32> zeroinitializer
@@ -116,7 +115,7 @@ define <4 x i16> @v_shuffledup16(i16 %A) nounwind {
 }
 
 define <2 x i32> @v_shuffledup32(i32 %A) nounwind {
-;CHECK-LABEL: v_shuffledup32:
+;CHECK: v_shuffledup32:
 ;CHECK: vdup.32
 	%tmp1 = insertelement <2 x i32> undef, i32 %A, i32 0
 	%tmp2 = shufflevector <2 x i32> %tmp1, <2 x i32> undef, <2 x i32> zeroinitializer
@@ -124,7 +123,7 @@ define <2 x i32> @v_shuffledup32(i32 %A) nounwind {
 }
 
 define <2 x float> @v_shuffledupfloat(float %A) nounwind {
-;CHECK-LABEL: v_shuffledupfloat:
+;CHECK: v_shuffledupfloat:
 ;CHECK: vdup.32
 	%tmp1 = insertelement <2 x float> undef, float %A, i32 0
 	%tmp2 = shufflevector <2 x float> %tmp1, <2 x float> undef, <2 x i32> zeroinitializer
@@ -132,7 +131,7 @@ define <2 x float> @v_shuffledupfloat(float %A) nounwind {
 }
 
 define <16 x i8> @v_shuffledupQ8(i8 %A) nounwind {
-;CHECK-LABEL: v_shuffledupQ8:
+;CHECK: v_shuffledupQ8:
 ;CHECK: vdup.8
 	%tmp1 = insertelement <16 x i8> undef, i8 %A, i32 0
 	%tmp2 = shufflevector <16 x i8> %tmp1, <16 x i8> undef, <16 x i32> zeroinitializer
@@ -140,7 +139,7 @@ define <16 x i8> @v_shuffledupQ8(i8 %A) nounwind {
 }
 
 define <8 x i16> @v_shuffledupQ16(i16 %A) nounwind {
-;CHECK-LABEL: v_shuffledupQ16:
+;CHECK: v_shuffledupQ16:
 ;CHECK: vdup.16
 	%tmp1 = insertelement <8 x i16> undef, i16 %A, i32 0
 	%tmp2 = shufflevector <8 x i16> %tmp1, <8 x i16> undef, <8 x i32> zeroinitializer
@@ -148,7 +147,7 @@ define <8 x i16> @v_shuffledupQ16(i16 %A) nounwind {
 }
 
 define <4 x i32> @v_shuffledupQ32(i32 %A) nounwind {
-;CHECK-LABEL: v_shuffledupQ32:
+;CHECK: v_shuffledupQ32:
 ;CHECK: vdup.32
 	%tmp1 = insertelement <4 x i32> undef, i32 %A, i32 0
 	%tmp2 = shufflevector <4 x i32> %tmp1, <4 x i32> undef, <4 x i32> zeroinitializer
@@ -156,7 +155,7 @@ define <4 x i32> @v_shuffledupQ32(i32 %A) nounwind {
 }
 
 define <4 x float> @v_shuffledupQfloat(float %A) nounwind {
-;CHECK-LABEL: v_shuffledupQfloat:
+;CHECK: v_shuffledupQfloat:
 ;CHECK: vdup.32
 	%tmp1 = insertelement <4 x float> undef, float %A, i32 0
 	%tmp2 = shufflevector <4 x float> %tmp1, <4 x float> undef, <4 x i32> zeroinitializer
@@ -164,7 +163,7 @@ define <4 x float> @v_shuffledupQfloat(float %A) nounwind {
 }
 
 define <8 x i8> @vduplane8(<8 x i8>* %A) nounwind {
-;CHECK-LABEL: vduplane8:
+;CHECK: vduplane8:
 ;CHECK: vdup.8
 	%tmp1 = load <8 x i8>* %A
 	%tmp2 = shufflevector <8 x i8> %tmp1, <8 x i8> undef, <8 x i32> < i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1 >
@@ -172,7 +171,7 @@ define <8 x i8> @vduplane8(<8 x i8>* %A) nounwind {
 }
 
 define <4 x i16> @vduplane16(<4 x i16>* %A) nounwind {
-;CHECK-LABEL: vduplane16:
+;CHECK: vduplane16:
 ;CHECK: vdup.16
 	%tmp1 = load <4 x i16>* %A
 	%tmp2 = shufflevector <4 x i16> %tmp1, <4 x i16> undef, <4 x i32> < i32 1, i32 1, i32 1, i32 1 >
@@ -180,7 +179,7 @@ define <4 x i16> @vduplane16(<4 x i16>* %A) nounwind {
 }
 
 define <2 x i32> @vduplane32(<2 x i32>* %A) nounwind {
-;CHECK-LABEL: vduplane32:
+;CHECK: vduplane32:
 ;CHECK: vdup.32
 	%tmp1 = load <2 x i32>* %A
 	%tmp2 = shufflevector <2 x i32> %tmp1, <2 x i32> undef, <2 x i32> < i32 1, i32 1 >
@@ -188,7 +187,7 @@ define <2 x i32> @vduplane32(<2 x i32>* %A) nounwind {
 }
 
 define <2 x float> @vduplanefloat(<2 x float>* %A) nounwind {
-;CHECK-LABEL: vduplanefloat:
+;CHECK: vduplanefloat:
 ;CHECK: vdup.32
 	%tmp1 = load <2 x float>* %A
 	%tmp2 = shufflevector <2 x float> %tmp1, <2 x float> undef, <2 x i32> < i32 1, i32 1 >
@@ -196,7 +195,7 @@ define <2 x float> @vduplanefloat(<2 x float>* %A) nounwind {
 }
 
 define <16 x i8> @vduplaneQ8(<8 x i8>* %A) nounwind {
-;CHECK-LABEL: vduplaneQ8:
+;CHECK: vduplaneQ8:
 ;CHECK: vdup.8
 	%tmp1 = load <8 x i8>* %A
 	%tmp2 = shufflevector <8 x i8> %tmp1, <8 x i8> undef, <16 x i32> < i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1 >
@@ -204,7 +203,7 @@ define <16 x i8> @vduplaneQ8(<8 x i8>* %A) nounwind {
 }
 
 define <8 x i16> @vduplaneQ16(<4 x i16>* %A) nounwind {
-;CHECK-LABEL: vduplaneQ16:
+;CHECK: vduplaneQ16:
 ;CHECK: vdup.16
 	%tmp1 = load <4 x i16>* %A
 	%tmp2 = shufflevector <4 x i16> %tmp1, <4 x i16> undef, <8 x i32> < i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1 >
@@ -212,7 +211,7 @@ define <8 x i16> @vduplaneQ16(<4 x i16>* %A) nounwind {
 }
 
 define <4 x i32> @vduplaneQ32(<2 x i32>* %A) nounwind {
-;CHECK-LABEL: vduplaneQ32:
+;CHECK: vduplaneQ32:
 ;CHECK: vdup.32
 	%tmp1 = load <2 x i32>* %A
 	%tmp2 = shufflevector <2 x i32> %tmp1, <2 x i32> undef, <4 x i32> < i32 1, i32 1, i32 1, i32 1 >
@@ -220,7 +219,7 @@ define <4 x i32> @vduplaneQ32(<2 x i32>* %A) nounwind {
 }
 
 define <4 x float> @vduplaneQfloat(<2 x float>* %A) nounwind {
-;CHECK-LABEL: vduplaneQfloat:
+;CHECK: vduplaneQfloat:
 ;CHECK: vdup.32
 	%tmp1 = load <2 x float>* %A
 	%tmp2 = shufflevector <2 x float> %tmp1, <2 x float> undef, <4 x i32> < i32 1, i32 1, i32 1, i32 1 >
@@ -252,7 +251,7 @@ entry:
 }
 
 ; Radar 7373643
-;CHECK-LABEL: redundantVdup:
+;CHECK: redundantVdup:
 ;CHECK: vmov.i8
 ;CHECK-NOT: vdup.8
 ;CHECK: vstr
@@ -264,7 +263,7 @@ define void @redundantVdup(<8 x i8>* %ptr) nounwind {
 }
 
 define <4 x i32> @tdupi(i32 %x, i32 %y) {
-;CHECK-LABEL: tdupi:
+;CHECK: tdupi
 ;CHECK: vdup.32
   %1 = insertelement <4 x i32> undef, i32 %x, i32 0
   %2 = insertelement <4 x i32> %1, i32 %x, i32 1
@@ -274,7 +273,7 @@ define <4 x i32> @tdupi(i32 %x, i32 %y) {
 }
 
 define <4 x float> @tdupf(float %x, float %y) {
-;CHECK-LABEL: tdupf:
+;CHECK: tdupf
 ;CHECK: vdup.32
   %1 = insertelement <4 x float> undef, float %x, i32 0
   %2 = insertelement <4 x float> %1, float %x, i32 1
@@ -286,7 +285,7 @@ define <4 x float> @tdupf(float %x, float %y) {
 ; This test checks that when splatting an element from a vector into another,
 ; the value isn't moved out to GPRs first.
 define <4 x i32> @tduplane(<4 x i32> %invec) {
-;CHECK-LABEL: tduplane:
+;CHECK: tduplane
 ;CHECK-NOT: vmov {{.*}}, d16[1]
 ;CHECK: vdup.32 {{.*}}, d16[1]
   %in = extractelement <4 x i32> %invec, i32 1
@@ -298,7 +297,7 @@ define <4 x i32> @tduplane(<4 x i32> %invec) {
 }
 
 define <2 x float> @check_f32(<4 x float> %v) nounwind {
-;CHECK-LABEL: check_f32:
+;CHECK: check_f32:
 ;CHECK: vdup.32 {{.*}}, d{{..}}[1]
   %x = extractelement <4 x float> %v, i32 3
   %1 = insertelement  <2 x float> undef, float %x, i32 0
@@ -307,7 +306,7 @@ define <2 x float> @check_f32(<4 x float> %v) nounwind {
 }
 
 define <2 x i32> @check_i32(<4 x i32> %v) nounwind {
-;CHECK-LABEL: check_i32:
+;CHECK: check_i32:
 ;CHECK: vdup.32 {{.*}}, d{{..}}[1]
   %x = extractelement <4 x i32> %v, i32 3
   %1 = insertelement  <2 x i32> undef, i32 %x, i32 0
@@ -316,7 +315,7 @@ define <2 x i32> @check_i32(<4 x i32> %v) nounwind {
 }
 
 define <4 x i16> @check_i16(<8 x i16> %v) nounwind {
-;CHECK-LABEL: check_i16:
+;CHECK: check_i16:
 ;CHECK: vdup.16 {{.*}}, d{{..}}[3]
   %x = extractelement <8 x i16> %v, i32 3
   %1 = insertelement  <4 x i16> undef, i16 %x, i32 0
@@ -325,42 +324,10 @@ define <4 x i16> @check_i16(<8 x i16> %v) nounwind {
 }
 
 define <8 x i8> @check_i8(<16 x i8> %v) nounwind {
-;CHECK-LABEL: check_i8:
+;CHECK: check_i8:
 ;CHECK: vdup.8 {{.*}}, d{{..}}[3]
   %x = extractelement <16 x i8> %v, i32 3
   %1 = insertelement  <8  x i8> undef, i8 %x, i32 0
   %2 = insertelement  <8  x i8> %1, i8 %x, i32 1
   ret <8 x i8> %2
-}
-
-; Check that an SPR splat produces a vdup.
-
-define <2 x float> @check_spr_splat2(<2 x float> %p, i16 %q) {
-;CHECK-LABEL: check_spr_splat2:
-;CHECK: vdup.32 d
-  %conv = sitofp i16 %q to float
-  %splat.splatinsert = insertelement <2 x float> undef, float %conv, i32 0
-  %splat.splat = shufflevector <2 x float> %splat.splatinsert, <2 x float> undef, <2 x i32> zeroinitializer
-  %sub = fsub <2 x float> %splat.splat, %p
-  ret <2 x float> %sub
-}
-
-define <4 x float> @check_spr_splat4(<4 x float> %p, i16 %q) {
-;CHECK-LABEL: check_spr_splat4:
-;CHECK: vdup.32 q
-  %conv = sitofp i16 %q to float
-  %splat.splatinsert = insertelement <4 x float> undef, float %conv, i32 0
-  %splat.splat = shufflevector <4 x float> %splat.splatinsert, <4 x float> undef, <4 x i32> zeroinitializer
-  %sub = fsub <4 x float> %splat.splat, %p
-  ret <4 x float> %sub
-}
-
-define <4 x float> @check_spr_splat4_lane1(<4 x float> %p, i16 %q) {
-;CHECK-LABEL: check_spr_splat4_lane1:
-;CHECK: vdup.32 q{{.*}}, d{{.*}}[1]
-  %conv = sitofp i16 %q to float
-  %splat.splatinsert = insertelement <4 x float> undef, float %conv, i32 1
-  %splat.splat = shufflevector <4 x float> %splat.splatinsert, <4 x float> undef, <4 x i32> <i32 1, i32 1, i32 1, i32 1>
-  %sub = fsub <4 x float> %splat.splat, %p
-  ret <4 x float> %sub
 }

@@ -11,26 +11,28 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_NVPTX_NVPTXFRAMELOWERING_H
-#define LLVM_LIB_TARGET_NVPTX_NVPTXFRAMELOWERING_H
+#ifndef NVPTX_FRAMELOWERING_H
+#define NVPTX_FRAMELOWERING_H
 
 #include "llvm/Target/TargetFrameLowering.h"
 
+
 namespace llvm {
-class NVPTXSubtarget;
+class NVPTXTargetMachine;
+
 class NVPTXFrameLowering : public TargetFrameLowering {
+  NVPTXTargetMachine &tm;
   bool is64bit;
 
 public:
-  explicit NVPTXFrameLowering(NVPTXSubtarget &STI);
+  explicit NVPTXFrameLowering(NVPTXTargetMachine &_tm, bool _is64bit)
+  : TargetFrameLowering(TargetFrameLowering::StackGrowsUp, 8, 0),
+    tm(_tm), is64bit(_is64bit) {}
 
-  bool hasFP(const MachineFunction &MF) const override;
-  void emitPrologue(MachineFunction &MF) const override;
-  void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const override;
-
-  void eliminateCallFramePseudoInstr(MachineFunction &MF,
-                                  MachineBasicBlock &MBB,
-                                  MachineBasicBlock::iterator I) const override;
+  virtual bool hasFP(const MachineFunction &MF) const;
+  virtual void emitPrologue(MachineFunction &MF) const;
+  virtual void emitEpilogue(MachineFunction &MF,
+                            MachineBasicBlock &MBB) const;
 };
 
 } // End llvm namespace

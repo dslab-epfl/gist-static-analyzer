@@ -1,9 +1,9 @@
-// RUN: %clang_cc1 -fsyntax-only -verify %s
+// RUN: not %clang_cc1_only -c %s -o - > /dev/null
 // PR 1603
 void func()
 {
    const int *arr;
-   arr[0] = 1;  // expected-error {{read-only variable is not assignable}}
+   arr[0] = 1;  // expected-error {{assignment of read-only location}}
 }
 
 struct foo {
@@ -15,6 +15,6 @@ int func2()
 {
   const struct foo *fp;
   fp = &sfoo;
-  fp[0].bar = 1;  // expected-error {{read-only variable is not assignable}}
+  fp[0].bar = 1;  // expected-error {{ assignment of read-only member}}
   return sfoo.bar;
 }

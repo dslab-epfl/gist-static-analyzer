@@ -1,5 +1,4 @@
 ; RUN: llvm-as %s -o /dev/null
-; RUN: verify-uselistorder %s
 
 ; Check minimal switch statement
 

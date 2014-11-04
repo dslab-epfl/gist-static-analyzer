@@ -14,16 +14,16 @@
 //===----------------------------------------------------------------------===//
 
 #include "ClangSACheckers.h"
-#include "clang/AST/ParentMap.h"
-#include "clang/Basic/Builtins.h"
-#include "clang/Basic/SourceManager.h"
-#include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/CheckerHelpers.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExplodedGraph.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/CheckerHelpers.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
+#include "clang/AST/ParentMap.h"
+#include "clang/Basic/Builtins.h"
+#include "clang/Basic/SourceManager.h"
 #include "llvm/ADT/SmallSet.h"
 
 // The number of CFGBlock pointers we want to reserve memory for. This is used
@@ -58,28 +58,25 @@ void UnreachableCodeChecker::checkEndAnalysis(ExplodedGraph &G,
   if (Eng.hasWorkRemaining())
     return;
 
-  const Decl *D = nullptr;
-  CFG *C = nullptr;
-  ParentMap *PM = nullptr;
-  const LocationContext *LC = nullptr;
+  const Decl *D = 0;
+  CFG *C = 0;
+  ParentMap *PM = 0;
+  const LocationContext *LC = 0;
   // Iterate over ExplodedGraph
   for (ExplodedGraph::node_iterator I = G.nodes_begin(), E = G.nodes_end();
       I != E; ++I) {
     const ProgramPoint &P = I->getLocation();
     LC = P.getLocationContext();
-    if (!LC->inTopFrame())
-      continue;
 
     if (!D)
       D = LC->getAnalysisDeclContext()->getDecl();
-
     // Save the CFG if we don't have it already
     if (!C)
       C = LC->getAnalysisDeclContext()->getUnoptimizedCFG();
     if (!PM)
       PM = &LC->getParentMap();
 
-    if (Optional<BlockEntrance> BE = P.getAs<BlockEntrance>()) {
+    if (const BlockEntrance *BE = dyn_cast<BlockEntrance>(&P)) {
       const CFGBlock *CB = BE->getBlock();
       reachable.insert(CB->getBlockID());
     }
@@ -134,9 +131,9 @@ void UnreachableCodeChecker::checkEndAnalysis(ExplodedGraph &G,
       bool foundUnreachable = false;
       for (CFGBlock::const_iterator ci = CB->begin(), ce = CB->end();
            ci != ce; ++ci) {
-        if (Optional<CFGStmt> S = (*ci).getAs<CFGStmt>())
+        if (const CFGStmt *S = (*ci).getAs<CFGStmt>())
           if (const CallExpr *CE = dyn_cast<CallExpr>(S->getStmt())) {
-            if (CE->getBuiltinCallee() == Builtin::BI__builtin_unreachable) {
+            if (CE->isBuiltinCall() == Builtin::BI__builtin_unreachable) {
               foundUnreachable = true;
               break;
             }
@@ -165,7 +162,7 @@ void UnreachableCodeChecker::checkEndAnalysis(ExplodedGraph &G,
     if (SM.isInSystemHeader(SL) || SM.isInExternCSystemHeader(SL))
       continue;
 
-    B.EmitBasicReport(D, this, "Unreachable code", "Dead code",
+    B.EmitBasicReport(D, "Unreachable code", "Dead code",
                       "This statement is never executed", DL, SR);
   }
 }
@@ -178,9 +175,6 @@ void UnreachableCodeChecker::FindUnreachableEntryPoints(const CFGBlock *CB,
 
   for (CFGBlock::const_pred_iterator I = CB->pred_begin(), E = CB->pred_end();
       I != E; ++I) {
-    if (!*I)
-      continue;
-
     if (!reachable.count((*I)->getBlockID())) {
       // If we find an unreachable predecessor, mark this block as reachable so
       // we don't report this block
@@ -195,13 +189,13 @@ void UnreachableCodeChecker::FindUnreachableEntryPoints(const CFGBlock *CB,
 // Find the Stmt* in a CFGBlock for reporting a warning
 const Stmt *UnreachableCodeChecker::getUnreachableStmt(const CFGBlock *CB) {
   for (CFGBlock::const_iterator I = CB->begin(), E = CB->end(); I != E; ++I) {
-    if (Optional<CFGStmt> S = I->getAs<CFGStmt>())
+    if (const CFGStmt *S = I->getAs<CFGStmt>())
       return S->getStmt();
   }
   if (const Stmt *S = CB->getTerminator())
     return S;
   else
-    return nullptr;
+    return 0;
 }
 
 // Determines if the path to this CFGBlock contained an element that infers this
@@ -222,8 +216,6 @@ bool UnreachableCodeChecker::isInvalidPath(const CFGBlock *CB,
     return false;
 
   const CFGBlock *pred = *CB->pred_begin();
-  if (!pred)
-    return false;
 
   // Get the predecessor block's terminator conditon
   const Stmt *cond = pred->getTerminatorCondition();
@@ -245,9 +237,9 @@ bool UnreachableCodeChecker::isInvalidPath(const CFGBlock *CB,
 
 // Returns true if the given CFGBlock is empty
 bool UnreachableCodeChecker::isEmptyCFGBlock(const CFGBlock *CB) {
-  return CB->getLabel() == nullptr // No labels
+  return CB->getLabel() == 0       // No labels
       && CB->size() == 0           // No statements
-      && !CB->getTerminator();     // No terminator
+      && CB->getTerminator() == 0; // No terminator
 }
 
 void ento::registerUnreachableCodeChecker(CheckerManager &mgr) {

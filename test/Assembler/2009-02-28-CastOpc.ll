@@ -1,5 +1,4 @@
 ; RUN: llvm-as < %s | llvm-dis
-; RUN: verify-uselistorder %s
 
 
 define void @foo() {

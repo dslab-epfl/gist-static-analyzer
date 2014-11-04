@@ -5,10 +5,10 @@
 
 define i8* @t() nounwind {
 entry:
-; DARWIN-LABEL: t:
+; DARWIN: t:
 ; DARWIN: mov r0, r7
 
-; LINUX-LABEL: t:
+; LINUX: t:
 ; LINUX: mov r0, r11
 	%0 = call i8* @llvm.frameaddress(i32 0)
         ret i8* %0

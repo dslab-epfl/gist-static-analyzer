@@ -12,17 +12,18 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_UNITTESTS_TOOLING_TESTVISITOR_H
-#define LLVM_CLANG_UNITTESTS_TOOLING_TESTVISITOR_H
+#ifndef LLVM_CLANG_TEST_VISITOR_H
+#define LLVM_CLANG_TEST_VISITOR_H
 
-#include "clang/AST/ASTConsumer.h"
+#include <vector>
+
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/ASTConsumer.h"
 #include "clang/AST/RecursiveASTVisitor.h"
-#include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendAction.h"
+#include "clang/Frontend/CompilerInstance.h"
 #include "clang/Tooling/Tooling.h"
 #include "gtest/gtest.h"
-#include <vector>
 
 namespace clang {
 
@@ -31,7 +32,7 @@ namespace clang {
 /// This is a drop-in replacement for RecursiveASTVisitor itself, with the
 /// additional capability of running it over a snippet of code.
 ///
-/// Visits template instantiations and implicit code by default.
+/// Visits template instantiations (but not implicit code) by default.
 template <typename T>
 class TestVisitor : public RecursiveASTVisitor<T> {
 public:
@@ -39,37 +40,19 @@ public:
 
   virtual ~TestVisitor() { }
 
-  enum Language {
-    Lang_C,
-    Lang_CXX98,
-    Lang_CXX11,
-    Lang_OBJC,
-    Lang_OBJCXX11,
-    Lang_CXX = Lang_CXX98
-  };
+  enum Language { Lang_C, Lang_CXX };
 
   /// \brief Runs the current AST visitor over the given code.
   bool runOver(StringRef Code, Language L = Lang_CXX) {
     std::vector<std::string> Args;
     switch (L) {
       case Lang_C: Args.push_back("-std=c99"); break;
-      case Lang_CXX98: Args.push_back("-std=c++98"); break;
-      case Lang_CXX11: Args.push_back("-std=c++11"); break;
-      case Lang_OBJC: Args.push_back("-ObjC"); break;
-      case Lang_OBJCXX11:
-        Args.push_back("-ObjC++");
-        Args.push_back("-std=c++11");
-        Args.push_back("-fblocks");
-        break;
+      case Lang_CXX: Args.push_back("-std=c++98"); break;
     }
     return tooling::runToolOnCodeWithArgs(CreateTestAction(), Code, Args);
   }
 
   bool shouldVisitTemplateInstantiations() const {
-    return true;
-  }
-
-  bool shouldVisitImplicitCode() const {
     return true;
   }
 
@@ -95,10 +78,10 @@ protected:
   public:
     TestAction(TestVisitor *Visitor) : Visitor(Visitor) {}
 
-    virtual std::unique_ptr<clang::ASTConsumer>
-    CreateASTConsumer(CompilerInstance &, llvm::StringRef dummy) {
+    virtual clang::ASTConsumer* CreateASTConsumer(
+        CompilerInstance&, llvm::StringRef dummy) {
       /// TestConsumer will be deleted by the framework calling us.
-      return llvm::make_unique<FindConsumer>(Visitor);
+      return new FindConsumer(Visitor);
     }
 
   protected:
@@ -231,4 +214,4 @@ protected:
 };
 }
 
-#endif
+#endif /* LLVM_CLANG_TEST_VISITOR_H */

@@ -1,14 +1,14 @@
 #include "llvm/Pass.h"
-#include "llvm/IR/Module.h"
+#include "llvm/Module.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/PassManager.h"
-#include "llvm/IR/Instructions.h"
-#include <llvm/IR/Constants.h>
-#include <llvm/IR/InlineAsm.h>
+#include "llvm/Instructions.h"
+#include "llvm/DebugInfo.h"
+#include <llvm/Constants.h>
+#include <llvm/InlineAsm.h>
 
-#include "llvm/IR/DebugInfo.h"
 #include "DebugInfoManager.h"
 
 using namespace llvm;
@@ -102,6 +102,7 @@ bool DebugInfoManager::runOnModule(Module& m) {
                 StringRef directory = Loc.getDirectory();
                 errs() << "\n### Target LLVM instrcution:" << "\n";
                 errs() << "  " << directory << "/" << fileName<< " : " << lineNumber << *ii << "\n\n";
+		// Here invoke giri to get the backward slice
                 trackUseDefChain(*ii);
               }
             }

@@ -1,3 +1,5 @@
+.. _bugpoint:
+
 ====================================
 LLVM bugpoint tool: design and usage
 ====================================
@@ -17,7 +19,7 @@ optimization (or combination of optimizations) that causes the crash, and reduce
 the file down to a small example which triggers the crash.
 
 For detailed case scenarios, such as debugging ``opt``, or one of the LLVM code
-generators, see :doc:`HowToSubmitABug`.
+generators, see `How To Submit a Bug Report document <HowToSubmitABug.html>`_.
 
 Design Philosophy
 =================
@@ -134,9 +136,9 @@ non-obvious ways.  Here are some hints and tips:
   It is often useful to capture the output of the program to file.  For example,
   in the C shell, you can run:
 
-  .. code-block:: console
+  .. code-block:: bash
 
-    $ bugpoint  ... |& tee bugpoint.log
+    bugpoint  ... |& tee bugpoint.log
 
   to get a copy of ``bugpoint``'s output in the file ``bugpoint.log``, as well
   as on your terminal.

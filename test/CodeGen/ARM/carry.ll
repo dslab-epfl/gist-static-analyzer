@@ -1,7 +1,7 @@
-; RUN: llc -mtriple=armv6t2-eabi %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm | FileCheck %s
 
 define i64 @f1(i64 %a, i64 %b) {
-; CHECK-LABEL: f1:
+; CHECK: f1:
 ; CHECK: subs r
 ; CHECK: sbc r
 entry:
@@ -10,7 +10,7 @@ entry:
 }
 
 define i64 @f2(i64 %a, i64 %b) {
-; CHECK-LABEL: f2:
+; CHECK: f2:
 ; CHECK: adc r
 ; CHECK: subs r
 ; CHECK: sbc r
@@ -22,7 +22,7 @@ entry:
 
 ; add with live carry
 define i64 @f3(i32 %al, i32 %bl) {
-; CHECK-LABEL: f3:
+; CHECK: f3:
 ; CHECK: adds r
 ; CHECK: adc r
 entry:
@@ -39,7 +39,7 @@ entry:
 ; rdar://10073745
 define i64 @f4(i64 %x) nounwind readnone {
 entry:
-; CHECK-LABEL: f4:
+; CHECK: f4:
 ; CHECK: rsbs r
 ; CHECK: rsc r
   %0 = sub nsw i64 0, %x
@@ -49,7 +49,7 @@ entry:
 ; rdar://12559385
 define i64 @f5(i32 %vi) {
 entry:
-; CHECK-LABEL: f5:
+; CHECK: f5:
 ; CHECK: movw [[REG:r[0-9]+]], #36102
 ; CHECK: sbc r{{[0-9]+}}, r{{[0-9]+}}, [[REG]]
     %v0 = zext i32 %vi to i64

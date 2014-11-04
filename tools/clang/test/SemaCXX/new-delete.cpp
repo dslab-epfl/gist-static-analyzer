@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -verify %s -triple=i686-pc-linux-gnu -Wno-new-returns-null
+// RUN: %clang_cc1 -fsyntax-only -verify %s -triple=i686-pc-linux-gnu
 
 #include <stddef.h>
 
@@ -17,13 +17,6 @@ struct U
 struct V : U
 {
 };
-
-inline void operator delete(void *); // expected-warning {{replacement function 'operator delete' cannot be declared 'inline'}}
-
-__attribute__((used))
-inline void *operator new(size_t) { // no warning, due to __attribute__((used))
-  return 0;
-}
 
 // PR5823
 void* operator new(const size_t); // expected-note 2 {{candidate}}
@@ -123,8 +116,8 @@ struct X1 {
 };
 
 struct X2 {
-  operator int*(); // expected-note {{conversion}}
-  operator float*(); // expected-note {{conversion}}
+  operator int*(); // expected-note {{candidate function}}
+  operator float*(); // expected-note {{candidate function}}
 };
 
 void test_delete_conv(X0 x0, X1 x1, X2 x2) {
@@ -216,7 +209,7 @@ struct X11 : X10 { // expected-error {{no suitable member 'operator delete' in '
 };
 
 void f() {
-  X11 x11; // expected-note {{implicit destructor for 'X11' first required here}}
+  X11 x11; // expected-note {{implicit default destructor for 'X11' first required here}}
 }
 
 struct X12 {
@@ -401,7 +394,7 @@ namespace ArrayNewNeedsDtor {
   struct A { A(); private: ~A(); }; // expected-note {{declared private here}}
   struct B { B(); A a; }; // expected-error {{field of type 'ArrayNewNeedsDtor::A' has private destructor}}
   B *test9() {
-    return new B[5]; // expected-note {{implicit destructor for 'ArrayNewNeedsDtor::B' first required here}}
+    return new B[5]; // expected-note {{implicit default destructor for 'ArrayNewNeedsDtor::B' first required here}}
   }
 }
 
@@ -506,21 +499,3 @@ namespace PR12061 {
     DeferredCookieTaskTest() {}
   };
 }
-
-class DeletingPlaceholder {
-  int* f() {
-    delete f; // expected-error {{reference to non-static member function must be called; did you mean to call it with no arguments?}}
-    return 0;
-  }
-  int* g(int, int) {
-    delete g; // expected-error {{reference to non-static member function must be called}}
-    return 0;
-  }
-};
-
-namespace PR18544 {
-  inline void *operator new(size_t); // expected-error {{'operator new' cannot be declared inside a namespace}}
-}
-
-// PR19968
-inline void* operator new(); // expected-error {{'operator new' must have at least one parameter}}

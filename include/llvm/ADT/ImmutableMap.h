@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_ADT_IMMUTABLEMAP_H
-#define LLVM_ADT_IMMUTABLEMAP_H
+#ifndef LLVM_ADT_IMMAP_H
+#define LLVM_ADT_IMMAP_H
 
 #include "llvm/ADT/ImmutableSet.h"
 
@@ -211,23 +211,17 @@ public:
     friend class ImmutableMap;
 
   public:
-    typedef ptrdiff_t difference_type;
-    typedef typename ImmutableMap<KeyT,ValT,ValInfo>::value_type value_type;
-    typedef typename ImmutableMap<KeyT,ValT,ValInfo>::value_type_ref reference;
-    typedef typename iterator::value_type *pointer;
-    typedef std::bidirectional_iterator_tag iterator_category;
-
-    typename iterator::reference operator*() const { return itr->getValue(); }
-    typename iterator::pointer   operator->() const { return &itr->getValue(); }
+    value_type_ref operator*() const { return itr->getValue(); }
+    value_type*    operator->() const { return &itr->getValue(); }
 
     key_type_ref getKey() const { return itr->getValue().first; }
     data_type_ref getData() const { return itr->getValue().second; }
+
 
     iterator& operator++() { ++itr; return *this; }
     iterator  operator++(int) { iterator tmp(*this); ++itr; return tmp; }
     iterator& operator--() { --itr; return *this; }
     iterator  operator--(int) { iterator tmp(*this); --itr; return tmp; }
-
     bool operator==(const iterator& RHS) const { return RHS.itr == itr; }
     bool operator!=(const iterator& RHS) const { return RHS.itr != itr; }
   };
@@ -241,14 +235,14 @@ public:
       if (T) return &T->getValue().second;
     }
 
-    return nullptr;
+    return 0;
   }
   
   /// getMaxElement - Returns the <key,value> pair in the ImmutableMap for
   ///  which key is the highest in the ordering of keys in the map.  This
   ///  method returns NULL if the map is empty.
   value_type* getMaxElement() const {
-    return Root ? &(Root->getMaxElement()->getValue()) : nullptr;
+    return Root ? &(Root->getMaxElement()->getValue()) : 0;
   }
 
   //===--------------------------------------------------===//
@@ -294,13 +288,6 @@ public:
       Factory(F) {
     if (Root) { Root->retain(); }
   }
-
-  explicit ImmutableMapRef(const ImmutableMap<KeyT, ValT> &X,
-                           typename ImmutableMap<KeyT, ValT>::Factory &F)
-    : Root(X.getRootWithoutRetain()),
-      Factory(F.getTreeFactory()) {
-    if (Root) { Root->retain(); }
-  }
   
   ImmutableMapRef(const ImmutableMapRef &X)
     : Root(X.Root),
@@ -331,20 +318,12 @@ public:
     return ImmutableMapRef(0, F);
   }
 
-  void manualRetain() {
-    if (Root) Root->retain();
-  }
-
-  void manualRelease() {
-    if (Root) Root->release();
-  }
-
-  ImmutableMapRef add(key_type_ref K, data_type_ref D) const {
+  ImmutableMapRef add(key_type_ref K, data_type_ref D) {
     TreeTy *NewT = Factory->add(Root, std::pair<key_type, data_type>(K, D));
     return ImmutableMapRef(NewT, Factory);
   }
 
-  ImmutableMapRef remove(key_type_ref K) const {
+  ImmutableMapRef remove(key_type_ref K) {
     TreeTy *NewT = Factory->remove(Root, K);
     return ImmutableMapRef(NewT, Factory);
   }

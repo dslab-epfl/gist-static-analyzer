@@ -16,5 +16,5 @@ entry:
   %tmp10 = sext i8 %tmp9 to i32
   ret i32 %tmp10
 }
-; CHECK-LABEL: f:
+; CHECK: f:
 ; CHECK: movsbl	-2147483647

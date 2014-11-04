@@ -21,6 +21,8 @@
 #include <string>
 #include <map>
 
+#include "gtest/gtest.h"
+
 using std::string;
 using std::vector;
 using std::map;
@@ -38,15 +40,11 @@ using std::map;
 #endif
 
 #ifndef ASAN_NEEDS_SEGV
-# if defined(_WIN32)
-#  define ASAN_NEEDS_SEGV 0
-# else
-#  define ASAN_NEEDS_SEGV 1
-# endif
+# error "please define ASAN_NEEDS_SEGV"
 #endif
 
-#ifndef ASAN_AVOID_EXPENSIVE_TESTS
-# define ASAN_AVOID_EXPENSIVE_TESTS 0
+#ifndef ASAN_LOW_MEMORY
+#define ASAN_LOW_MEMORY 0
 #endif
 
 #define ASAN_PCRE_DOTALL ""

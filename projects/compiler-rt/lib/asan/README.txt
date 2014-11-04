@@ -1,15 +1,16 @@
 AddressSanitizer RT
 ================================
-This directory contains sources of the AddressSanitizer (asan) runtime library.
+This directory contains sources of the AddressSanitizer (asan) run-time library.
 We are in the process of integrating AddressSanitizer with LLVM, stay tuned.
 
-Directory structure:
+Directory structre:
 README.txt       : This file.
 Makefile.mk      : File for make-based build.
 CMakeLists.txt   : File for cmake-based build.
-asan_*.{cc,h}    : Sources of the asan runtime library.
+asan_*.{cc,h}    : Sources of the asan run-time lirbary.
 scripts/*        : Helper scripts.
 tests/*          : ASan unit tests.
+lit_tests/*      : ASan output tests.
 
 Also ASan runtime needs the following libraries:
 lib/interception/      : Machinery used to intercept function calls.

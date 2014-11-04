@@ -11,17 +11,18 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_HEXAGON_MCTARGETDESC_HEXAGONMCASMINFO_H
-#define LLVM_LIB_TARGET_HEXAGON_MCTARGETDESC_HEXAGONMCASMINFO_H
+#ifndef HexagonMCASMINFO_H
+#define HexagonMCASMINFO_H
 
 #include "llvm/ADT/StringRef.h"
-#include "llvm/MC/MCAsmInfoELF.h"
+#include "llvm/MC/MCAsmInfo.h"
 
 namespace llvm {
-  class HexagonMCAsmInfo : public MCAsmInfoELF {
-    void anchor() override;
+  class Target;
+
+  class HexagonMCAsmInfo : public MCAsmInfo {
   public:
-    explicit HexagonMCAsmInfo(StringRef TT);
+    explicit HexagonMCAsmInfo(const Target &T, StringRef TT);
   };
 
 } // namespace llvm

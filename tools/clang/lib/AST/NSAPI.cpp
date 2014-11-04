@@ -10,14 +10,13 @@
 #include "clang/AST/NSAPI.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Expr.h"
-#include "llvm/ADT/StringSwitch.h"
 
 using namespace clang;
 
 NSAPI::NSAPI(ASTContext &ctx)
-  : Ctx(ctx), ClassIds(), BOOLId(nullptr), NSIntegerId(nullptr),
-    NSUIntegerId(nullptr), NSASCIIStringEncodingId(nullptr),
-    NSUTF8StringEncodingId(nullptr) {}
+  : Ctx(ctx), ClassIds(), BOOLId(0), NSIntegerId(0), NSUIntegerId(0),
+    NSASCIIStringEncodingId(0), NSUTF8StringEncodingId(0) {
+}
 
 IdentifierInfo *NSAPI::getNSClassId(NSClassIdKindKind K) const {
   static const char *ClassName[NumClassIds] = {
@@ -47,10 +46,6 @@ Selector NSAPI::getNSStringSelector(NSStringMethodKind MK) const {
       Sel = Ctx.Selectors.getUnarySelector(
                                        &Ctx.Idents.get("stringWithUTF8String"));
       break;
-    case NSStr_initWithUTF8String:
-      Sel = Ctx.Selectors.getUnarySelector(
-                                       &Ctx.Idents.get("initWithUTF8String"));
-      break;
     case NSStr_stringWithCStringEncoding: {
       IdentifierInfo *KeyIdents[] = {
         &Ctx.Idents.get("stringWithCString"),
@@ -72,7 +67,7 @@ Selector NSAPI::getNSStringSelector(NSStringMethodKind MK) const {
   return NSStringSelectors[MK];
 }
 
-Optional<NSAPI::NSStringMethodKind>
+llvm::Optional<NSAPI::NSStringMethodKind>
 NSAPI::getNSStringMethodKind(Selector Sel) const {
   for (unsigned i = 0; i != NumNSStringMethods; ++i) {
     NSStringMethodKind MK = NSStringMethodKind(i);
@@ -80,7 +75,7 @@ NSAPI::getNSStringMethodKind(Selector Sel) const {
       return MK;
   }
 
-  return None;
+  return llvm::Optional<NSStringMethodKind>();
 }
 
 Selector NSAPI::getNSArraySelector(NSArrayMethodKind MK) const {
@@ -124,14 +119,6 @@ Selector NSAPI::getNSArraySelector(NSArrayMethodKind MK) const {
       Sel = Ctx.Selectors.getSelector(2, KeyIdents);
       break;
     }
-    case NSArr_initWithObjectsCount: {
-      IdentifierInfo *KeyIdents[] = {
-        &Ctx.Idents.get("initWithObjects"),
-        &Ctx.Idents.get("count")
-      };
-      Sel = Ctx.Selectors.getSelector(2, KeyIdents);
-      break;
-    }
     }
     return (NSArraySelectors[MK] = Sel);
   }
@@ -139,14 +126,15 @@ Selector NSAPI::getNSArraySelector(NSArrayMethodKind MK) const {
   return NSArraySelectors[MK];
 }
 
-Optional<NSAPI::NSArrayMethodKind> NSAPI::getNSArrayMethodKind(Selector Sel) {
+llvm::Optional<NSAPI::NSArrayMethodKind>
+NSAPI::getNSArrayMethodKind(Selector Sel) {
   for (unsigned i = 0; i != NumNSArrayMethods; ++i) {
     NSArrayMethodKind MK = NSArrayMethodKind(i);
     if (Sel == getNSArraySelector(MK))
       return MK;
   }
 
-  return None;
+  return llvm::Optional<NSArrayMethodKind>();
 }
 
 Selector NSAPI::getNSDictionarySelector(
@@ -198,14 +186,6 @@ Selector NSAPI::getNSDictionarySelector(
       Sel = Ctx.Selectors.getUnarySelector(
                                      &Ctx.Idents.get("initWithObjectsAndKeys"));
       break;
-    case NSDict_initWithObjectsForKeys: {
-      IdentifierInfo *KeyIdents[] = {
-        &Ctx.Idents.get("initWithObjects"),
-        &Ctx.Idents.get("forKeys")
-      };
-      Sel = Ctx.Selectors.getSelector(2, KeyIdents);
-      break;
-    }
     case NSDict_objectForKey:
       Sel = Ctx.Selectors.getUnarySelector(&Ctx.Idents.get("objectForKey"));
       break;
@@ -217,15 +197,6 @@ Selector NSAPI::getNSDictionarySelector(
       Sel = Ctx.Selectors.getSelector(2, KeyIdents);
       break;
     }
-    case NSDict_initWithObjectsForKeysCount: {
-      IdentifierInfo *KeyIdents[] = {
-        &Ctx.Idents.get("initWithObjects"),
-        &Ctx.Idents.get("forKeys"),
-        &Ctx.Idents.get("count")
-      };
-      Sel = Ctx.Selectors.getSelector(3, KeyIdents);
-      break;
-    }
     }
     return (NSDictionarySelectors[MK] = Sel);
   }
@@ -233,7 +204,7 @@ Selector NSAPI::getNSDictionarySelector(
   return NSDictionarySelectors[MK];
 }
 
-Optional<NSAPI::NSDictionaryMethodKind>
+llvm::Optional<NSAPI::NSDictionaryMethodKind>
 NSAPI::getNSDictionaryMethodKind(Selector Sel) {
   for (unsigned i = 0; i != NumNSDictionaryMethods; ++i) {
     NSDictionaryMethodKind MK = NSDictionaryMethodKind(i);
@@ -241,7 +212,7 @@ NSAPI::getNSDictionaryMethodKind(Selector Sel) {
       return MK;
   }
 
-  return None;
+  return llvm::Optional<NSDictionaryMethodKind>();
 }
 
 Selector NSAPI::getNSNumberLiteralSelector(NSNumberLiteralMethodKind MK,
@@ -296,7 +267,7 @@ Selector NSAPI::getNSNumberLiteralSelector(NSNumberLiteralMethodKind MK,
   return Sels[MK];
 }
 
-Optional<NSAPI::NSNumberLiteralMethodKind>
+llvm::Optional<NSAPI::NSNumberLiteralMethodKind>
 NSAPI::getNSNumberLiteralMethodKind(Selector Sel) const {
   for (unsigned i = 0; i != NumNSNumberLiteralMethods; ++i) {
     NSNumberLiteralMethodKind MK = NSNumberLiteralMethodKind(i);
@@ -304,14 +275,14 @@ NSAPI::getNSNumberLiteralMethodKind(Selector Sel) const {
       return MK;
   }
 
-  return None;
+  return llvm::Optional<NSNumberLiteralMethodKind>();
 }
 
-Optional<NSAPI::NSNumberLiteralMethodKind>
+llvm::Optional<NSAPI::NSNumberLiteralMethodKind>
 NSAPI::getNSNumberFactoryMethodKind(QualType T) const {
   const BuiltinType *BT = T->getAs<BuiltinType>();
   if (!BT)
-    return None;
+    return llvm::Optional<NSAPI::NSNumberLiteralMethodKind>();
 
   const TypedefType *TDT = T->getAs<TypedefType>();
   if (TDT) {
@@ -366,14 +337,6 @@ NSAPI::getNSNumberFactoryMethodKind(QualType T) const {
   case BuiltinType::ObjCClass:
   case BuiltinType::ObjCId:
   case BuiltinType::ObjCSel:
-  case BuiltinType::OCLImage1d:
-  case BuiltinType::OCLImage1dArray:
-  case BuiltinType::OCLImage1dBuffer:
-  case BuiltinType::OCLImage2d:
-  case BuiltinType::OCLImage2dArray:
-  case BuiltinType::OCLImage3d:
-  case BuiltinType::OCLSampler:
-  case BuiltinType::OCLEvent:
   case BuiltinType::BoundMember:
   case BuiltinType::Dependent:
   case BuiltinType::Overload:
@@ -385,7 +348,7 @@ NSAPI::getNSNumberFactoryMethodKind(QualType T) const {
     break;
   }
   
-  return None;
+  return llvm::Optional<NSAPI::NSNumberLiteralMethodKind>();
 }
 
 /// \brief Returns true if \param T is a typedef of "BOOL" in objective-c.
@@ -399,32 +362,6 @@ bool NSAPI::isObjCNSIntegerType(QualType T) const {
 /// \brief Returns true if \param T is a typedef of "NSUInteger" in objective-c.
 bool NSAPI::isObjCNSUIntegerType(QualType T) const {
   return isObjCTypedef(T, "NSUInteger", NSUIntegerId);
-}
-
-StringRef NSAPI::GetNSIntegralKind(QualType T) const {
-  if (!Ctx.getLangOpts().ObjC1 || T.isNull())
-    return StringRef();
-  
-  while (const TypedefType *TDT = T->getAs<TypedefType>()) {
-    StringRef NSIntegralResust =
-      llvm::StringSwitch<StringRef>(
-        TDT->getDecl()->getDeclName().getAsIdentifierInfo()->getName())
-    .Case("int8_t", "int8_t")
-    .Case("int16_t", "int16_t")
-    .Case("int32_t", "int32_t")
-    .Case("NSInteger", "NSInteger")
-    .Case("int64_t", "int64_t")
-    .Case("uint8_t", "uint8_t")
-    .Case("uint16_t", "uint16_t")
-    .Case("uint32_t", "uint32_t")
-    .Case("NSUInteger", "NSUInteger")
-    .Case("uint64_t", "uint64_t")
-    .Default(StringRef());
-    if (!NSIntegralResust.empty())
-      return NSIntegralResust;
-    T = TDT->desugar();
-  }
-  return StringRef();
 }
 
 bool NSAPI::isObjCTypedef(QualType T,

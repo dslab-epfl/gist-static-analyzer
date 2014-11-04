@@ -4,4 +4,4 @@
 // RUN: %clang -### -pedantic -pedantic -no-pedantic -pedantic %s 2>&1 | FileCheck -check-prefix=PEDANTIC %s
 // RUN: %clang -### -pedantic -pedantic -no-pedantic -Wpedantic %s 2>&1 | FileCheck -check-prefix=NO_PEDANTIC %s
 // PEDANTIC: -pedantic
-// REQUIRES: clang-driver
+// XFAIL: cygwin,mingw32

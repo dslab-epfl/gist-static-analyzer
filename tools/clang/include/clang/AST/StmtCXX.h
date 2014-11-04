@@ -14,9 +14,6 @@
 #ifndef LLVM_CLANG_AST_STMTCXX_H
 #define LLVM_CLANG_AST_STMTCXX_H
 
-#include "clang/AST/DeclarationName.h"
-#include "clang/AST/Expr.h"
-#include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/Stmt.h"
 #include "llvm/Support/Compiler.h"
 
@@ -39,11 +36,10 @@ public:
     HandlerBlock(handlerBlock) {}
 
   CXXCatchStmt(EmptyShell Empty)
-  : Stmt(CXXCatchStmtClass), ExceptionDecl(nullptr), HandlerBlock(nullptr) {}
+  : Stmt(CXXCatchStmtClass), ExceptionDecl(0), HandlerBlock(0) {}
 
-  SourceLocation getLocStart() const LLVM_READONLY { return CatchLoc; }
-  SourceLocation getLocEnd() const LLVM_READONLY {
-    return HandlerBlock->getLocEnd();
+  SourceRange getSourceRange() const LLVM_READONLY {
+    return SourceRange(CatchLoc, HandlerBlock->getLocEnd());
   }
 
   SourceLocation getCatchLoc() const { return CatchLoc; }
@@ -66,7 +62,8 @@ class CXXTryStmt : public Stmt {
   SourceLocation TryLoc;
   unsigned NumHandlers;
 
-  CXXTryStmt(SourceLocation tryLoc, Stmt *tryBlock, ArrayRef<Stmt*> handlers);
+  CXXTryStmt(SourceLocation tryLoc, Stmt *tryBlock, Stmt **handlers,
+             unsigned numHandlers);
 
   CXXTryStmt(EmptyShell Empty, unsigned numHandlers)
     : Stmt(CXXTryStmtClass), NumHandlers(numHandlers) { }
@@ -79,14 +76,16 @@ class CXXTryStmt : public Stmt {
   }
 
 public:
-  static CXXTryStmt *Create(const ASTContext &C, SourceLocation tryLoc,
-                            Stmt *tryBlock, ArrayRef<Stmt*> handlers);
-
-  static CXXTryStmt *Create(const ASTContext &C, EmptyShell Empty,
+  static CXXTryStmt *Create(ASTContext &C, SourceLocation tryLoc,
+                            Stmt *tryBlock, Stmt **handlers,
                             unsigned numHandlers);
 
-  SourceLocation getLocStart() const LLVM_READONLY { return getTryLoc(); }
-  SourceLocation getLocEnd() const LLVM_READONLY { return getEndLoc(); }
+  static CXXTryStmt *Create(ASTContext &C, EmptyShell Empty,
+                            unsigned numHandlers);
+
+  SourceRange getSourceRange() const LLVM_READONLY {
+    return SourceRange(getTryLoc(), getEndLoc());
+  }
 
   SourceLocation getTryLoc() const { return TryLoc; }
   SourceLocation getEndLoc() const {
@@ -94,18 +93,18 @@ public:
   }
 
   CompoundStmt *getTryBlock() {
-    return cast<CompoundStmt>(getStmts()[0]);
+    return llvm::cast<CompoundStmt>(getStmts()[0]);
   }
   const CompoundStmt *getTryBlock() const {
-    return cast<CompoundStmt>(getStmts()[0]);
+    return llvm::cast<CompoundStmt>(getStmts()[0]);
   }
 
   unsigned getNumHandlers() const { return NumHandlers; }
   CXXCatchStmt *getHandler(unsigned i) {
-    return cast<CXXCatchStmt>(getStmts()[i + 1]);
+    return llvm::cast<CXXCatchStmt>(getStmts()[i + 1]);
   }
   const CXXCatchStmt *getHandler(unsigned i) const {
-    return cast<CXXCatchStmt>(getStmts()[i + 1]);
+    return llvm::cast<CXXCatchStmt>(getStmts()[i + 1]);
   }
 
   static bool classof(const Stmt *T) {
@@ -189,11 +188,9 @@ public:
   SourceLocation getRParenLoc() const { return RParenLoc; }
   void setRParenLoc(SourceLocation Loc) { RParenLoc = Loc; }
 
-  SourceLocation getLocStart() const LLVM_READONLY { return ForLoc; }
-  SourceLocation getLocEnd() const LLVM_READONLY {
-    return SubExprs[BODY]->getLocEnd();
+  SourceRange getSourceRange() const LLVM_READONLY {
+    return SourceRange(ForLoc, SubExprs[BODY]->getLocEnd());
   }
-
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXForRangeStmtClass;
   }
@@ -275,8 +272,9 @@ public:
     return reinterpret_cast<CompoundStmt *>(SubStmt);
   }
 
-  SourceLocation getLocStart() const LLVM_READONLY { return KeywordLoc; }
-  SourceLocation getLocEnd() const LLVM_READONLY { return SubStmt->getLocEnd();}
+  SourceRange getSourceRange() const LLVM_READONLY {
+    return SourceRange(KeywordLoc, SubStmt->getLocEnd());
+  }
 
   child_range children() {
     return child_range(&SubStmt, &SubStmt+1);

@@ -12,65 +12,59 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Hexagon.h"
 #include "HexagonTargetMachine.h"
-#include "llvm/CodeGen/MachineFunctionAnalysis.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/Instructions.h"
+#include "llvm/Function.h"
+#include "llvm/Instructions.h"
 #include "llvm/Pass.h"
+#include "llvm/CodeGen/MachineFunctionAnalysis.h"
 #include "llvm/Transforms/Scalar.h"
 
 using namespace llvm;
-
-namespace llvm {
-  void initializeHexagonRemoveExtendArgsPass(PassRegistry&);
-}
-
 namespace {
   struct HexagonRemoveExtendArgs : public FunctionPass {
   public:
     static char ID;
-    HexagonRemoveExtendArgs() : FunctionPass(ID) {
-      initializeHexagonRemoveExtendArgsPass(*PassRegistry::getPassRegistry());
-    }
-    bool runOnFunction(Function &F) override;
+    HexagonRemoveExtendArgs() : FunctionPass(ID) {}
+    virtual bool runOnFunction(Function &F);
 
-    const char *getPassName() const override {
+    const char *getPassName() const {
       return "Remove sign extends";
     }
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.addRequired<MachineFunctionAnalysis>();
       AU.addPreserved<MachineFunctionAnalysis>();
-      AU.addPreserved("stack-protector");
       FunctionPass::getAnalysisUsage(AU);
     }
   };
 }
 
 char HexagonRemoveExtendArgs::ID = 0;
+RegisterPass<HexagonRemoveExtendArgs> X("reargs",
+                                        "Remove Sign and Zero Extends for Args"
+                                        );
 
-INITIALIZE_PASS(HexagonRemoveExtendArgs, "reargs",
-                "Remove Sign and Zero Extends for Args", false, false)
+
 
 bool HexagonRemoveExtendArgs::runOnFunction(Function &F) {
   unsigned Idx = 1;
   for (Function::arg_iterator AI = F.arg_begin(), AE = F.arg_end(); AI != AE;
        ++AI, ++Idx) {
-    if (F.getAttributes().hasAttribute(Idx, Attribute::SExt)) {
+    if (F.getParamAttributes(Idx).hasAttribute(Attributes::SExt)) {
       Argument* Arg = AI;
       if (!isa<PointerType>(Arg->getType())) {
-        for (auto UI = Arg->user_begin(); UI != Arg->user_end();) {
+        for (Instruction::use_iterator UI = Arg->use_begin();
+             UI != Arg->use_end();) {
           if (isa<SExtInst>(*UI)) {
-            Instruction* I = cast<Instruction>(*UI);
-            SExtInst* SI = new SExtInst(Arg, I->getType());
+            Instruction* Use = cast<Instruction>(*UI);
+            SExtInst* SI = new SExtInst(Arg, Use->getType());
             assert (EVT::getEVT(SI->getType()) ==
-                    (EVT::getEVT(I->getType())));
+                    (EVT::getEVT(Use->getType())));
             ++UI;
-            I->replaceAllUsesWith(SI);
+            Use->replaceAllUsesWith(SI);
             Instruction* First = F.getEntryBlock().begin();
             SI->insertBefore(First);
-            I->eraseFromParent();
+            Use->eraseFromParent();
           } else {
             ++UI;
           }
@@ -83,7 +77,6 @@ bool HexagonRemoveExtendArgs::runOnFunction(Function &F) {
 
 
 
-FunctionPass*
-llvm::createHexagonRemoveExtendArgs(const HexagonTargetMachine &TM) {
+FunctionPass *llvm::createHexagonRemoveExtendOps(HexagonTargetMachine &TM) {
   return new HexagonRemoveExtendArgs();
 }

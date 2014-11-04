@@ -1,6 +1,4 @@
-; RUN: llc < %s -march=x86 | FileCheck %s
-
-; CHECK-NOT: movl
+; RUN: llc < %s -march=x86 | not grep movl
 
 define zeroext i8 @t(i8 zeroext  %x, i8 zeroext  %y)   {
 	%tmp2 = add i8 %x, 2

@@ -1,4 +1,6 @@
-; RUN: llc < %s -mtriple=i386-apple-macosx -mcpu=penryn | FileCheck %s
+; RUN: llc < %s -march=x86 | grep btl | count 28
+; RUN: llc < %s -march=x86 -mcpu=pentium4 | grep btl | not grep esp
+; RUN: llc < %s -march=x86 -mcpu=penryn   | grep btl | not grep esp
 ; PR3253
 
 ; The register+memory form of the BT instruction should be usable on
@@ -19,9 +21,6 @@
 
 define void @test2(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: test2
-; CHECK: btl %ecx, %eax
-; CHECK: jb
 	%tmp29 = lshr i32 %x, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %tmp29, 1		; <i32> [#uses=1]
 	%tmp4 = icmp eq i32 %tmp3, 0		; <i1> [#uses=1]
@@ -37,9 +36,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @test2b(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: test2b
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jb
 	%tmp29 = lshr i32 %x, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 1, %tmp29
 	%tmp4 = icmp eq i32 %tmp3, 0		; <i1> [#uses=1]
@@ -55,9 +51,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @atest2(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: atest2
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jb
 	%tmp29 = ashr i32 %x, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %tmp29, 1		; <i32> [#uses=1]
 	%tmp4 = icmp eq i32 %tmp3, 0		; <i1> [#uses=1]
@@ -73,8 +66,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @atest2b(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: atest2b
-; CHECK: btl %e{{..}}, %e{{..}}
 	%tmp29 = ashr i32 %x, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 1, %tmp29
 	%tmp4 = icmp eq i32 %tmp3, 0		; <i1> [#uses=1]
@@ -90,9 +81,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @test3(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: test3
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jb
 	%tmp29 = shl i32 1, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %tmp29, %x		; <i32> [#uses=1]
 	%tmp4 = icmp eq i32 %tmp3, 0		; <i1> [#uses=1]
@@ -108,9 +96,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @test3b(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: test3b
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jb
 	%tmp29 = shl i32 1, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %x, %tmp29
 	%tmp4 = icmp eq i32 %tmp3, 0		; <i1> [#uses=1]
@@ -126,9 +111,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @testne2(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: testne2
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jae
 	%tmp29 = lshr i32 %x, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %tmp29, 1		; <i32> [#uses=1]
 	%tmp4 = icmp ne i32 %tmp3, 0		; <i1> [#uses=1]
@@ -144,9 +126,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @testne2b(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: testne2b
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jae
 	%tmp29 = lshr i32 %x, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 1, %tmp29
 	%tmp4 = icmp ne i32 %tmp3, 0		; <i1> [#uses=1]
@@ -162,9 +141,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @atestne2(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: atestne2
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jae
 	%tmp29 = ashr i32 %x, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %tmp29, 1		; <i32> [#uses=1]
 	%tmp4 = icmp ne i32 %tmp3, 0		; <i1> [#uses=1]
@@ -180,9 +156,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @atestne2b(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: atestne2b
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jae
 	%tmp29 = ashr i32 %x, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 1, %tmp29
 	%tmp4 = icmp ne i32 %tmp3, 0		; <i1> [#uses=1]
@@ -198,9 +171,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @testne3(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: testne3
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jae
 	%tmp29 = shl i32 1, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %tmp29, %x		; <i32> [#uses=1]
 	%tmp4 = icmp ne i32 %tmp3, 0		; <i1> [#uses=1]
@@ -216,9 +186,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @testne3b(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: testne3b
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jae
 	%tmp29 = shl i32 1, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %x, %tmp29
 	%tmp4 = icmp ne i32 %tmp3, 0		; <i1> [#uses=1]
@@ -234,9 +201,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @query2(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: query2
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jae
 	%tmp29 = lshr i32 %x, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %tmp29, 1		; <i32> [#uses=1]
 	%tmp4 = icmp eq i32 %tmp3, 1		; <i1> [#uses=1]
@@ -252,9 +216,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @query2b(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: query2b
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jae
 	%tmp29 = lshr i32 %x, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 1, %tmp29
 	%tmp4 = icmp eq i32 %tmp3, 1		; <i1> [#uses=1]
@@ -270,9 +231,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @aquery2(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: aquery2
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jae
 	%tmp29 = ashr i32 %x, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %tmp29, 1		; <i32> [#uses=1]
 	%tmp4 = icmp eq i32 %tmp3, 1		; <i1> [#uses=1]
@@ -288,9 +246,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @aquery2b(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: aquery2b
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jae
 	%tmp29 = ashr i32 %x, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 1, %tmp29
 	%tmp4 = icmp eq i32 %tmp3, 1		; <i1> [#uses=1]
@@ -306,9 +261,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @query3(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: query3
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jae
 	%tmp29 = shl i32 1, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %tmp29, %x		; <i32> [#uses=1]
 	%tmp4 = icmp eq i32 %tmp3, %tmp29		; <i1> [#uses=1]
@@ -324,9 +276,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @query3b(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: query3b
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jae
 	%tmp29 = shl i32 1, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %x, %tmp29
 	%tmp4 = icmp eq i32 %tmp3, %tmp29		; <i1> [#uses=1]
@@ -342,9 +291,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @query3x(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: query3x
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jae
 	%tmp29 = shl i32 1, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %tmp29, %x		; <i32> [#uses=1]
 	%tmp4 = icmp eq i32 %tmp29, %tmp3		; <i1> [#uses=1]
@@ -360,9 +306,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @query3bx(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: query3bx
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jae
 	%tmp29 = shl i32 1, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %x, %tmp29
 	%tmp4 = icmp eq i32 %tmp29, %tmp3		; <i1> [#uses=1]
@@ -378,9 +321,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @queryne2(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: queryne2
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jb
 	%tmp29 = lshr i32 %x, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %tmp29, 1		; <i32> [#uses=1]
 	%tmp4 = icmp ne i32 %tmp3, 1		; <i1> [#uses=1]
@@ -396,9 +336,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @queryne2b(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: queryne2b
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jb
 	%tmp29 = lshr i32 %x, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 1, %tmp29
 	%tmp4 = icmp ne i32 %tmp3, 1		; <i1> [#uses=1]
@@ -414,9 +351,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @aqueryne2(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: aqueryne2
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jb
 	%tmp29 = ashr i32 %x, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %tmp29, 1		; <i32> [#uses=1]
 	%tmp4 = icmp ne i32 %tmp3, 1		; <i1> [#uses=1]
@@ -432,9 +366,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @aqueryne2b(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: aqueryne2b
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jb
 	%tmp29 = ashr i32 %x, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 1, %tmp29
 	%tmp4 = icmp ne i32 %tmp3, 1		; <i1> [#uses=1]
@@ -450,9 +381,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @queryne3(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: queryne3
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jb
 	%tmp29 = shl i32 1, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %tmp29, %x		; <i32> [#uses=1]
 	%tmp4 = icmp ne i32 %tmp3, %tmp29		; <i1> [#uses=1]
@@ -468,9 +396,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @queryne3b(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: queryne3b
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jb
 	%tmp29 = shl i32 1, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %x, %tmp29
 	%tmp4 = icmp ne i32 %tmp3, %tmp29		; <i1> [#uses=1]
@@ -486,9 +411,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @queryne3x(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: queryne3x
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jb
 	%tmp29 = shl i32 1, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %tmp29, %x		; <i32> [#uses=1]
 	%tmp4 = icmp ne i32 %tmp29, %tmp3		; <i1> [#uses=1]
@@ -504,9 +426,6 @@ UnifiedReturnBlock:		; preds = %entry
 
 define void @queryne3bx(i32 %x, i32 %n) nounwind {
 entry:
-; CHECK: queryne3bx
-; CHECK: btl %e{{..}}, %e{{..}}
-; CHECK: jb
 	%tmp29 = shl i32 1, %n		; <i32> [#uses=1]
 	%tmp3 = and i32 %x, %tmp29
 	%tmp4 = icmp ne i32 %tmp29, %tmp3		; <i1> [#uses=1]
@@ -521,13 +440,3 @@ UnifiedReturnBlock:		; preds = %entry
 }
 
 declare void @foo()
-
-define zeroext i1 @invert(i32 %flags, i32 %flag) nounwind {
-; CHECK: btl
-entry:
-  %neg = xor i32 %flags, -1
-  %shl = shl i32 1, %flag
-  %and = and i32 %shl, %neg
-  %tobool = icmp ne i32 %and, 0
-  ret i1 %tobool
-}

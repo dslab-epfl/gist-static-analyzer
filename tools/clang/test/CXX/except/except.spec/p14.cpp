@@ -44,8 +44,8 @@ namespace PR13381 {
   struct NoThrowMove {
     NoThrowMove(const NoThrowMove &);
     NoThrowMove(NoThrowMove &&) noexcept;
-    NoThrowMove &operator=(const NoThrowMove &) const;
-    NoThrowMove &operator=(NoThrowMove &&) const noexcept;
+    NoThrowMove &operator=(const NoThrowMove &);
+    NoThrowMove &operator=(NoThrowMove &&) noexcept;
   };
   struct NoThrowMoveOnly {
     NoThrowMoveOnly(NoThrowMoveOnly &&) noexcept;
@@ -100,38 +100,4 @@ namespace PR14141 {
     Derived3 &operator=(Derived3&&) noexcept(true) = default; // expected-error {{does not match the calculated}}
     ~Derived3() noexcept(true) = default; // expected-error {{does not match the calculated}}
   };
-}
-
-namespace rdar13017229 {
-  struct Base {
-    virtual ~Base() {}
-  };
-  
-  struct Derived : Base {
-    virtual ~Derived();
-    Typo foo(); // expected-error{{unknown type name 'Typo'}}
-  };
-}
-
-namespace InhCtor {
-  template<int> struct X {};
-  struct Base {
-    Base(X<0>) noexcept(true);
-    Base(X<1>) noexcept(false);
-    Base(X<2>) throw(X<2>);
-    template<typename T> Base(T) throw(T);
-  };
-  template<typename T> struct Throw {
-    Throw() throw(T);
-  };
-  struct Derived : Base, Throw<X<3>> {
-    using Base::Base;
-    Throw<X<4>> x;
-  };
-  struct Test {
-    friend Derived::Derived(X<0>) throw(X<3>, X<4>);
-    friend Derived::Derived(X<1>) noexcept(false);
-    friend Derived::Derived(X<2>) throw(X<2>, X<3>, X<4>);
-  };
-  static_assert(!noexcept(Derived{X<5>{}}), "");
 }

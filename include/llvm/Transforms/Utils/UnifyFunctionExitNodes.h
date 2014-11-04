@@ -15,8 +15,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_TRANSFORMS_UTILS_UNIFYFUNCTIONEXITNODES_H
-#define LLVM_TRANSFORMS_UTILS_UNIFYFUNCTIONEXITNODES_H
+#ifndef LLVM_TRANSFORMS_UNIFYFUNCTIONEXITNODES_H
+#define LLVM_TRANSFORMS_UNIFYFUNCTIONEXITNODES_H
 
 #include "llvm/Pass.h"
 
@@ -24,25 +24,24 @@ namespace llvm {
 
 struct UnifyFunctionExitNodes : public FunctionPass {
   BasicBlock *ReturnBlock, *UnwindBlock, *UnreachableBlock;
-
 public:
   static char ID; // Pass identification, replacement for typeid
   UnifyFunctionExitNodes() : FunctionPass(ID),
-                             ReturnBlock(nullptr), UnwindBlock(nullptr) {
+                             ReturnBlock(0), UnwindBlock(0) {
     initializeUnifyFunctionExitNodesPass(*PassRegistry::getPassRegistry());
   }
 
   // We can preserve non-critical-edgeness when we unify function exit nodes
-  void getAnalysisUsage(AnalysisUsage &AU) const override;
+  virtual void getAnalysisUsage(AnalysisUsage &AU) const;
 
-  // getReturn|Unwind|UnreachableBlock - Return the new single (or nonexistent)
+  // getReturn|Unwind|UnreachableBlock - Return the new single (or nonexistant)
   // return, unwind, or unreachable  basic blocks in the CFG.
   //
   BasicBlock *getReturnBlock() const { return ReturnBlock; }
   BasicBlock *getUnwindBlock() const { return UnwindBlock; }
   BasicBlock *getUnreachableBlock() const { return UnreachableBlock; }
 
-  bool runOnFunction(Function &F) override;
+  virtual bool runOnFunction(Function &F);
 };
 
 Pass *createUnifyFunctionExitNodesPass();

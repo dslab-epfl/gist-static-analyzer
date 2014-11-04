@@ -22,11 +22,9 @@
 typedef __SIZE_TYPE__ size_t;
 
 void abort(void) __attribute__((__noreturn__));
-int atexit(void (*)(void));
 int atoi(const char *);
 void free(void *);
 char *getenv(const char *);
 void *malloc(size_t);
-void *realloc(void *, size_t);
 
 #endif /* __STDLIB_H__ */

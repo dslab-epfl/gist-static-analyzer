@@ -1,6 +1,6 @@
 ; RUN: opt -lower-expect -strip-dead-prototypes -S -o - < %s | FileCheck %s
 
-; CHECK-LABEL: @test1(
+; CHECK: @test1
 define i32 @test1(i32 %x) nounwind uwtable ssp {
 entry:
   %retval = alloca i32, align 4
@@ -34,7 +34,7 @@ declare i64 @llvm.expect.i64(i64, i64) nounwind readnone
 
 declare i32 @f(...)
 
-; CHECK-LABEL: @test2(
+; CHECK: @test2
 define i32 @test2(i32 %x) nounwind uwtable ssp {
 entry:
   %retval = alloca i32, align 4
@@ -62,7 +62,7 @@ return:                                           ; preds = %if.end, %if.then
   ret i32 %0
 }
 
-; CHECK-LABEL: @test3(
+; CHECK: @test3
 define i32 @test3(i32 %x) nounwind uwtable ssp {
 entry:
   %retval = alloca i32, align 4
@@ -93,7 +93,7 @@ return:                                           ; preds = %if.end, %if.then
   ret i32 %0
 }
 
-; CHECK-LABEL: @test4(
+; CHECK: @test4
 define i32 @test4(i32 %x) nounwind uwtable ssp {
 entry:
   %retval = alloca i32, align 4
@@ -125,7 +125,7 @@ return:                                           ; preds = %if.end, %if.then
   ret i32 %0
 }
 
-; CHECK-LABEL: @test5(
+; CHECK: @test5
 define i32 @test5(i32 %x) nounwind uwtable ssp {
 entry:
   %retval = alloca i32, align 4
@@ -155,7 +155,7 @@ return:                                           ; preds = %if.end, %if.then
   ret i32 %0
 }
 
-; CHECK-LABEL: @test6(
+; CHECK: @test6
 define i32 @test6(i32 %x) nounwind uwtable ssp {
 entry:
   %retval = alloca i32, align 4
@@ -184,7 +184,7 @@ return:                                           ; preds = %sw.epilog, %sw.bb
   ret i32 %0
 }
 
-; CHECK-LABEL: @test7(
+; CHECK: @test7
 define i32 @test7(i32 %x) nounwind uwtable ssp {
 entry:
   %retval = alloca i32, align 4
@@ -214,7 +214,7 @@ return:                                           ; preds = %sw.epilog, %sw.bb
   ret i32 %0
 }
 
-; CHECK-LABEL: @test8(
+; CHECK: @test8
 define i32 @test8(i32 %x) nounwind uwtable ssp {
 entry:
   %retval = alloca i32, align 4
@@ -244,35 +244,6 @@ return:                                           ; preds = %if.end, %if.then
 }
 
 declare i32 @llvm.expect.i32(i32, i32) nounwind readnone
-
-; CHECK-LABEL: @test9(
-define i32 @test9(i32 %x) nounwind uwtable ssp {
-entry:
-  %retval = alloca i32, align 4
-  %x.addr = alloca i32, align 4
-  store i32 %x, i32* %x.addr, align 4
-  %tmp = load i32* %x.addr, align 4
-  %cmp = icmp sgt i32 %tmp, 1
-  %expval = call i1 @llvm.expect.i1(i1 %cmp, i1 1)
-; CHECK: !prof !0
-; CHECK-NOT: @llvm.expect
-  br i1 %expval, label %if.then, label %if.end
-
-if.then:                                          ; preds = %entry
-  %call = call i32 (...)* @f()
-  store i32 %call, i32* %retval
-  br label %return
-
-if.end:                                           ; preds = %entry
-  store i32 1, i32* %retval
-  br label %return
-
-return:                                           ; preds = %if.end, %if.then
-  %0 = load i32* %retval
-  ret i32 %0
-}
-
-declare i1 @llvm.expect.i1(i1, i1) nounwind readnone
 
 ; CHECK: !0 = metadata !{metadata !"branch_weights", i32 64, i32 4}
 ; CHECK: !1 = metadata !{metadata !"branch_weights", i32 4, i32 64}

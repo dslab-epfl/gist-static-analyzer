@@ -1,3 +1,5 @@
+; RUN: llc < %s -march=nvptx -mcpu=sm_10 | FileCheck %s
+; RUN: llc < %s -march=nvptx64 -mcpu=sm_10 | FileCheck %s
 ; RUN: llc < %s -march=nvptx -mcpu=sm_20 | FileCheck %s
 ; RUN: llc < %s -march=nvptx64 -mcpu=sm_20 | FileCheck %s
 
@@ -9,70 +11,70 @@
 ;;; i64
 
 define i64 @add_i64(i64 %a, i64 %b) {
-; CHECK: add.s64 %rd{{[0-9]+}}, %rd{{[0-9]+}}, %rd{{[0-9]+}}
+; CHECK: add.s64 %rl{{[0-9]+}}, %rl{{[0-9]+}}, %rl{{[0-9]+}}
 ; CHECK: ret
   %ret = add i64 %a, %b
   ret i64 %ret
 }
 
 define i64 @sub_i64(i64 %a, i64 %b) {
-; CHECK: sub.s64 %rd{{[0-9]+}}, %rd{{[0-9]+}}, %rd{{[0-9]+}}
+; CHECK: sub.s64 %rl{{[0-9]+}}, %rl{{[0-9]+}}, %rl{{[0-9]+}}
 ; CHECK: ret
   %ret = sub i64 %a, %b
   ret i64 %ret
 }
 
 define i64 @mul_i64(i64 %a, i64 %b) {
-; CHECK: mul.lo.s64 %rd{{[0-9]+}}, %rd{{[0-9]+}}, %rd{{[0-9]+}}
+; CHECK: mul.lo.s64 %rl{{[0-9]+}}, %rl{{[0-9]+}}, %rl{{[0-9]+}}
 ; CHECK: ret
   %ret = mul i64 %a, %b
   ret i64 %ret
 }
 
 define i64 @sdiv_i64(i64 %a, i64 %b) {
-; CHECK: div.s64 %rd{{[0-9]+}}, %rd{{[0-9]+}}, %rd{{[0-9]+}}
+; CHECK: div.s64 %rl{{[0-9]+}}, %rl{{[0-9]+}}, %rl{{[0-9]+}}
 ; CHECK: ret
   %ret = sdiv i64 %a, %b
   ret i64 %ret
 }
 
 define i64 @udiv_i64(i64 %a, i64 %b) {
-; CHECK: div.u64 %rd{{[0-9]+}}, %rd{{[0-9]+}}, %rd{{[0-9]+}}
+; CHECK: div.u64 %rl{{[0-9]+}}, %rl{{[0-9]+}}, %rl{{[0-9]+}}
 ; CHECK: ret
   %ret = udiv i64 %a, %b
   ret i64 %ret
 }
 
 define i64 @srem_i64(i64 %a, i64 %b) {
-; CHECK: rem.s64 %rd{{[0-9]+}}, %rd{{[0-9]+}}, %rd{{[0-9]+}}
+; CHECK: rem.s64 %rl{{[0-9]+}}, %rl{{[0-9]+}}, %rl{{[0-9]+}}
 ; CHECK: ret
   %ret = srem i64 %a, %b
   ret i64 %ret
 }
 
 define i64 @urem_i64(i64 %a, i64 %b) {
-; CHECK: rem.u64 %rd{{[0-9]+}}, %rd{{[0-9]+}}, %rd{{[0-9]+}}
+; CHECK: rem.u64 %rl{{[0-9]+}}, %rl{{[0-9]+}}, %rl{{[0-9]+}}
 ; CHECK: ret
   %ret = urem i64 %a, %b
   ret i64 %ret
 }
 
 define i64 @and_i64(i64 %a, i64 %b) {
-; CHECK: and.b64 %rd{{[0-9]+}}, %rd{{[0-9]+}}, %rd{{[0-9]+}}
+; CHECK: and.b64 %rl{{[0-9]+}}, %rl{{[0-9]+}}, %rl{{[0-9]+}}
 ; CHECK: ret
   %ret = and i64 %a, %b
   ret i64 %ret
 }
 
 define i64 @or_i64(i64 %a, i64 %b) {
-; CHECK: or.b64 %rd{{[0-9]+}}, %rd{{[0-9]+}}, %rd{{[0-9]+}}
+; CHECK: or.b64 %rl{{[0-9]+}}, %rl{{[0-9]+}}, %rl{{[0-9]+}}
 ; CHECK: ret
   %ret = or i64 %a, %b
   ret i64 %ret
 }
 
 define i64 @xor_i64(i64 %a, i64 %b) {
-; CHECK: xor.b64 %rd{{[0-9]+}}, %rd{{[0-9]+}}, %rd{{[0-9]+}}
+; CHECK: xor.b64 %rl{{[0-9]+}}, %rl{{[0-9]+}}, %rl{{[0-9]+}}
 ; CHECK: ret
   %ret = xor i64 %a, %b
   ret i64 %ret
@@ -80,7 +82,7 @@ define i64 @xor_i64(i64 %a, i64 %b) {
 
 define i64 @shl_i64(i64 %a, i64 %b) {
 ; PTX requires 32-bit shift amount
-; CHECK: shl.b64 %rd{{[0-9]+}}, %rd{{[0-9]+}}, %r{{[0-9]+}}
+; CHECK: shl.b64 %rl{{[0-9]+}}, %rl{{[0-9]+}}, %r{{[0-9]+}}
 ; CHECK: ret
   %ret = shl i64 %a, %b
   ret i64 %ret
@@ -88,7 +90,7 @@ define i64 @shl_i64(i64 %a, i64 %b) {
 
 define i64 @ashr_i64(i64 %a, i64 %b) {
 ; PTX requires 32-bit shift amount
-; CHECK: shr.s64 %rd{{[0-9]+}}, %rd{{[0-9]+}}, %r{{[0-9]+}}
+; CHECK: shr.s64 %rl{{[0-9]+}}, %rl{{[0-9]+}}, %r{{[0-9]+}}
 ; CHECK: ret
   %ret = ashr i64 %a, %b
   ret i64 %ret
@@ -96,7 +98,7 @@ define i64 @ashr_i64(i64 %a, i64 %b) {
 
 define i64 @lshr_i64(i64 %a, i64 %b) {
 ; PTX requires 32-bit shift amount
-; CHECK: shr.u64 %rd{{[0-9]+}}, %rd{{[0-9]+}}, %r{{[0-9]+}}
+; CHECK: shr.u64 %rl{{[0-9]+}}, %rl{{[0-9]+}}, %r{{[0-9]+}}
 ; CHECK: ret
   %ret = lshr i64 %a, %b
   ret i64 %ret

@@ -1,6 +1,6 @@
 ; RUN: opt < %s -instcombine -S -o - | FileCheck %s
 
-; CHECK-LABEL: @a(
+; CHECK: @a
 define i32 @a(<4 x i64> %I) {
 entry:
 ; CHECK-NOT: trunc <4 x i64>
@@ -13,7 +13,7 @@ entry:
 }
 
 
-; CHECK-LABEL: @b(
+; CHECK: @b
 define i32 @b(<4 x float> %I) {
 entry:
 ; CHECK-NOT: fptosi <4 x float>

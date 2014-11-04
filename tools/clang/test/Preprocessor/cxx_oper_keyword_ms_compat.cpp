@@ -1,5 +1,4 @@
-// RUN: %clang_cc1 %s -E -verify -fms-extensions
-// expected-no-diagnostics
+// RUN: %clang_cc1 %s -E -fms-compatibility
 
 bool f() {
   // Check that operators still work before redefining them.
@@ -7,13 +6,6 @@ bool f() {
   return true and false;
 #endif
 }
-
-#ifdef and
-#endif
-
-// The second 'and' is a valid C++ operator name for '&&'.
-#if defined and and defined(and)
-#endif
 
 // All c++ keywords should be #define-able in ms mode.
 // (operators like "and" aren't normally, the rest always is.)

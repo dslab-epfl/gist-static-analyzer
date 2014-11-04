@@ -11,7 +11,6 @@
 #define LLVM_CLANG_FRONTEND_LAYOUTOVERRIDESOURCE_H
 
 #include "clang/AST/ExternalASTSource.h"
-#include "clang/Basic/LLVM.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -32,7 +31,7 @@ namespace clang {
       uint64_t Align;
       
       /// \brief The offsets of the fields, in source order.
-      SmallVector<uint64_t, 8> FieldOffsets;
+      llvm::SmallVector<uint64_t, 8> FieldOffsets;
     };
     
     /// \brief The set of layouts that will be overridden.
@@ -43,17 +42,16 @@ namespace clang {
     /// set of record types.
     ///
     /// The file is the result of passing -fdump-record-layouts to a file.
-    explicit LayoutOverrideSource(StringRef Filename);
+    explicit LayoutOverrideSource(llvm::StringRef Filename);
     
     /// \brief If this particular record type has an overridden layout,
     /// return that layout.
-    bool
+    virtual bool 
     layoutRecordType(const RecordDecl *Record,
        uint64_t &Size, uint64_t &Alignment,
        llvm::DenseMap<const FieldDecl *, uint64_t> &FieldOffsets,
        llvm::DenseMap<const CXXRecordDecl *, CharUnits> &BaseOffsets,
-       llvm::DenseMap<const CXXRecordDecl *,
-                      CharUnits> &VirtualBaseOffsets) override;
+       llvm::DenseMap<const CXXRecordDecl *, CharUnits> &VirtualBaseOffsets);
     
     /// \brief Dump the overridden layouts.
     void dump();

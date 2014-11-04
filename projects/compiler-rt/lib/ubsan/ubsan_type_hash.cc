@@ -25,7 +25,7 @@ namespace std {
   class type_info {
   public:
     virtual ~type_info();
-
+  private:
     const char *__type_name;
   };
 }
@@ -85,18 +85,16 @@ namespace abi = __cxxabiv1;
 // reused as needed. The second caching layer is a large hash table with open
 // chaining. We can freely evict from either layer since this is just a cache.
 //
-// FIXME: Make these hash table accesses thread-safe. The races here are benign:
-//        assuming the unsequenced loads and stores don't misbehave too badly,
-//        the worst case is false negatives or poor cache behavior, not false
-//        positives or crashes.
+// FIXME: Make these hash table accesses thread-safe. The races here are benign
+//        (worst-case, we could miss a bug or see a slowdown) but we should
+//        avoid upsetting race detectors.
 
 /// Find a bucket to store the given hash value in.
 static __ubsan::HashValue *getTypeCacheHashTableBucket(__ubsan::HashValue V) {
   static const unsigned HashTableSize = 65537;
-  static __ubsan::HashValue __ubsan_vptr_hash_set[HashTableSize];
+  static __ubsan::HashValue __ubsan_vptr_hash_set[HashTableSize] = { 1 };
 
-  unsigned First = (V & 65535) ^ 1;
-  unsigned Probe = First;
+  unsigned Probe = V & 65535;
   for (int Tries = 5; Tries; --Tries) {
     if (!__ubsan_vptr_hash_set[Probe] || __ubsan_vptr_hash_set[Probe] == V)
       return &__ubsan_vptr_hash_set[Probe];
@@ -106,19 +104,19 @@ static __ubsan::HashValue *getTypeCacheHashTableBucket(__ubsan::HashValue V) {
   }
   // FIXME: Pick a random entry from the probe sequence to evict rather than
   //        just taking the first.
-  return &__ubsan_vptr_hash_set[First];
+  return &__ubsan_vptr_hash_set[V];
 }
 
 /// A cache of recently-checked hashes. Mini hash table with "random" evictions.
 __ubsan::HashValue
-__ubsan::__ubsan_vptr_type_cache[__ubsan::VptrTypeCacheSize];
+__ubsan::__ubsan_vptr_type_cache[__ubsan::VptrTypeCacheSize] = { 1 };
 
 /// \brief Determine whether \p Derived has a \p Base base class subobject at
 /// offset \p Offset.
 static bool isDerivedFromAtOffset(const abi::__class_type_info *Derived,
                                   const abi::__class_type_info *Base,
                                   sptr Offset) {
-  if (Derived->__type_name == Base->__type_name)
+  if (Derived == Base)
     return Offset == 0;
 
   if (const abi::__si_class_type_info *SI =
@@ -131,7 +129,7 @@ static bool isDerivedFromAtOffset(const abi::__class_type_info *Derived,
     // No base class subobjects.
     return false;
 
-  // Look for a base class which is derived from \p Base at the right offset.
+  // Look for a zero-offset base class which is derived from \p Base.
   for (unsigned int base = 0; base != VTI->base_count; ++base) {
     // FIXME: Curtail the recursion if this base can't possibly contain the
     //        given offset.
@@ -151,39 +149,6 @@ static bool isDerivedFromAtOffset(const abi::__class_type_info *Derived,
   return false;
 }
 
-/// \brief Find the derived-most dynamic base class of \p Derived at offset
-/// \p Offset.
-static const abi::__class_type_info *findBaseAtOffset(
-    const abi::__class_type_info *Derived, sptr Offset) {
-  if (!Offset)
-    return Derived;
-
-  if (const abi::__si_class_type_info *SI =
-        dynamic_cast<const abi::__si_class_type_info*>(Derived))
-    return findBaseAtOffset(SI->__base_type, Offset);
-
-  const abi::__vmi_class_type_info *VTI =
-    dynamic_cast<const abi::__vmi_class_type_info*>(Derived);
-  if (!VTI)
-    // No base class subobjects.
-    return 0;
-
-  for (unsigned int base = 0; base != VTI->base_count; ++base) {
-    sptr OffsetHere = VTI->base_info[base].__offset_flags >>
-                      abi::__base_class_type_info::__offset_shift;
-    if (VTI->base_info[base].__offset_flags &
-          abi::__base_class_type_info::__virtual_mask)
-      // FIXME: Can't handle virtual bases yet.
-      continue;
-    if (const abi::__class_type_info *Base =
-          findBaseAtOffset(VTI->base_info[base].__base_type,
-                           Offset - OffsetHere))
-      return Base;
-  }
-
-  return 0;
-}
-
 namespace {
 
 struct VtablePrefix {
@@ -195,14 +160,8 @@ struct VtablePrefix {
   std::type_info *TypeInfo;
 };
 VtablePrefix *getVtablePrefix(void *Object) {
-  VtablePrefix **VptrPtr = reinterpret_cast<VtablePrefix**>(Object);
-  if (!*VptrPtr)
-    return 0;
-  VtablePrefix *Prefix = *VptrPtr - 1;
-  if (Prefix->Offset > 0 || !Prefix->TypeInfo)
-    // This can't possibly be a valid vtable.
-    return 0;
-  return Prefix;
+  VtablePrefix **Ptr = reinterpret_cast<VtablePrefix**>(Object);
+  return *Ptr - 1;
 }
 
 }
@@ -219,7 +178,8 @@ bool __ubsan::checkDynamicType(void *Object, void *Type, HashValue Hash) {
   }
 
   VtablePrefix *Vtable = getVtablePrefix(Object);
-  if (!Vtable)
+  if (Vtable + 1 == 0 || Vtable->Offset > 0)
+    // This can't possibly be a valid vtable.
     return false;
 
   // Check that this is actually a type_info object for a class type.
@@ -236,15 +196,4 @@ bool __ubsan::checkDynamicType(void *Object, void *Type, HashValue Hash) {
   __ubsan_vptr_type_cache[Hash % VptrTypeCacheSize] = Hash;
   *Bucket = Hash;
   return true;
-}
-
-__ubsan::DynamicTypeInfo __ubsan::getDynamicTypeInfo(void *Object) {
-  VtablePrefix *Vtable = getVtablePrefix(Object);
-  if (!Vtable)
-    return DynamicTypeInfo(0, 0, 0);
-  const abi::__class_type_info *ObjectType = findBaseAtOffset(
-    static_cast<const abi::__class_type_info*>(Vtable->TypeInfo),
-    -Vtable->Offset);
-  return DynamicTypeInfo(Vtable->TypeInfo->__type_name, -Vtable->Offset,
-                         ObjectType ? ObjectType->__type_name : "<unknown>");
 }

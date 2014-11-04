@@ -1,5 +1,4 @@
 ; RUN: llvm-as %s -o /dev/null
-; RUN: verify-uselistorder %s
 
 @A = global i1 0, align 536870912
 

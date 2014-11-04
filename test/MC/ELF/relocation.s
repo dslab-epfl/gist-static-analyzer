@@ -1,4 +1,4 @@
-// RUN: llvm-mc -filetype=obj -triple x86_64-pc-linux-gnu %s -o - | llvm-readobj -s -sr -t | FileCheck  %s
+// RUN: llvm-mc -filetype=obj -triple x86_64-pc-linux-gnu %s -o - | elf-dump  --dump-section-data | FileCheck  %s
 
 // Test that we produce the correct relocation.
 
@@ -14,63 +14,108 @@ bar:
         leaq	foo@TPOFF(%rax), %rax    # R_X86_64_TPOFF32
         leaq	foo@TLSLD(%rip), %rdi    # R_X86_64_TLSLD
         leaq	foo@dtpoff(%rax), %rcx   # R_X86_64_DTPOFF32
-        movabs  foo@GOT, %rax		 # R_X86_64_GOT64
-        movabs  foo@GOTOFF, %rax	 # R_X86_64_GOTOFF64
         pushq    $bar
         movq	foo(%rip), %rdx
         leaq    foo-bar(%r14),%r14
         addq	$bar,%rax         # R_X86_64_32S
-	.quad	foo@DTPOFF
-        movabsq	$baz@TPOFF, %rax
-	.word   foo-bar
-	.byte   foo-bar
 
-        # this should probably be an error...
-	zed = foo +2
-	call zed@PLT
 
-        leaq    -1+foo(%rip), %r11
+// CHECK:  # Section 1
+// CHECK: (('sh_name', 0x00000006) # '.text'
 
-        movl  $_GLOBAL_OFFSET_TABLE_, %eax
-        movabs  $_GLOBAL_OFFSET_TABLE_, %rax
+// CHECK: # Relocation 0
+// CHECK-NEXT:  (('r_offset', 0x0000000000000001)
+// CHECK-NEXT:   ('r_sym', 0x00000002)
+// CHECK-NEXT:   ('r_type', 0x0000000a)
+// CHECK-NEXT:   ('r_addend',
 
-// CHECK:        Section {
-// CHECK:          Name: .rela.text
-// CHECK:          Relocations [
-// CHECK-NEXT:       0x1 R_X86_64_32        .text
-// CHECK-NEXT:       0x8 R_X86_64_32S       .text
-// CHECK-NEXT:       0x13 R_X86_64_32S      .text
-// CHECK-NEXT:       0x1A R_X86_64_32S      .text
-// CHECK-NEXT:       0x22 R_X86_64_32S      .text
-// CHECK-NEXT:       0x26 R_X86_64_32       .text
-// CHECK-NEXT:       0x2D R_X86_64_GOTTPOFF foo 0xFFFFFFFFFFFFFFFC
-// CHECK-NEXT:       0x34 R_X86_64_TLSGD    foo 0xFFFFFFFFFFFFFFFC
-// CHECK-NEXT:       0x3B R_X86_64_TPOFF32  foo 0x0
-// CHECK-NEXT:       0x42 R_X86_64_TLSLD    foo 0xFFFFFFFFFFFFFFFC
-// CHECK-NEXT:       0x49 R_X86_64_DTPOFF32 foo 0x0
-// CHECK-NEXT:       0x4F R_X86_64_GOT64 foo 0x0
-// CHECK-NEXT:       0x59 R_X86_64_GOTOFF64 foo 0x0
-// CHECK-NEXT:       0x62 R_X86_64_32S .text 0x0
-// CHECK-NEXT:       0x69 R_X86_64_PC32 foo 0xFFFFFFFFFFFFFFFC
-// CHECK-NEXT:       0x70 R_X86_64_PC32 foo 0x70
-// CHECK-NEXT:       0x77 R_X86_64_32S .text 0x0
-// CHECK-NEXT:       0x7B R_X86_64_DTPOFF64 foo 0x0
-// CHECK-NEXT:       0x85 R_X86_64_TPOFF64 baz 0x0
-// CHECK-NEXT:       0x8D R_X86_64_PC16 foo 0x8D
-// CHECK-NEXT:       0x8F R_X86_64_PC8 foo 0x8F
-// CHECK-NEXT:       0x91 R_X86_64_PLT32 zed 0xFFFFFFFFFFFFFFFC
-// CHECK-NEXT:       0x98 R_X86_64_PC32 foo 0xFFFFFFFFFFFFFFFB
-// CHECK-NEXT:       0x9D R_X86_64_GOTPC32 _GLOBAL_OFFSET_TABLE_ 0x1
-// CHECK-NEXT:       0xA3 R_X86_64_GOTPC64 _GLOBAL_OFFSET_TABLE_ 0x2
-// CHECK-NEXT:     ]
-// CHECK-NEXT:   }
+// CHECK: # Relocation 1
+// CHECK-NEXT:  (('r_offset', 0x0000000000000008)
+// CHECK-NEXT:   ('r_sym', 0x00000002)
+// CHECK-NEXT:   ('r_type', 0x0000000b)
+// CHECK-NEXT:   ('r_addend',
 
-// CHECK:        Symbol {
-// CHECK:          Name: .text (0)
-// CHECK-NEXT:     Value:
-// CHECK-NEXT:     Size:
-// CHECK-NEXT:     Binding: Local
-// CHECK-NEXT:     Type: Section
-// CHECK-NEXT:     Other: 0
-// CHECK-NEXT:     Section: .text (0x1)
-// CHECK-NEXT:   }
+// CHECK: # Relocation 2
+// CHECK-NEXT:  (('r_offset', 0x0000000000000013)
+// CHECK-NEXT:   ('r_sym', 0x00000002)
+// CHECK-NEXT:   ('r_type', 0x0000000b)
+// CHECK-NEXT:   ('r_addend',
+
+// CHECK: # Relocation 3
+// CHECK-NEXT:  (('r_offset', 0x000000000000001a)
+// CHECK-NEXT:   ('r_sym', 0x00000002)
+// CHECK-NEXT:   ('r_type', 0x0000000b)
+// CHECK-NEXT:   ('r_addend',
+
+// CHECK: # Relocation 4
+// CHECK-NEXT:  (('r_offset', 0x0000000000000022)
+// CHECK-NEXT:   ('r_sym', 0x00000002)
+// CHECK-NEXT:   ('r_type', 0x0000000b)
+// CHECK-NEXT:   ('r_addend',
+
+// CHECK: # Relocation 5
+// CHECK-NEXT:  (('r_offset', 0x0000000000000026)
+// CHECK-NEXT:   ('r_sym', 0x00000002)
+// CHECK-NEXT:   ('r_type', 0x0000000a)
+// CHECK-NEXT:   ('r_addend',
+
+// CHECK: # Relocation 6
+// CHECK-NEXT:  (('r_offset', 0x000000000000002d)
+// CHECK-NEXT:   ('r_sym', 0x00000006)
+// CHECK-NEXT:   ('r_type', 0x00000016)
+// CHECK-NEXT:   ('r_addend', 0xfffffffffffffffc)
+
+// CHECK:  # Relocation 7
+// CHECK-NEXT:  (('r_offset', 0x0000000000000034)
+// CHECK-NEXT:   ('r_sym', 0x00000006)
+// CHECK-NEXT:   ('r_type', 0x00000013)
+// CHECK-NEXT:   ('r_addend', 0xfffffffffffffffc)
+
+// CHECK:  # Relocation 8
+// CHECK-NEXT:  (('r_offset', 0x000000000000003b)
+// CHECK-NEXT:   ('r_sym', 0x00000006)
+// CHECK-NEXT:   ('r_type', 0x00000017)
+// CHECK-NEXT:   ('r_addend', 0x0000000000000000)
+
+// CHECK:  # Relocation 9
+// CHECK-NEXT:  (('r_offset', 0x0000000000000042)
+// CHECK-NEXT:   ('r_sym', 0x00000006)
+// CHECK-NEXT:   ('r_type', 0x00000014)
+// CHECK-NEXT:   ('r_addend', 0xfffffffffffffffc)
+
+// CHECK:  # Relocation 10
+// CHECK-NEXT:  (('r_offset', 0x0000000000000049)
+// CHECK-NEXT:   ('r_sym', 0x00000006)
+// CHECK-NEXT:   ('r_type', 0x00000015)
+// CHECK-NEXT:   ('r_addend', 0x0000000000000000)
+
+// CHECK: # Relocation 11
+// CHECK-NEXT:  (('r_offset', 0x000000000000004e)
+// CHECK-NEXT:   ('r_sym', 0x00000002)
+// CHECK-NEXT:   ('r_type', 0x0000000b)
+// CHECK-NEXT:   ('r_addend', 0x0000000000000000)
+
+// CHECK: # Relocation 12
+// CHECK-NEXT: (('r_offset', 0x0000000000000055)
+// CHECK-NEXT:  ('r_sym', 0x00000006)
+// CHECK-NEXT:  ('r_type', 0x00000002)
+// CHECK-NEXT:  ('r_addend', 0xfffffffffffffffc)
+
+// CHECK: # Relocation 13
+// CHECK-NEXT: (('r_offset', 0x000000000000005c)
+// CHECK-NEXT:  ('r_sym', 0x00000006)
+// CHECK-NEXT:  ('r_type', 0x00000002)
+// CHECK-NEXT:  ('r_addend', 0x000000000000005c)
+
+// CHECK: # Relocation 14
+// CHECK-NEXT: (('r_offset', 0x0000000000000063)
+// CHECK-NEXT:  ('r_sym', 0x00000002)
+// CHECK-NEXT:  ('r_type', 0x0000000b)
+// CHECK-NEXT:  ('r_addend', 0x0000000000000000)
+
+// CHECK:   # Symbol 2
+// CHECK: (('st_name', 0x00000000) # ''
+// CHECK:  ('st_bind', 0x0)
+// CHECK:  ('st_type', 0x3)
+// CHECK:  ('st_other', 0x00)
+// CHECK:  ('st_shndx', 0x0001)

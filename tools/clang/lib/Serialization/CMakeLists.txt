@@ -1,10 +1,6 @@
-set(LLVM_LINK_COMPONENTS
-  BitReader
-  Support
-  )
-
-
 add_clang_library(clangSerialization
+  ASTCommon.h
+  ASTReaderInternals.h
   ASTCommon.cpp
   ASTReader.cpp
   ASTReaderDecl.cpp
@@ -13,17 +9,25 @@ add_clang_library(clangSerialization
   ASTWriterDecl.cpp
   ASTWriterStmt.cpp
   GeneratePCH.cpp
-  GlobalModuleIndex.cpp
   Module.cpp
   ModuleManager.cpp
+  )
 
-  ADDITIONAL_HEADERS
-  ASTCommon.h
-  ASTReaderInternals.h
+add_dependencies(clangSerialization
+  ClangAttrClasses
+  ClangAttrList
+  ClangAttrParsedAttrList
+  ClangAttrPCHRead
+  ClangAttrPCHWrite
+  ClangCommentNodes
+  ClangDeclNodes
+  ClangDiagnosticCommon
+  ClangDiagnosticLex
+  ClangDiagnosticSema
+  ClangDiagnosticSerialization
+  ClangStmtNodes
+  )
 
-  LINK_LIBS
-  clangAST
-  clangBasic
-  clangLex
+target_link_libraries(clangSerialization
   clangSema
   )

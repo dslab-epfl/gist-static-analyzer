@@ -2,56 +2,36 @@
 
 set(UBSAN_SOURCES
   ubsan_diag.cc
-  ubsan_init.cc
-  ubsan_flags.cc
   ubsan_handlers.cc
-  ubsan_value.cc
-  )
-
-set(UBSAN_CXX_SOURCES
   ubsan_handlers_cxx.cc
   ubsan_type_hash.cc
+  ubsan_value.cc
   )
 
 include_directories(..)
 
 set(UBSAN_CFLAGS ${SANITIZER_COMMON_CFLAGS})
-append_no_rtti_flag(UBSAN_CFLAGS)
-set(UBSAN_CXXFLAGS ${SANITIZER_COMMON_CFLAGS})
 
-add_custom_target(ubsan)
+set(UBSAN_RUNTIME_LIBRARIES)
 
-if(APPLE)
-  # Build universal binary on APPLE.
-  add_compiler_rt_osx_static_runtime(clang_rt.ubsan_osx
-    ARCH ${UBSAN_SUPPORTED_ARCH}
-    SOURCES ${UBSAN_SOURCES} ${UBSAN_CXX_SOURCES}
-            $<TARGET_OBJECTS:RTSanitizerCommon.osx>
-    CFLAGS ${UBSAN_CXXFLAGS})
-  add_dependencies(ubsan clang_rt.ubsan_osx)
-else()
-  # Build separate libraries for each target.
-  foreach(arch ${UBSAN_SUPPORTED_ARCH})
-    # Main UBSan runtime.
-    add_compiler_rt_runtime(clang_rt.ubsan-${arch} ${arch} STATIC
-      SOURCES ${UBSAN_SOURCES}
-      CFLAGS ${UBSAN_CFLAGS})
-    # C++-specific parts of UBSan runtime. Requires a C++ ABI library.
-    add_compiler_rt_runtime(clang_rt.ubsan_cxx-${arch} ${arch} STATIC
-      SOURCES ${UBSAN_CXX_SOURCES}
-      CFLAGS ${UBSAN_CXXFLAGS})
-    add_dependencies(ubsan
-      clang_rt.san-${arch}
-      clang_rt.ubsan-${arch}
-      clang_rt.ubsan_cxx-${arch})
-    if (UNIX AND NOT ${arch} STREQUAL "i386" AND NOT ${arch} STREQUAL "i686")
-      add_sanitizer_rt_symbols(clang_rt.ubsan-${arch} ubsan.syms.extra)
-      add_sanitizer_rt_symbols(clang_rt.ubsan_cxx-${arch} ubsan.syms.extra)
-      add_dependencies(ubsan
-        clang_rt.ubsan-${arch}-symbols
-        clang_rt.ubsan_cxx-${arch}-symbols)
-    endif()
-  endforeach()
+if(CAN_TARGET_X86_64)
+  add_library(clang_rt.ubsan-x86_64 STATIC ${UBSAN_SOURCES})
+  set_target_compile_flags(clang_rt.ubsan-x86_64
+    ${UBSAN_CFLAGS} ${TARGET_X86_64_CFLAGS}
+    )
+  list(APPEND UBSAN_RUNTIME_LIBRARIES clang_rt.ubsan-x86_64)
 endif()
 
-add_dependencies(compiler-rt ubsan)
+if(CAN_TARGET_I386)
+  add_library(clang_rt.ubsan-i386 STATIC ${UBSAN_SOURCES})
+  set_target_compile_flags(clang_rt.ubsan-i386
+    ${UBSAN_CFLAGS} ${TARGET_I386_CFLAGS}
+    )
+  list(APPEND UBSAN_RUNTIME_LIBRARIES clang_rt.ubsan-i386)
+endif()
+
+set_property(TARGET ${UBSAN_RUNTIME_LIBRARIES} APPEND PROPERTY
+  COMPILE_DEFINITIONS ${UBSAN_COMMON_DEFINITIONS})
+add_clang_compiler_rt_libraries(${UBSAN_RUNTIME_LIBRARIES})
+
+add_subdirectory(lit_tests)

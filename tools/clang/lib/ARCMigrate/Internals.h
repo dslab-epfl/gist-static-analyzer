@@ -48,6 +48,7 @@ void writeARCDiagsToPlist(const std::string &outPath,
 class TransformActions {
   DiagnosticsEngine &Diags;
   CapturedDiagList &CapturedDiags;
+  bool ReportedErrors;
   void *Impl; // TransformActionsImpl.
 
 public:
@@ -73,7 +74,7 @@ public:
 
   bool clearDiagnostic(ArrayRef<unsigned> IDs, SourceRange range);
   bool clearAllDiagnostics(SourceRange range) {
-    return clearDiagnostic(None, range);
+    return clearDiagnostic(ArrayRef<unsigned>(), range);
   }
   bool clearDiagnostic(unsigned ID1, unsigned ID2, SourceRange range) {
     unsigned IDs[] = { ID1, ID2 };
@@ -94,8 +95,6 @@ public:
     return CapturedDiags.hasDiagnostic(IDs, range);
   }
 
-  DiagnosticBuilder report(SourceLocation loc, unsigned diagId,
-                           SourceRange range = SourceRange());
   void reportError(StringRef error, SourceLocation loc,
                    SourceRange range = SourceRange());
   void reportWarning(StringRef warning, SourceLocation loc,
@@ -103,9 +102,7 @@ public:
   void reportNote(StringRef note, SourceLocation loc,
                   SourceRange range = SourceRange());
 
-  bool hasReportedErrors() const {
-    return Diags.hasUnrecoverableErrorOccurred();
-  }
+  bool hasReportedErrors() const { return ReportedErrors; }
 
   class RewriteReceiver {
   public:
@@ -149,21 +146,19 @@ public:
   MigratorOptions MigOptions;
   Sema &SemaRef;
   TransformActions &TA;
-  const CapturedDiagList &CapturedDiags;
   std::vector<SourceLocation> &ARCMTMacroLocs;
-  Optional<bool> EnableCFBridgeFns;
+  llvm::Optional<bool> EnableCFBridgeFns;
 
   MigrationPass(ASTContext &Ctx, LangOptions::GCMode OrigGCMode,
                 Sema &sema, TransformActions &TA,
-                const CapturedDiagList &capturedDiags,
                 std::vector<SourceLocation> &ARCMTMacroLocs)
     : Ctx(Ctx), OrigGCMode(OrigGCMode), MigOptions(),
-      SemaRef(sema), TA(TA), CapturedDiags(capturedDiags),
+      SemaRef(sema), TA(TA),
       ARCMTMacroLocs(ARCMTMacroLocs) { }
 
-  const CapturedDiagList &getDiags() const { return CapturedDiags; }
-
   bool isGCMigration() const { return OrigGCMode != LangOptions::NonGC; }
+  bool noNSAllocReallocError() const { return MigOptions.NoNSAllocReallocError; }
+  void setNSAllocReallocError(bool val) { MigOptions.NoNSAllocReallocError = val; }
   bool noFinalizeRemoval() const { return MigOptions.NoFinalizeRemoval; }
   void setNoFinalizeRemoval(bool val) {MigOptions.NoFinalizeRemoval = val; }
 

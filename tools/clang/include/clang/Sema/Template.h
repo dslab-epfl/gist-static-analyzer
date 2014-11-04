@@ -14,7 +14,6 @@
 
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/DeclVisitor.h"
-#include "clang/Sema/Sema.h"
 #include "llvm/ADT/SmallVector.h"
 #include <cassert>
 #include <utility>
@@ -40,9 +39,10 @@ namespace clang {
   /// list will contain a template argument list (int) at depth 0 and a
   /// template argument list (17) at depth 1.
   class MultiLevelTemplateArgumentList {
-    /// \brief The template argument list at a certain template depth 
-    typedef ArrayRef<TemplateArgument> ArgList;
-
+  public:
+    typedef std::pair<const TemplateArgument *, unsigned> ArgList;
+    
+  private:
     /// \brief The template argument lists, stored from the innermost template
     /// argument list (first) to the outermost template argument list (last).
     SmallVector<ArgList, 4> TemplateArgumentLists;
@@ -64,8 +64,8 @@ namespace clang {
     /// \brief Retrieve the template argument at a given depth and index.
     const TemplateArgument &operator()(unsigned Depth, unsigned Index) const {
       assert(Depth < TemplateArgumentLists.size());
-      assert(Index < TemplateArgumentLists[getNumLevels() - Depth - 1].size());
-      return TemplateArgumentLists[getNumLevels() - Depth - 1][Index];
+      assert(Index < TemplateArgumentLists[getNumLevels() - Depth - 1].second);
+      return TemplateArgumentLists[getNumLevels() - Depth - 1].first[Index];
     }
     
     /// \brief Determine whether there is a non-NULL template argument at the
@@ -75,7 +75,7 @@ namespace clang {
     bool hasTemplateArgument(unsigned Depth, unsigned Index) const {
       assert(Depth < TemplateArgumentLists.size());
       
-      if (Index >= TemplateArgumentLists[getNumLevels() - Depth - 1].size())
+      if (Index >= TemplateArgumentLists[getNumLevels() - Depth - 1].second)
         return false;
       
       return !(*this)(Depth, Index).isNull();
@@ -85,25 +85,26 @@ namespace clang {
     void setArgument(unsigned Depth, unsigned Index,
                      TemplateArgument Arg) {
       assert(Depth < TemplateArgumentLists.size());
-      assert(Index < TemplateArgumentLists[getNumLevels() - Depth - 1].size());
+      assert(Index < TemplateArgumentLists[getNumLevels() - Depth - 1].second);
       const_cast<TemplateArgument&>(
-                TemplateArgumentLists[getNumLevels() - Depth - 1][Index])
+                TemplateArgumentLists[getNumLevels() - Depth - 1].first[Index])
         = Arg;
     }
     
     /// \brief Add a new outermost level to the multi-level template argument 
     /// list.
     void addOuterTemplateArguments(const TemplateArgumentList *TemplateArgs) {
-      addOuterTemplateArguments(ArgList(TemplateArgs->data(),
-                                        TemplateArgs->size()));
+      TemplateArgumentLists.push_back(ArgList(TemplateArgs->data(),
+                                              TemplateArgs->size()));
     }
-
+    
     /// \brief Add a new outmost level to the multi-level template argument
     /// list.
-    void addOuterTemplateArguments(ArgList Args) {
-      TemplateArgumentLists.push_back(Args);
+    void addOuterTemplateArguments(const TemplateArgument *Args, 
+                                   unsigned NumArgs) {
+      TemplateArgumentLists.push_back(ArgList(Args, NumArgs));
     }
-
+    
     /// \brief Retrieve the innermost template argument list.
     const ArgList &getInnermost() const { 
       return TemplateArgumentLists.front(); 
@@ -185,10 +186,10 @@ namespace clang {
     /// this template instantiation.
     Sema &SemaRef;
 
-    typedef llvm::SmallDenseMap<
-        const Decl *, llvm::PointerUnion<Decl *, DeclArgumentPack *>, 4>
-    LocalDeclsMap;
-
+    typedef llvm::DenseMap<const Decl *, 
+                           llvm::PointerUnion<Decl *, DeclArgumentPack *> >
+      LocalDeclsMap;
+    
     /// \brief A mapping from local declarations that occur
     /// within a template to their instantiations.
     ///
@@ -246,7 +247,7 @@ namespace clang {
     LocalInstantiationScope(Sema &SemaRef, bool CombineWithOuterScope = false)
       : SemaRef(SemaRef), Outer(SemaRef.CurrentInstantiationScope),
         Exited(false), CombineWithOuterScope(CombineWithOuterScope),
-        PartiallySubstitutedPack(nullptr)
+        PartiallySubstitutedPack(0)
     {
       SemaRef.CurrentInstantiationScope = this;
     }
@@ -276,7 +277,7 @@ namespace clang {
       LocalInstantiationScope *newScope =
         new LocalInstantiationScope(SemaRef, CombineWithOuterScope);
 
-      newScope->Outer = nullptr;
+      newScope->Outer = 0;
       if (Outer)
         newScope->Outer = Outer->cloneScopes(Outermost);
 
@@ -319,7 +320,7 @@ namespace clang {
     /// \param D The declaration whose instantiation we are searching for.
     ///
     /// \returns A pointer to the declaration or argument pack of declarations
-    /// to which the declaration \c D is instantiated, if found. Otherwise,
+    /// to which the declaration \c D is instantiataed, if found. Otherwise,
     /// returns NULL.
     llvm::PointerUnion<Decl *, DeclArgumentPack *> *
     findInstantiationOf(const Decl *D);
@@ -343,22 +344,13 @@ namespace clang {
     void SetPartiallySubstitutedPack(NamedDecl *Pack, 
                                      const TemplateArgument *ExplicitArgs,
                                      unsigned NumExplicitArgs);
-
-    /// \brief Reset the partially-substituted pack when it is no longer of
-    /// interest.
-    void ResetPartiallySubstitutedPack() {
-      assert(PartiallySubstitutedPack && "No partially-substituted pack");
-      PartiallySubstitutedPack = nullptr;
-      ArgsInPartiallySubstitutedPack = nullptr;
-      NumArgsInPartiallySubstitutedPack = 0;
-    }
-
+    
     /// \brief Retrieve the partially-substitued template parameter pack.
     ///
     /// If there is no partially-substituted parameter pack, returns NULL.
-    NamedDecl *
-    getPartiallySubstitutedPack(const TemplateArgument **ExplicitArgs = nullptr,
-                                unsigned *NumExplicitArgs = nullptr) const;
+    NamedDecl *getPartiallySubstitutedPack(
+                                      const TemplateArgument **ExplicitArgs = 0,
+                                           unsigned *NumExplicitArgs = 0) const;
   };
 
   class TemplateDeclInstantiator
@@ -378,55 +370,68 @@ namespace clang {
                                 ClassTemplatePartialSpecializationDecl *>, 4>
       OutOfLinePartialSpecs;
 
-    /// \brief A list of out-of-line variable template partial
-    /// specializations that will need to be instantiated after the
-    /// enclosing variable's instantiation is complete.
-    /// FIXME: Verify that this is needed.
-    SmallVector<
-        std::pair<VarTemplateDecl *, VarTemplatePartialSpecializationDecl *>, 4>
-    OutOfLineVarPartialSpecs;
-
   public:
     TemplateDeclInstantiator(Sema &SemaRef, DeclContext *Owner,
                              const MultiLevelTemplateArgumentList &TemplateArgs)
       : SemaRef(SemaRef),
         SubstIndex(SemaRef, SemaRef.ArgumentPackSubstitutionIndex),
-        Owner(Owner), TemplateArgs(TemplateArgs), LateAttrs(nullptr),
-        StartingScope(nullptr) {}
+        Owner(Owner), TemplateArgs(TemplateArgs), LateAttrs(0), StartingScope(0)
+    { }
 
-// Define all the decl visitors using DeclNodes.inc
-#define DECL(DERIVED, BASE) \
-    Decl *Visit ## DERIVED ## Decl(DERIVED ## Decl *D);
-#define ABSTRACT_DECL(DECL)
-
-// Decls which never appear inside a class or function.
-#define OBJCCONTAINER(DERIVED, BASE)
-#define FILESCOPEASM(DERIVED, BASE)
-#define IMPORT(DERIVED, BASE)
-#define LINKAGESPEC(DERIVED, BASE)
-#define OBJCCOMPATIBLEALIAS(DERIVED, BASE)
-#define OBJCMETHOD(DERIVED, BASE)
-#define OBJCIVAR(DERIVED, BASE)
-#define OBJCPROPERTY(DERIVED, BASE)
-#define OBJCPROPERTYIMPL(DERIVED, BASE)
-#define EMPTY(DERIVED, BASE)
-
-// Decls which use special-case instantiation code.
-#define BLOCK(DERIVED, BASE)
-#define CAPTURED(DERIVED, BASE)
-#define IMPLICITPARAM(DERIVED, BASE)
-
-#include "clang/AST/DeclNodes.inc"
-
-    // A few supplemental visitor functions.
-    Decl *VisitCXXMethodDecl(CXXMethodDecl *D,
-                             TemplateParameterList *TemplateParams,
-                             bool IsClassScopeSpecialization = false);
+    // FIXME: Once we get closer to completion, replace these manually-written
+    // declarations with automatically-generated ones from
+    // clang/AST/DeclNodes.inc.
+    Decl *VisitTranslationUnitDecl(TranslationUnitDecl *D);
+    Decl *VisitLabelDecl(LabelDecl *D);
+    Decl *VisitNamespaceDecl(NamespaceDecl *D);
+    Decl *VisitNamespaceAliasDecl(NamespaceAliasDecl *D);
+    Decl *VisitTypedefDecl(TypedefDecl *D);
+    Decl *VisitTypeAliasDecl(TypeAliasDecl *D);
+    Decl *VisitTypeAliasTemplateDecl(TypeAliasTemplateDecl *D);
+    Decl *VisitVarDecl(VarDecl *D);
+    Decl *VisitAccessSpecDecl(AccessSpecDecl *D);
+    Decl *VisitFieldDecl(FieldDecl *D);
+    Decl *VisitIndirectFieldDecl(IndirectFieldDecl *D);
+    Decl *VisitStaticAssertDecl(StaticAssertDecl *D);
+    Decl *VisitEnumDecl(EnumDecl *D);
+    Decl *VisitEnumConstantDecl(EnumConstantDecl *D);
+    Decl *VisitFriendDecl(FriendDecl *D);
     Decl *VisitFunctionDecl(FunctionDecl *D,
-                            TemplateParameterList *TemplateParams);
-    Decl *VisitDecl(Decl *D);
-    Decl *VisitVarDecl(VarDecl *D, bool InstantiatingVarTemplate);
+                            TemplateParameterList *TemplateParams = 0);
+    Decl *VisitCXXRecordDecl(CXXRecordDecl *D);
+    Decl *VisitCXXMethodDecl(CXXMethodDecl *D,
+                             TemplateParameterList *TemplateParams = 0,
+                             bool IsClassScopeSpecialization = false);
+    Decl *VisitCXXConstructorDecl(CXXConstructorDecl *D);
+    Decl *VisitCXXDestructorDecl(CXXDestructorDecl *D);
+    Decl *VisitCXXConversionDecl(CXXConversionDecl *D);
+    ParmVarDecl *VisitParmVarDecl(ParmVarDecl *D);
+    Decl *VisitClassTemplateDecl(ClassTemplateDecl *D);
+    Decl *VisitClassTemplatePartialSpecializationDecl(
+                                    ClassTemplatePartialSpecializationDecl *D);
+    Decl *VisitFunctionTemplateDecl(FunctionTemplateDecl *D);
+    Decl *VisitTemplateTypeParmDecl(TemplateTypeParmDecl *D);
+    Decl *VisitNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D);
+    Decl *VisitTemplateTemplateParmDecl(TemplateTemplateParmDecl *D);
+    Decl *VisitUsingDirectiveDecl(UsingDirectiveDecl *D);
+    Decl *VisitUsingDecl(UsingDecl *D);
+    Decl *VisitUsingShadowDecl(UsingShadowDecl *D);
+    Decl *VisitUnresolvedUsingValueDecl(UnresolvedUsingValueDecl *D);
+    Decl *VisitUnresolvedUsingTypenameDecl(UnresolvedUsingTypenameDecl *D);
+    Decl *VisitClassScopeFunctionSpecializationDecl(
+                                      ClassScopeFunctionSpecializationDecl *D);
 
+    // Base case. FIXME: Remove once we can instantiate everything.
+    Decl *VisitDecl(Decl *D) {
+      unsigned DiagID = SemaRef.getDiagnostics().getCustomDiagID(
+                                                   DiagnosticsEngine::Error,
+                                                   "cannot instantiate %0 yet");
+      SemaRef.Diag(D->getLocation(), DiagID)
+        << D->getDeclKindName();
+      
+      return 0;
+    }
+    
     // Enable late instantiation of attributes.  Late instantiated attributes
     // will be stored in LA.
     void enableLateAttributeInstantiation(Sema::LateInstantiatedAttrVec *LA) {
@@ -436,8 +441,8 @@ namespace clang {
 
     // Disable late instantiation of attributes.
     void disableLateAttributeInstantiation() {
-      LateAttrs = nullptr;
-      StartingScope = nullptr;
+      LateAttrs = 0;
+      StartingScope = 0;
     }
 
     LocalInstantiationScope *getStartingScope() const { return StartingScope; }
@@ -448,10 +453,6 @@ namespace clang {
         ::iterator
       delayed_partial_spec_iterator;
 
-    typedef SmallVectorImpl<std::pair<
-        VarTemplateDecl *, VarTemplatePartialSpecializationDecl *> >::iterator
-    delayed_var_partial_spec_iterator;
-
     /// \brief Return an iterator to the beginning of the set of
     /// "delayed" partial specializations, which must be passed to
     /// InstantiateClassTemplatePartialSpecialization once the class
@@ -460,20 +461,12 @@ namespace clang {
       return OutOfLinePartialSpecs.begin();
     }
 
-    delayed_var_partial_spec_iterator delayed_var_partial_spec_begin() {
-      return OutOfLineVarPartialSpecs.begin();
-    }
-
     /// \brief Return an iterator to the end of the set of
     /// "delayed" partial specializations, which must be passed to
     /// InstantiateClassTemplatePartialSpecialization once the class
     /// definition has been completed.
     delayed_partial_spec_iterator delayed_partial_spec_end() {
       return OutOfLinePartialSpecs.end();
-    }
-
-    delayed_var_partial_spec_iterator delayed_var_partial_spec_end() {
-      return OutOfLineVarPartialSpecs.end();
     }
 
     // Helper functions for instantiating methods.
@@ -489,21 +482,12 @@ namespace clang {
                         DeclaratorDecl *NewDecl);
     bool SubstQualifier(const TagDecl *OldDecl,
                         TagDecl *NewDecl);
-
-    Decl *VisitVarTemplateSpecializationDecl(
-        VarTemplateDecl *VarTemplate, VarDecl *FromVar, void *InsertPos,
-        const TemplateArgumentListInfo &TemplateArgsInfo,
-        ArrayRef<TemplateArgument> Converted);
-
+      
     Decl *InstantiateTypedefNameDecl(TypedefNameDecl *D, bool IsTypeAlias);
     ClassTemplatePartialSpecializationDecl *
     InstantiateClassTemplatePartialSpecialization(
                                               ClassTemplateDecl *ClassTemplate,
                            ClassTemplatePartialSpecializationDecl *PartialSpec);
-    VarTemplatePartialSpecializationDecl *
-    InstantiateVarTemplatePartialSpecialization(
-        VarTemplateDecl *VarTemplate,
-        VarTemplatePartialSpecializationDecl *PartialSpec);
     void InstantiateEnumDefinition(EnumDecl *Enum, EnumDecl *Pattern);
   };  
 }

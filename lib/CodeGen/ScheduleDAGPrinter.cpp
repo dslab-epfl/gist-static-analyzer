@@ -11,17 +11,19 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/Constants.h"
+#include "llvm/Assembly/Writer.h"
 #include "llvm/CodeGen/ScheduleDAG.h"
-#include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/StringExtras.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
-#include "llvm/IR/Constants.h"
+#include "llvm/Target/TargetRegisterInfo.h"
+#include "llvm/Target/TargetMachine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/GraphWriter.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/TargetRegisterInfo.h"
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/StringExtras.h"
 #include <fstream>
 using namespace llvm;
 
@@ -37,10 +39,6 @@ namespace llvm {
 
     static bool renderGraphFromBottomUp() {
       return true;
-    }
-
-    static bool isNodeHidden(const SUnit *Node) {
-      return (Node->NumPreds > 10 || Node->NumSuccs > 10);
     }
 
     static bool hasNodeAddressLabel(const SUnit *Node,

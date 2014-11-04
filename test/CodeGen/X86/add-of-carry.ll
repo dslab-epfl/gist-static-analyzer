@@ -3,8 +3,8 @@
 
 define i32 @test1(i32 %sum, i32 %x) nounwind readnone ssp {
 entry:
-; CHECK-LABEL: test1:
-; CHECK: cmpl %ecx, %eax 
+; CHECK: test1:
+; CHECK: cmpl %ecx, %eax
 ; CHECK-NOT: addl
 ; CHECK: adcl $0, %eax
   %add4 = add i32 %x, %sum
@@ -15,7 +15,7 @@ entry:
 }
 
 ; Instcombine transforms test1 into test2:
-; CHECK-LABEL: test2:
+; CHECK: test2:
 ; CHECK: movl
 ; CHECK-NEXT: addl
 ; CHECK-NEXT: adcl $0
@@ -37,7 +37,7 @@ entry:
   %dec = sext i1 %cmp to i32
   %dec.res = add nsw i32 %dec, %res
   ret i32 %dec.res
-; CHECK-LABEL: test3:
+; CHECK: test3:
 ; CHECK: cmpl
 ; CHECK: sbbl
 ; CHECK: ret

@@ -38,16 +38,17 @@ for.end:
   ret void
 }
 
-; This test checks that SCEVExpander can handle an outer loop that has been
-; simplified, and as a result the inner loop's exit test will be rewritten.
+; It would be nice if SCEV and any loop analysis could assume that
+; preheaders exist. Unfortunately it is not always the case. This test
+; checks that SCEVExpander can handle an outer loop that has not yet
+; been simplified. As a result, the inner loop's exit test will not be
+; rewritten.
 define void @expandOuterRecurrence(i32 %arg) nounwind {
 entry:
   %sub1 = sub nsw i32 %arg, 1
   %cmp1 = icmp slt i32 0, %sub1
   br i1 %cmp1, label %outer, label %exit
 
-; CHECK: outer:
-; CHECK: icmp slt
 outer:
   %i = phi i32 [ 0, %entry ], [ %i.inc, %outer.inc ]
   %sub2 = sub nsw i32 %arg, %i
@@ -59,6 +60,7 @@ inner.ph:
   br label %inner
 
 ; CHECK: inner:
+; CHECK: icmp slt
 ; CHECK: br i1
 inner:
   %j = phi i32 [ 0, %inner.ph ], [ %j.inc, %inner ]
@@ -82,23 +84,15 @@ exit:
 ; Perform LFTR without generating extra preheader code.
 define void @guardedloop([0 x double]* %matrix, [0 x double]* %vector,
                          i32 %irow, i32 %ilead) nounwind {
-; CHECK-LABEL: @guardedloop(
-; CHECK-LABEL: entry:
-; CHECK-NEXT: %[[cmp:.*]] = icmp slt i32 1, %irow
-; CHECK-NEXT: br i1 %[[cmp]], label %[[loop_preheader:.*]], label %[[return:.*]]
-
-; CHECK: [[loop_preheader]]:
-; CHECK-NEXT: %[[sext:.*]] = sext i32 %ilead to i64
-; CHECK-NEXT: %[[add:.*]] = add i32 %irow, -1
-; CHECK-NEXT: br label %[[loop:.*]]
-
-; CHECK: [[loop]]:
-; CHECK-NEXT: %[[indvars_iv2:.*]] = phi i64
-; CHECK-NEXT: phi i64
+; CHECK: entry:
+; CHECK-NOT: zext
+; CHECK-NOT: add
+; CHECK: loop:
+; CHECK: phi i64
+; CHECK: phi i64
 ; CHECK-NOT: phi
-; CHECK: %[[lftr_wideiv:.*]] = trunc i64 %[[indvars_iv2]] to i32
-; CHECK-NEXT: %[[exitcond:.*]] = icmp ne i32 %[[lftr_wideiv]], %[[add]]
-; CHECK-NEXT: br i1 %[[exitcond]], label %[[loop]], label
+; CHECK: icmp ne
+; CHECK: br i1
 entry:
   %cmp = icmp slt i32 1, %irow
   br i1 %cmp, label %loop, label %return
@@ -171,7 +165,7 @@ entry:
   %lim = add i32 %x, %n
   %cmp.ph = icmp ult i32 %x, %lim
   br i1 %cmp.ph, label %loop, label %exit
-; CHECK-LABEL: @geplftr(
+; CHECK: @geplftr
 ; CHECK: loop:
 ; CHECK: phi i8*
 ; DISABLE-NOT: phi      // This check is currently disabled
@@ -196,7 +190,7 @@ exit:
 define void @nevertaken() nounwind uwtable ssp {
 entry:
   br label %loop
-; CHECK-LABEL: @nevertaken(
+; CHECK: @nevertaken
 ; CHECK: loop:
 ; CHECK-NOT: phi
 ; CHECK-NOT: add

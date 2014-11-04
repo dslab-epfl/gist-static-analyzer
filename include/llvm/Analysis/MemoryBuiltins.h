@@ -8,21 +8,21 @@
 //===----------------------------------------------------------------------===//
 //
 // This family of functions identifies calls to builtin functions that allocate
-// or free memory.
+// or free memory.  
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_ANALYSIS_MEMORYBUILTINS_H
 #define LLVM_ANALYSIS_MEMORYBUILTINS_H
 
+#include "llvm/IRBuilder.h"
+#include "llvm/Operator.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/Analysis/TargetFolder.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/InstVisitor.h"
-#include "llvm/IR/Operator.h"
-#include "llvm/IR/ValueHandle.h"
 #include "llvm/Support/DataTypes.h"
+#include "llvm/Support/InstVisitor.h"
+#include "llvm/Support/TargetFolder.h"
+#include "llvm/Support/ValueHandle.h"
 
 namespace llvm {
 class CallInst;
@@ -64,10 +64,6 @@ bool isAllocLikeFn(const Value *V, const TargetLibraryInfo *TLI,
 bool isReallocLikeFn(const Value *V, const TargetLibraryInfo *TLI,
                      bool LookThroughBitCast = false);
 
-/// \brief Tests if a value is a call or invoke to a library function that
-/// allocates memory and never returns null (such as operator new).
-bool isOperatorNewLikeFn(const Value *V, const TargetLibraryInfo *TLI,
-                         bool LookThroughBitCast = false);
 
 //===----------------------------------------------------------------------===//
 //  malloc Call Utility Functions.
@@ -82,10 +78,10 @@ static inline CallInst *extractMallocCall(Value *I,
   return const_cast<CallInst*>(extractMallocCall((const Value*)I, TLI));
 }
 
-/// isArrayMalloc - Returns the corresponding CallInst if the instruction
+/// isArrayMalloc - Returns the corresponding CallInst if the instruction 
 /// is a call to malloc whose array size can be determined and the array size
 /// is not constant 1.  Otherwise, return NULL.
-const CallInst *isArrayMalloc(const Value *I, const DataLayout *DL,
+const CallInst *isArrayMalloc(const Value *I, const DataLayout *TD,
                               const TargetLibraryInfo *TLI);
 
 /// getMallocType - Returns the PointerType resulting from the malloc call.
@@ -102,12 +98,12 @@ PointerType *getMallocType(const CallInst *CI, const TargetLibraryInfo *TLI);
 ///  >1: Unique PointerType cannot be determined, return NULL.
 Type *getMallocAllocatedType(const CallInst *CI, const TargetLibraryInfo *TLI);
 
-/// getMallocArraySize - Returns the array size of a malloc call.  If the
+/// getMallocArraySize - Returns the array size of a malloc call.  If the 
 /// argument passed to malloc is a multiple of the size of the malloced type,
 /// then return that multiple.  For non-array mallocs, the multiple is
 /// constant 1.  Otherwise, return NULL for mallocs whose array size cannot be
 /// determined.
-Value *getMallocArraySize(CallInst *CI, const DataLayout *DL,
+Value *getMallocArraySize(CallInst *CI, const DataLayout *TD,
                           const TargetLibraryInfo *TLI,
                           bool LookThroughSExt = false);
 
@@ -131,35 +127,33 @@ static inline CallInst *extractCallocCall(Value *I,
 
 /// isFreeCall - Returns non-null if the value is a call to the builtin free()
 const CallInst *isFreeCall(const Value *I, const TargetLibraryInfo *TLI);
-
+  
 static inline CallInst *isFreeCall(Value *I, const TargetLibraryInfo *TLI) {
   return const_cast<CallInst*>(isFreeCall((const Value*)I, TLI));
 }
 
-
+  
 //===----------------------------------------------------------------------===//
 //  Utility functions to compute size of objects.
 //
 
 /// \brief Compute the size of the object pointed by Ptr. Returns true and the
-/// object size in Size if successful, and false otherwise. In this context, by
-/// object we mean the region of memory starting at Ptr to the end of the
-/// underlying object pointed to by Ptr.
+/// object size in Size if successful, and false otherwise.
 /// If RoundToAlign is true, then Size is rounded up to the aligment of allocas,
 /// byval arguments, and global variables.
-bool getObjectSize(const Value *Ptr, uint64_t &Size, const DataLayout *DL,
+bool getObjectSize(const Value *Ptr, uint64_t &Size, const DataLayout *TD,
                    const TargetLibraryInfo *TLI, bool RoundToAlign = false);
 
 
 
 typedef std::pair<APInt, APInt> SizeOffsetType;
 
-/// \brief Evaluate the size and offset of an object pointed to by a Value*
+/// \brief Evaluate the size and offset of an object ponted by a Value*
 /// statically. Fails if size or offset are not known at compile time.
 class ObjectSizeOffsetVisitor
   : public InstVisitor<ObjectSizeOffsetVisitor, SizeOffsetType> {
 
-  const DataLayout *DL;
+  const DataLayout *TD;
   const TargetLibraryInfo *TLI;
   bool RoundToAlign;
   unsigned IntTyBits;
@@ -173,7 +167,7 @@ class ObjectSizeOffsetVisitor
   }
 
 public:
-  ObjectSizeOffsetVisitor(const DataLayout *DL, const TargetLibraryInfo *TLI,
+  ObjectSizeOffsetVisitor(const DataLayout *TD, const TargetLibraryInfo *TLI,
                           LLVMContext &Context, bool RoundToAlign = false);
 
   SizeOffsetType compute(Value *V);
@@ -190,8 +184,6 @@ public:
     return knownSize(SizeOffset) && knownOffset(SizeOffset);
   }
 
-  // These are "private", except they can't actually be made private. Only
-  // compute() should be used by external users.
   SizeOffsetType visitAllocaInst(AllocaInst &I);
   SizeOffsetType visitArgument(Argument &A);
   SizeOffsetType visitCallSite(CallSite CS);
@@ -199,7 +191,6 @@ public:
   SizeOffsetType visitExtractElementInst(ExtractElementInst &I);
   SizeOffsetType visitExtractValueInst(ExtractValueInst &I);
   SizeOffsetType visitGEPOperator(GEPOperator &GEP);
-  SizeOffsetType visitGlobalAlias(GlobalAlias &GA);
   SizeOffsetType visitGlobalVariable(GlobalVariable &GV);
   SizeOffsetType visitIntToPtrInst(IntToPtrInst&);
   SizeOffsetType visitLoadInst(LoadInst &I);
@@ -212,7 +203,7 @@ public:
 typedef std::pair<Value*, Value*> SizeOffsetEvalType;
 
 
-/// \brief Evaluate the size and offset of an object pointed to by a Value*.
+/// \brief Evaluate the size and offset of an object ponted by a Value*.
 /// May create code to compute the result at run-time.
 class ObjectSizeOffsetEvaluator
   : public InstVisitor<ObjectSizeOffsetEvaluator, SizeOffsetEvalType> {
@@ -222,7 +213,7 @@ class ObjectSizeOffsetEvaluator
   typedef DenseMap<const Value*, WeakEvalType> CacheMapTy;
   typedef SmallPtrSet<const Value*, 8> PtrSetTy;
 
-  const DataLayout *DL;
+  const DataLayout *TD;
   const TargetLibraryInfo *TLI;
   LLVMContext &Context;
   BuilderTy Builder;
@@ -230,16 +221,15 @@ class ObjectSizeOffsetEvaluator
   Value *Zero;
   CacheMapTy CacheMap;
   PtrSetTy SeenVals;
-  bool RoundToAlign;
 
   SizeOffsetEvalType unknown() {
-    return std::make_pair(nullptr, nullptr);
+    return std::make_pair((Value*)0, (Value*)0);
   }
   SizeOffsetEvalType compute_(Value *V);
 
 public:
-  ObjectSizeOffsetEvaluator(const DataLayout *DL, const TargetLibraryInfo *TLI,
-                            LLVMContext &Context, bool RoundToAlign = false);
+  ObjectSizeOffsetEvaluator(const DataLayout *TD, const TargetLibraryInfo *TLI,
+                            LLVMContext &Context);
   SizeOffsetEvalType compute(Value *V);
 
   bool knownSize(SizeOffsetEvalType SizeOffset) {
@@ -258,7 +248,6 @@ public:
     return knownSize(SizeOffset) && knownOffset(SizeOffset);
   }
 
-  // The individual instruction visitors should be treated as private.
   SizeOffsetEvalType visitAllocaInst(AllocaInst &I);
   SizeOffsetEvalType visitCallSite(CallSite CS);
   SizeOffsetEvalType visitExtractElementInst(ExtractElementInst &I);

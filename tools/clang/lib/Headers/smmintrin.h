@@ -79,18 +79,12 @@
 #define _mm_blend_pd(V1, V2, M) __extension__ ({ \
   __m128d __V1 = (V1); \
   __m128d __V2 = (V2); \
-  (__m128d)__builtin_shufflevector((__v2df)__V1, (__v2df)__V2, \
-                                   (((M) & 0x01) ? 2 : 0), \
-                                   (((M) & 0x02) ? 3 : 1)); })
+  (__m128d) __builtin_ia32_blendpd ((__v2df)__V1, (__v2df)__V2, (M)); })
 
 #define _mm_blend_ps(V1, V2, M) __extension__ ({ \
   __m128 __V1 = (V1); \
   __m128 __V2 = (V2); \
-  (__m128)__builtin_shufflevector((__v4sf)__V1, (__v4sf)__V2, \
-                                  (((M) & 0x01) ? 4 : 0), \
-                                  (((M) & 0x02) ? 5 : 1), \
-                                  (((M) & 0x04) ? 6 : 2), \
-                                  (((M) & 0x08) ? 7 : 3)); })
+  (__m128) __builtin_ia32_blendps ((__v4sf)__V1, (__v4sf)__V2, (M)); })
 
 static __inline__ __m128d __attribute__((__always_inline__, __nodebug__))
 _mm_blendv_pd (__m128d __V1, __m128d __V2, __m128d __M)
@@ -116,15 +110,7 @@ _mm_blendv_epi8 (__m128i __V1, __m128i __V2, __m128i __M)
 #define _mm_blend_epi16(V1, V2, M) __extension__ ({ \
   __m128i __V1 = (V1); \
   __m128i __V2 = (V2); \
-  (__m128i)__builtin_shufflevector((__v8hi)__V1, (__v8hi)__V2, \
-                                   (((M) & 0x01) ?  8 : 0), \
-                                   (((M) & 0x02) ?  9 : 1), \
-                                   (((M) & 0x04) ? 10 : 2), \
-                                   (((M) & 0x08) ? 11 : 3), \
-                                   (((M) & 0x10) ? 12 : 4), \
-                                   (((M) & 0x20) ? 13 : 5), \
-                                   (((M) & 0x40) ? 14 : 6), \
-                                   (((M) & 0x80) ? 15 : 7)); })
+  (__m128i) __builtin_ia32_pblendw128 ((__v8hi)__V1, (__v8hi)__V2, (M)); })
 
 /* SSE4 Dword Multiply Instructions.  */
 static __inline__  __m128i __attribute__((__always_inline__, __nodebug__))
@@ -209,10 +195,10 @@ _mm_max_epu32 (__m128i __V1, __m128i __V2)
 /* SSE4 Insertion and Extraction from XMM Register Instructions.  */
 #define _mm_insert_ps(X, Y, N) __builtin_ia32_insertps128((X), (Y), (N))
 #define _mm_extract_ps(X, N) (__extension__                      \
-                              ({ union { int __i; float __f; } __t;  \
+                              ({ union { int i; float f; } __t;  \
                                  __v4sf __a = (__v4sf)(X);       \
-                                 __t.__f = __a[(N) & 3];                 \
-                                 __t.__i;}))
+                                 __t.f = __a[N];                 \
+                                 __t.i;}))
 
 /* Miscellaneous insert and extract macros.  */
 /* Extract a single-precision float from X at index N into D.  */
@@ -229,14 +215,14 @@ _mm_max_epu32 (__m128i __V1, __m128i __V2)
                                              
 /* Insert int into packed integer array at index.  */
 #define _mm_insert_epi8(X, I, N) (__extension__ ({ __v16qi __a = (__v16qi)(X); \
-                                                   __a[(N) & 15] = (I);             \
+                                                   __a[(N)] = (I);             \
                                                    __a;}))
 #define _mm_insert_epi32(X, I, N) (__extension__ ({ __v4si __a = (__v4si)(X); \
-                                                    __a[(N) & 3] = (I);           \
+                                                    __a[(N)] = (I);           \
                                                     __a;}))
 #ifdef __x86_64__
 #define _mm_insert_epi64(X, I, N) (__extension__ ({ __v2di __a = (__v2di)(X); \
-                                                    __a[(N) & 1] = (I);           \
+                                                    __a[(N)] = (I);           \
                                                     __a;}))
 #endif /* __x86_64__ */
 
@@ -244,13 +230,12 @@ _mm_max_epu32 (__m128i __V1, __m128i __V2)
  * as a zero extended value, so it is unsigned.
  */
 #define _mm_extract_epi8(X, N) (__extension__ ({ __v16qi __a = (__v16qi)(X); \
-                                                 (int)(unsigned char) \
-                                                     __a[(N) & 15];}))
+                                                 (unsigned char)__a[(N)];}))
 #define _mm_extract_epi32(X, N) (__extension__ ({ __v4si __a = (__v4si)(X); \
-                                                  __a[(N) & 3];}))
+                                                  (unsigned)__a[(N)];}))
 #ifdef __x86_64__
 #define _mm_extract_epi64(X, N) (__extension__ ({ __v2di __a = (__v2di)(X); \
-                                                  __a[(N) & 1];}))
+                                                  __a[(N)];}))
 #endif /* __x86_64 */
 
 /* SSE4 128-bit Packed Integer Comparisons.  */

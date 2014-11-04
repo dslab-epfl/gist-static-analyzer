@@ -1,6 +1,6 @@
-; RUN: llc < %s -march=x86-64 -mcpu=corei7 -mattr=+sse4.1 | FileCheck %s
+; RUN: llc < %s -march=x86-64 -mcpu=corei7 -mattr=+sse41 | FileCheck %s
 
-;CHECK-LABEL: load_2_i8:
+;CHECK: load_2_i8
 ; A single 16-bit load
 ;CHECK: pmovzxbq
 ;CHECK: paddq
@@ -16,11 +16,11 @@ define void @load_2_i8(<2 x i8>* %A)  {
    ret void
 } 
 
-;CHECK-LABEL: load_2_i16:
+;CHECK: load_2_i16
 ; Read 32-bits
 ;CHECK: pmovzxwq
 ;CHECK: paddq
-;CHECK: pshufd
+;CHECK: pshufb
 ;CHECK: movd
 ;CHECK: ret
 define void @load_2_i16(<2 x i16>* %A)  {
@@ -30,9 +30,9 @@ define void @load_2_i16(<2 x i16>* %A)  {
    ret void
 } 
 
-;CHECK-LABEL: load_2_i32:
+;CHECK: load_2_i32
 ;CHECK: pmovzxdq
-;CHECK: paddd
+;CHECK: paddq
 ;CHECK: pshufd
 ;CHECK: ret
 define void @load_2_i32(<2 x i32>* %A)  {
@@ -42,7 +42,7 @@ define void @load_2_i32(<2 x i32>* %A)  {
    ret void
 } 
 
-;CHECK-LABEL: load_4_i8:
+;CHECK: load_4_i8
 ;CHECK: pmovzxbd
 ;CHECK: paddd
 ;CHECK: pshufb
@@ -54,9 +54,9 @@ define void @load_4_i8(<4 x i8>* %A)  {
    ret void
 } 
 
-;CHECK-LABEL: load_4_i16:
+;CHECK: load_4_i16
 ;CHECK: pmovzxwd
-;CHECK: paddw
+;CHECK: paddd
 ;CHECK: pshufb
 ;CHECK: ret
 define void @load_4_i16(<4 x i16>* %A)  {
@@ -66,9 +66,9 @@ define void @load_4_i16(<4 x i16>* %A)  {
    ret void
 } 
 
-;CHECK-LABEL: load_8_i8:
+;CHECK: load_8_i8
 ;CHECK: pmovzxbw
-;CHECK: paddb
+;CHECK: paddw
 ;CHECK: pshufb
 ;CHECK: ret
 define void @load_8_i8(<8 x i8>* %A)  {

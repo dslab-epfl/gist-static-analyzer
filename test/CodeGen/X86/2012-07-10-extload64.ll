@@ -13,7 +13,7 @@ entry:
 }
 
 ; Make sure that we store a 64bit value, even on 32bit systems.
-;CHECK-LABEL: store_64:
+;CHECK: store_64
 define void @store_64(<2 x i32>* %ptr) {
 BB:
   store <2 x i32> zeroinitializer, <2 x i32>* %ptr
@@ -22,7 +22,7 @@ BB:
 ;CHECK: ret
 }
 
-;CHECK-LABEL: load_64:
+;CHECK: load_64
 define <2 x i32> @load_64(<2 x i32>* %ptr) {
 BB:
   %t = load <2 x i32>* %ptr

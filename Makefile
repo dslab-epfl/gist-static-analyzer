@@ -11,11 +11,11 @@ LEVEL := .
 
 # Top-Level LLVM Build Stages:
 #   1. Build lib/Support and lib/TableGen, which are used by utils (tblgen).
-#   2. Build utils, which is used by IR.
-#   3. Build IR, which builds the Intrinsics.inc file used by libs.
+#   2. Build utils, which is used by VMCore.
+#   3. Build VMCore, which builds the Intrinsics.inc file used by libs.
 #   4. Build libs, which are needed by llvm-config.
 #   5. Build llvm-config, which determines inter-lib dependencies for tools.
-#   6. Build tools, docs, and cmake modules.
+#   6. Build tools, runtime, docs.
 #
 # When cross-compiling, there are some things (tablegen) that need to
 # be build for the build system first.
@@ -30,8 +30,8 @@ ifeq ($(BUILD_DIRS_ONLY),1)
   DIRS := lib/Support lib/TableGen utils tools/llvm-config
   OPTIONAL_DIRS := tools/clang/utils/TableGen
 else
-  DIRS := lib/Support lib/TableGen utils lib/IR lib tools/llvm-shlib \
-          tools/llvm-config tools docs cmake unittests
+  DIRS := lib/Support lib/TableGen utils lib/VMCore lib tools/llvm-shlib \
+          tools/llvm-config tools runtime docs unittests
   OPTIONAL_DIRS := projects bindings
 endif
 
@@ -52,17 +52,17 @@ ifneq ($(ENABLE_DOCS),1)
 endif
 
 ifeq ($(MAKECMDGOALS),libs-only)
-  DIRS := $(filter-out tools docs, $(DIRS))
+  DIRS := $(filter-out tools runtime docs, $(DIRS))
   OPTIONAL_DIRS :=
 endif
 
 ifeq ($(MAKECMDGOALS),install-libs)
-  DIRS := $(filter-out tools docs, $(DIRS))
+  DIRS := $(filter-out tools runtime docs, $(DIRS))
   OPTIONAL_DIRS := $(filter bindings, $(OPTIONAL_DIRS))
 endif
 
 ifeq ($(MAKECMDGOALS),tools-only)
-  DIRS := $(filter-out docs, $(DIRS))
+  DIRS := $(filter-out runtime docs, $(DIRS))
   OPTIONAL_DIRS :=
 endif
 
@@ -72,7 +72,7 @@ ifeq ($(MAKECMDGOALS),install-clang)
           tools/clang/tools/c-index-test \
           tools/clang/include/clang-c \
           tools/clang/runtime tools/clang/docs \
-          tools/lto
+          tools/lto runtime
   OPTIONAL_DIRS :=
   NO_INSTALL = 1
 endif
@@ -84,7 +84,7 @@ ifeq ($(MAKECMDGOALS),clang-only)
 endif
 
 ifeq ($(MAKECMDGOALS),unittests)
-  DIRS := $(filter-out tools docs, $(DIRS)) utils unittests
+  DIRS := $(filter-out tools runtime docs, $(DIRS)) utils unittests
   OPTIONAL_DIRS :=
 endif
 
@@ -112,20 +112,11 @@ cross-compile-build-tools:
 	  cd BuildTools ; \
 	  unset CFLAGS ; \
 	  unset CXXFLAGS ; \
-	  AR=$(BUILD_AR) ; \
-	  AS=$(BUILD_AS) ; \
-	  LD=$(BUILD_LD) ; \
-	  CC=$(BUILD_CC) ; \
-	  CXX=$(BUILD_CXX) ; \
 	  unset SDKROOT ; \
 	  unset UNIVERSAL_SDK_PATH ; \
-	  configure_opts= ; \
-	  if test "$(ENABLE_LIBCPP)" -ne 0 ; then \
-	    configure_opts="$$configure_opts --enable-libcpp"; \
-	  fi; \
 	  $(PROJ_SRC_DIR)/configure --build=$(BUILD_TRIPLE) \
 		--host=$(BUILD_TRIPLE) --target=$(BUILD_TRIPLE) \
-	        --disable-polly $$configure_opts; \
+	        --disable-polly ; \
 	  cd .. ; \
 	fi; \
 	($(MAKE) -C BuildTools \
@@ -135,7 +126,6 @@ cross-compile-build-tools:
 	  SDKROOT= \
 	  TARGET_NATIVE_ARCH="$(TARGET_NATIVE_ARCH)" \
 	  TARGETS_TO_BUILD="$(TARGETS_TO_BUILD)" \
-	  TARGET_LIBS="$(LIBS)" \
 	  ENABLE_OPTIMIZED=$(ENABLE_OPTIMIZED) \
 	  ENABLE_PROFILING=$(ENABLE_PROFILING) \
 	  ENABLE_COVERAGE=$(ENABLE_COVERAGE) \
@@ -258,26 +248,13 @@ build-for-llvm-top:
 SVN = svn
 SVN-UPDATE-OPTIONS =
 AWK = awk
-
-# Multiline variable defining a recursive function for finding svn repos rooted at
-# a given path. svnup() requires one argument: the root to search from.
-define SUB_SVN_DIRS
-svnup() {
-  dirs=`svn status --no-ignore $$1 | awk '/^(I|\?) / {print $$2}' | LC_ALL=C xargs svn info 2>/dev/null | awk '/^Path:\ / {print $$2}'`;
-  if [ "$$dirs" = "" ]; then
-    return;
-  fi;
-  for f in $$dirs; do
-	  echo $$f;
-    svnup $$f;
-  done
-}
-endef
-export SUB_SVN_DIRS
+SUB-SVN-DIRS = $(AWK) '/I|\?      / {print $$2}'   \
+		| LC_ALL=C xargs $(SVN) info 2>/dev/null \
+		| $(AWK) '/^Path:\ / {print $$2}'
 
 update:
 	$(SVN) $(SVN-UPDATE-OPTIONS) update $(LLVM_SRC_ROOT)
-	@eval $$SUB_SVN_DIRS; $(SVN) status --no-ignore $(LLVM_SRC_ROOT) | svnup $(LLVM_SRC_ROOT) | xargs $(SVN) $(SVN-UPDATE-OPTIONS) update
+	@ $(SVN) status --no-ignore $(LLVM_SRC_ROOT) | $(SUB-SVN-DIRS) | xargs $(SVN) $(SVN-UPDATE-OPTIONS) update
 
 happiness: update all check-all
 

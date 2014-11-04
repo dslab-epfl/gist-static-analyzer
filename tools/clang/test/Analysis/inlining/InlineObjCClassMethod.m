@@ -1,6 +1,4 @@
-// RUN: %clang_cc1 -analyze -analyzer-checker=core,debug.ExprInspection -analyzer-config ipa=dynamic-bifurcate -verify %s
-
-void clang_analyzer_checkInlined(int);
+// RUN: %clang_cc1 -analyze -analyzer-checker=core -analyzer-ipa=dynamic-bifurcate -verify %s
 
 // Test inlining of ObjC class methods.
 
@@ -210,27 +208,4 @@ int foo2() {
 int checkSelfUsedInparentClassMethod() {
     return 5/[SelfUsedInParentChild fooA];
 }
-
-
-@interface Rdar15037033 : NSObject
-@end
-
-void rdar15037033() {
-  [Rdar15037033 forwardDeclaredMethod]; // expected-warning {{class method '+forwardDeclaredMethod' not found}}
-  [Rdar15037033 forwardDeclaredVariadicMethod:1, 2, 3, 0]; // expected-warning {{class method '+forwardDeclaredVariadicMethod:' not found}}
-}
-
-@implementation Rdar15037033
-
-+ (void)forwardDeclaredMethod {
-  clang_analyzer_checkInlined(1); // expected-warning{{TRUE}}
-}
-
-+ (void)forwardDeclaredVariadicMethod:(int)x, ... {
-  clang_analyzer_checkInlined(0); // no-warning
-}
-
-@end
-
-
 

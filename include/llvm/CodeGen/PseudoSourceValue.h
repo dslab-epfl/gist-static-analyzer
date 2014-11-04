@@ -14,36 +14,25 @@
 #ifndef LLVM_CODEGEN_PSEUDOSOURCEVALUE_H
 #define LLVM_CODEGEN_PSEUDOSOURCEVALUE_H
 
-#include "llvm/IR/Value.h"
+#include "llvm/Value.h"
 
 namespace llvm {
   class MachineFrameInfo;
-  class MachineMemOperand;
   class raw_ostream;
-
-  raw_ostream &operator<<(raw_ostream &OS, const MachineMemOperand &MMO);
 
   /// PseudoSourceValue - Special value supplied for machine level alias
   /// analysis. It indicates that a memory access references the functions
   /// stack frame (e.g., a spill slot), below the stack frame (e.g., argument
   /// space), or constant pool.
-  class PseudoSourceValue {
+  class PseudoSourceValue : public Value {
   private:
-    friend raw_ostream &llvm::operator<<(raw_ostream &OS,
-                                         const MachineMemOperand &MMO);
-
     /// printCustom - Implement printing for PseudoSourceValue. This is called
     /// from Value::print or Value's operator<<.
     ///
     virtual void printCustom(raw_ostream &O) const;
 
   public:
-    /// isFixed - Whether this is a FixedStackPseudoSourceValue.
-    bool isFixed;
-
-    explicit PseudoSourceValue(bool isFixed = false);
-
-    virtual ~PseudoSourceValue();
+    explicit PseudoSourceValue(enum ValueTy Subclass = PseudoSourceValueVal);
 
     /// isConstant - Test whether the memory pointed to by this
     /// PseudoSourceValue has a constant value.
@@ -55,8 +44,16 @@ namespace llvm {
     virtual bool isAliased(const MachineFrameInfo *) const;
 
     /// mayAlias - Return true if the memory pointed to by this
-    /// PseudoSourceValue can ever alias an LLVM IR Value.
+    /// PseudoSourceValue can ever alias a LLVM IR Value.
     virtual bool mayAlias(const MachineFrameInfo *) const;
+
+    /// classof - Methods for support type inquiry through isa, cast, and
+    /// dyn_cast:
+    ///
+    static inline bool classof(const Value *V) {
+      return V->getValueID() == PseudoSourceValueVal ||
+             V->getValueID() == FixedStackPseudoSourceValueVal;
+    }
 
     /// A pseudo source value referencing a fixed stack frame entry,
     /// e.g., a spill slot.
@@ -87,22 +84,22 @@ namespace llvm {
     const int FI;
   public:
     explicit FixedStackPseudoSourceValue(int fi) :
-        PseudoSourceValue(true), FI(fi) {}
+        PseudoSourceValue(FixedStackPseudoSourceValueVal), FI(fi) {}
 
     /// classof - Methods for support type inquiry through isa, cast, and
     /// dyn_cast:
     ///
-    static inline bool classof(const PseudoSourceValue *V) {
-      return V->isFixed == true;
+    static inline bool classof(const Value *V) {
+      return V->getValueID() == FixedStackPseudoSourceValueVal;
     }
 
-    bool isConstant(const MachineFrameInfo *MFI) const override;
+    virtual bool isConstant(const MachineFrameInfo *MFI) const;
 
-    bool isAliased(const MachineFrameInfo *MFI) const override;
+    virtual bool isAliased(const MachineFrameInfo *MFI) const;
 
-    bool mayAlias(const MachineFrameInfo *) const override;
+    virtual bool mayAlias(const MachineFrameInfo *) const;
 
-    void printCustom(raw_ostream &OS) const override;
+    virtual void printCustom(raw_ostream &OS) const;
 
     int getFrameIndex() const { return FI; }
   };

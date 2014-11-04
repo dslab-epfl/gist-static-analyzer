@@ -9,11 +9,11 @@ entry:
           ret i32 %s
 }
 
-; CHECK-LABEL: f:
+; CHECK: f:
 ; CHECK: leal	v@TLSGD
 ; CHECK: __tls_get_addr
 
-@alias = internal alias i32* @v
+@alias = alias internal i32* @v
 define i32 @f_alias() nounwind {
 entry:
           %t = load i32* @v
@@ -21,6 +21,6 @@ entry:
           ret i32 %s
 }
 
-; CHECK-LABEL: f_alias:
+; CHECK: f_alias:
 ; CHECK: leal	v@TLSGD
 ; CHECK: __tls_get_addr

@@ -11,10 +11,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_AST_STMTITERATOR_H
-#define LLVM_CLANG_AST_STMTITERATOR_H
+#ifndef LLVM_CLANG_AST_STMT_ITR_H
+#define LLVM_CLANG_AST_STMT_ITR_H
 
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/DataTypes.h"
 #include <cassert>
 #include <cstddef>
@@ -29,14 +28,18 @@ class VariableArrayType;
 
 class StmtIteratorBase {
 protected:
-  enum { StmtMode = 0x0, SizeOfTypeVAMode = 0x1, DeclGroupMode = 0x2,
+  enum { DeclMode = 0x1, SizeOfTypeVAMode = 0x2, DeclGroupMode = 0x3,
          Flags = 0x3 };
   
   Stmt **stmt;
-  Decl **DGI;
+  union { Decl *decl; Decl **DGI; };
   uintptr_t RawVAPtr;
   Decl **DGE;
   
+  bool inDecl() const {
+    return (RawVAPtr & Flags) == DeclMode;
+  }
+
   bool inDeclGroup() const {
     return (RawVAPtr & Flags) == DeclGroupMode;
   }
@@ -46,7 +49,7 @@ protected:
   }
 
   bool inStmt() const {
-    return (RawVAPtr & Flags) == StmtMode;
+    return (RawVAPtr & Flags) == 0;
   }
 
   const VariableArrayType *getVAPtr() const {
@@ -54,7 +57,7 @@ protected:
   }
 
   void setVAPtr(const VariableArrayType *P) {
-    assert (inDeclGroup() || inSizeOfTypeVA());
+    assert (inDecl() || inDeclGroup() || inSizeOfTypeVA());
     RawVAPtr = reinterpret_cast<uintptr_t>(P) | (RawVAPtr & Flags);
   }
 
@@ -64,10 +67,11 @@ protected:
 
   Stmt*& GetDeclExpr() const;
 
-  StmtIteratorBase(Stmt **s) : stmt(s), DGI(nullptr), RawVAPtr(0) {}
+  StmtIteratorBase(Stmt **s) : stmt(s), decl(0), RawVAPtr(0) {}
+  StmtIteratorBase(Decl *d, Stmt **s);
   StmtIteratorBase(const VariableArrayType *t);
   StmtIteratorBase(Decl **dgi, Decl **dge);
-  StmtIteratorBase() : stmt(nullptr), DGI(nullptr), RawVAPtr(0) {}
+  StmtIteratorBase() : stmt(0), decl(0), RawVAPtr(0) {}
 };
 
 
@@ -82,6 +86,7 @@ public:
   StmtIteratorImpl() {}
   StmtIteratorImpl(Stmt **s) : StmtIteratorBase(s) {}
   StmtIteratorImpl(Decl **dgi, Decl **dge) : StmtIteratorBase(dgi, dge) {}
+  StmtIteratorImpl(Decl *d, Stmt **s) : StmtIteratorBase(d, s) {}
   StmtIteratorImpl(const VariableArrayType *t) : StmtIteratorBase(t) {}
 
   DERIVED& operator++() {
@@ -102,15 +107,15 @@ public:
   }
 
   bool operator==(const DERIVED& RHS) const {
-    return stmt == RHS.stmt && DGI == RHS.DGI && RawVAPtr == RHS.RawVAPtr;
+    return stmt == RHS.stmt && decl == RHS.decl && RawVAPtr == RHS.RawVAPtr;
   }
 
   bool operator!=(const DERIVED& RHS) const {
-    return stmt != RHS.stmt || DGI != RHS.DGI || RawVAPtr != RHS.RawVAPtr;
+    return stmt != RHS.stmt || decl != RHS.decl || RawVAPtr != RHS.RawVAPtr;
   }
 
   REFERENCE operator*() const {
-    return inStmt() ? *stmt : GetDeclExpr();
+    return (REFERENCE) (inStmt() ? *stmt : GetDeclExpr());
   }
 
   REFERENCE operator->() const { return operator*(); }
@@ -126,6 +131,9 @@ struct StmtIterator : public StmtIteratorImpl<StmtIterator,Stmt*&> {
 
   StmtIterator(const VariableArrayType *t)
     : StmtIteratorImpl<StmtIterator,Stmt*&>(t) {}
+
+  StmtIterator(Decl* D, Stmt **s = 0)
+    : StmtIteratorImpl<StmtIterator,Stmt*&>(D, s) {}
 };
 
 struct ConstStmtIterator : public StmtIteratorImpl<ConstStmtIterator,
@@ -148,7 +156,7 @@ struct StmtRange : std::pair<StmtIterator,StmtIterator> {
     : std::pair<StmtIterator,StmtIterator>(begin, end) {}
 
   bool empty() const { return first == second; }
-  LLVM_EXPLICIT operator bool() const { return !empty(); }
+  operator bool() const { return !empty(); }
 
   Stmt *operator->() const { return first.operator->(); }
   Stmt *&operator*() const { return first.operator*(); }
@@ -191,7 +199,7 @@ struct ConstStmtRange : std::pair<ConstStmtIterator,ConstStmtIterator> {
     : std::pair<ConstStmtIterator,ConstStmtIterator>(begin, end) {}
 
   bool empty() const { return first == second; }
-  LLVM_EXPLICIT operator bool() const { return !empty(); }
+  operator bool() const { return !empty(); }
 
   const Stmt *operator->() const { return first.operator->(); }
   const Stmt *operator*() const { return first.operator*(); }

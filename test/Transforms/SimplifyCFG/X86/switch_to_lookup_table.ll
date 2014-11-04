@@ -52,7 +52,7 @@ return:
   %retval.0 = phi i32 [ 15, %sw.default ], [ 1, %sw.bb6 ], [ 62, %sw.bb5 ], [ 27, %sw.bb4 ], [ -1, %sw.bb3 ], [ 0, %sw.bb2 ], [ 123, %sw.bb1 ], [ 55, %entry ]
   ret i32 %retval.0
 
-; CHECK-LABEL: @f(
+; CHECK: @f
 ; CHECK: entry:
 ; CHECK-NEXT: %switch.tableidx = sub i32 %c, 42
 ; CHECK-NEXT: %0 = icmp ult i32 %switch.tableidx, 7
@@ -88,7 +88,7 @@ sw.epilog:
   call void @dummy(i8 signext %a.0, float %b.0)
   ret void
 
-; CHECK-LABEL: @h(
+; CHECK: @h
 ; CHECK: entry:
 ; CHECK-NEXT: %switch.tableidx = sub i32 %x, 0
 ; CHECK-NEXT: %0 = icmp ult i32 %switch.tableidx, 4
@@ -138,7 +138,7 @@ return:
                       [ getelementptr inbounds ([4 x i8]* @.str, i64 0, i64 0), %entry ]
   ret i8* %retval.0
 
-; CHECK-LABEL: @foostring(
+; CHECK: @foostring
 ; CHECK: entry:
 ; CHECK-NEXT: %switch.tableidx = sub i32 %x, 0
 ; CHECK-NEXT: %0 = icmp ult i32 %switch.tableidx, 4
@@ -171,7 +171,7 @@ sw.epilog:
   %b.0 = phi i32 [ 10, %sw.default ], [ 5, %sw.bb3 ], [ 1, %sw.bb2 ], [ 4, %sw.bb1 ], [ 3, %entry ]
   ret i32 %a.0
 
-; CHECK-LABEL: @earlyreturncrash(
+; CHECK: @earlyreturncrash
 ; CHECK: switch.lookup:
 ; CHECK-NEXT: %switch.gep = getelementptr inbounds [4 x i32]* @switch.table3, i32 0, i32 %switch.tableidx
 ; CHECK-NEXT: %switch.load = load i32* %switch.gep
@@ -221,7 +221,7 @@ lor.end:
   %lor.ext = zext i1 %0 to i32
   ret i32 %lor.ext
 
-; CHECK-LABEL: @crud(
+; CHECK: @crud
 ; CHECK: entry:
 ; CHECK-NEXT: %cmp = icmp ult i8 %c, 33
 ; CHECK-NEXT: br i1 %cmp, label %lor.end, label %switch.early.test
@@ -263,7 +263,7 @@ if.else: br label %if.end
 if.end:
   %dirent_type.0 = phi i32 [ 3, %sw.default ], [ 6, %sw.bb3 ], [ 5, %sw.bb2 ], [ 0, %sw.bb1 ], [ 3, %sw.bb ], [ 0, %if.else ]
   ret i32 %dirent_type.0
-; CHECK-LABEL: define i32 @overflow(
+; CHECK: define i32 @overflow
 ; CHECK: switch
 ; CHECK: phi
 }
@@ -284,7 +284,7 @@ bb2: br label %bb3
 bb3:
   %tmp4 = phi i1 [ undef, %bb ], [ false, %bb2 ], [ true, %bb1 ]
   ret i1 %tmp4
-; CHECK-LABEL: define i1 @undef(
+; CHECK: define i1 @undef
 ; CHECK: %switch.cast = trunc i32 %switch.tableidx to i9
 ; CHECK: %switch.downshift = lshr i9 3, %switch.shiftamt
 }
@@ -711,7 +711,7 @@ return:
   ret i32 %retval.0
 }
 
-define i32 @cprop(i32 %x, i32 %y) {
+define i32 @cprop(i32 %x) {
 entry:
   switch i32 %x, label %sw.default [
     i32 1, label %return
@@ -727,8 +727,7 @@ sw.bb1: br label %return
 
 sw.bb2:
   %and = and i32 %x, 1
-  %and.ptr = inttoptr i32 %and to i8*
-  %tobool = icmp ne i8* %and.ptr, null
+  %tobool = icmp ne i32 %and, 0
   %cond = select i1 %tobool, i32 -123, i32 456
   %sub = sub nsw i32 %x, %cond
   br label %return
@@ -736,18 +735,16 @@ sw.bb2:
 sw.bb3:
   %trunc = trunc i32 %x to i8
   %sext = sext i8 %trunc to i32
-  %select.i = icmp sgt i32 %sext, 0
-  %select = select i1 %select.i, i32 %sext, i32 %y
   br label %return
 
 sw.default:
   br label %return
 
 return:
-  %retval.0 = phi i32 [ 123, %sw.default ], [ %select, %sw.bb3 ], [ %sub, %sw.bb2 ], [ 42, %sw.bb1 ], [ 5, %entry ]
+  %retval.0 = phi i32 [ 123, %sw.default ], [ %sext, %sw.bb3 ], [ %sub, %sw.bb2 ], [ 42, %sw.bb1 ], [ 5, %entry ]
   ret i32 %retval.0
 
-; CHECK-LABEL: @cprop(
+; CHECK: @cprop
 ; CHECK: switch.lookup:
 ; CHECK: %switch.gep = getelementptr inbounds [7 x i32]* @switch.table5, i32 0, i32 %switch.tableidx
 }
@@ -776,204 +773,7 @@ return:
   %retval.0 = phi i32 [ 1, %sw.bb3 ], [ -1, %sw.bb2 ], [ 0, %sw.bb ]
   ret i32 %retval.0
 
-; CHECK-LABEL: @unreachable(
+; CHECK: @unreachable
 ; CHECK: switch.lookup:
 ; CHECK: getelementptr inbounds [5 x i32]* @switch.table6, i32 0, i32 %switch.tableidx
-}
-
-; Don't create a table with illegal type
-; rdar://12779436
-define i96 @illegaltype(i32 %c) {
-entry:
-  switch i32 %c, label %sw.default [
-    i32 42, label %return
-    i32 43, label %sw.bb1
-    i32 44, label %sw.bb2
-    i32 45, label %sw.bb3
-    i32 46, label %sw.bb4
-  ]
-
-sw.bb1: br label %return
-sw.bb2: br label %return
-sw.bb3: br label %return
-sw.bb4: br label %return
-sw.default: br label %return
-return:
-  %retval.0 = phi i96 [ 15, %sw.default ], [ 27, %sw.bb4 ], [ -1, %sw.bb3 ], [ 0, %sw.bb2 ], [ 123, %sw.bb1 ], [ 55, %entry ]
-  ret i96 %retval.0
-
-; CHECK-LABEL: @illegaltype(
-; CHECK-NOT: @switch.table
-; CHECK: switch i32 %c
-}
-
-; If we can build a lookup table without any holes, we don't need a default result.
-declare void @exit(i32)
-define i32 @nodefaultnoholes(i32 %c) {
-entry:
-  switch i32 %c, label %sw.default [
-    i32 0, label %return
-    i32 1, label %sw.bb1
-    i32 2, label %sw.bb2
-    i32 3, label %sw.bb3
-  ]
-
-sw.bb1: br label %return
-sw.bb2: br label %return
-sw.bb3: br label %return
-sw.default: call void @exit(i32 1)
-            unreachable
-return:
-  %x = phi i32 [ -1, %sw.bb3 ], [ 0, %sw.bb2 ], [ 123, %sw.bb1 ], [ 55, %entry ]
-  ret i32 %x
-
-; CHECK-LABEL: @nodefaultnoholes(
-; CHECK: @switch.table
-; CHECK-NOT: switch i32
-}
-
-; This lookup table will have holes, so we need to test for the holes.
-define i32 @nodefaultwithholes(i32 %c) {
-entry:
-  switch i32 %c, label %sw.default [
-    i32 0, label %return
-    i32 1, label %sw.bb1
-    i32 2, label %sw.bb2
-    i32 3, label %sw.bb3
-    i32 5, label %sw.bb3
-  ]
-
-sw.bb1: br label %return
-sw.bb2: br label %return
-sw.bb3: br label %return
-sw.default: call void @exit(i32 1)
-            unreachable
-return:
-  %x = phi i32 [ -1, %sw.bb3 ], [ 0, %sw.bb2 ], [ 123, %sw.bb1 ], [ 55, %entry ]
-  ret i32 %x
-
-; CHECK-LABEL: @nodefaultwithholes(
-; CHECK: entry:
-; CHECK: br i1 %{{.*}}, label %switch.hole_check, label %sw.default
-; CHECK: switch.hole_check:
-; CHECK-NEXT: %switch.maskindex = trunc i32 %switch.tableidx to i6
-; CHECK-NEXT: %switch.shifted = lshr i6 -17, %switch.maskindex
-; The mask is binary 101111.
-; CHECK-NEXT: %switch.lobit = trunc i6 %switch.shifted to i1
-; CHECK-NEXT: br i1 %switch.lobit, label %switch.lookup, label %sw.default
-; CHECK-NOT: switch i32
-}
-
-; We don't build lookup tables with holes for switches with less than four cases.
-define i32 @threecasesholes(i32 %c) {
-entry:
-  switch i32 %c, label %sw.default [
-    i32 0, label %return
-    i32 1, label %sw.bb1
-    i32 3, label %sw.bb2
-  ]
-sw.bb1: br label %return
-sw.bb2: br label %return
-sw.default: br label %return
-return:
-  %x = phi i32 [ %c, %sw.default ], [ 5, %sw.bb2 ], [ 7, %sw.bb1 ], [ 9, %entry ]
-  ret i32 %x
-; CHECK-LABEL: @threecasesholes(
-; CHECK: switch i32
-; CHECK-NOT: @switch.table
-}
-
-; We build lookup tables for switches with three or more cases.
-define i32 @threecases(i32 %c) {
-entry:
-  switch i32 %c, label %sw.default [
-    i32 0, label %return
-    i32 1, label %sw.bb1
-    i32 2, label %sw.bb2
-  ]
-sw.bb1: br label %return
-sw.bb2: br label %return
-sw.default: br label %return
-return:
-  %x = phi i32 [ 3, %sw.default ], [ 5, %sw.bb2 ], [ 7, %sw.bb1 ], [ 9, %entry ]
-  ret i32 %x
-; CHECK-LABEL: @threecases(
-; CHECK-NOT: switch i32
-; CHECK: @switch.table
-}
-
-; We don't build tables for switches with two cases.
-define i32 @twocases(i32 %c) {
-entry:
-  switch i32 %c, label %sw.default [
-    i32 0, label %return
-    i32 1, label %sw.bb1
-  ]
-sw.bb1: br label %return
-sw.default: br label %return
-return:
-  %x = phi i32 [ 3, %sw.default ], [ 7, %sw.bb1 ], [ 9, %entry ]
-  ret i32 %x
-; CHECK-LABEL: @twocases(
-; CHECK-NOT: switch i32
-; CHECK-NOT: @switch.table
-; CHECK: %switch.selectcmp
-; CHECK-NEXT: %switch.select
-; CHECK-NEXT: %switch.selectcmp1
-; CHECK-NEXT: %switch.select2
-}
-
-; Don't build tables for switches with TLS variables.
-@tls_a = thread_local global i32 0
-@tls_b = thread_local global i32 0
-@tls_c = thread_local global i32 0
-@tls_d = thread_local global i32 0
-define i32* @tls(i32 %x) {
-entry:
-  switch i32 %x, label %sw.default [
-    i32 0, label %return
-    i32 1, label %sw.bb1
-    i32 2, label %sw.bb2
-  ]
-sw.bb1:
-  br label %return
-sw.bb2:
-  br label %return
-sw.default:
-  br label %return
-return:
-  %retval.0 = phi i32* [ @tls_d, %sw.default ], [ @tls_c, %sw.bb2 ], [ @tls_b, %sw.bb1 ], [ @tls_a, %entry ]
-  ret i32* %retval.0
-; CHECK-LABEL: @tls(
-; CHECK: switch i32
-; CHECK-NOT: @switch.table
-}
-
-; Don't build tables for switches with dllimport variables.
-@dllimport_a = external dllimport global [3x i32]
-@dllimport_b = external dllimport global [3x i32]
-@dllimport_c = external dllimport global [3x i32]
-@dllimport_d = external dllimport global [3x i32]
-define i32* @dllimport(i32 %x) {
-entry:
-  switch i32 %x, label %sw.default [
-    i32 0, label %return
-    i32 1, label %sw.bb1
-    i32 2, label %sw.bb2
-  ]
-sw.bb1:
-  br label %return
-sw.bb2:
-  br label %return
-sw.default:
-  br label %return
-return:
-  %retval.0 = phi i32* [ getelementptr inbounds ([3 x i32]* @dllimport_d, i32 0, i32 0), %sw.default ],
-                       [ getelementptr inbounds ([3 x i32]* @dllimport_c, i32 0, i32 0), %sw.bb2 ],
-                       [ getelementptr inbounds ([3 x i32]* @dllimport_b, i32 0, i32 0), %sw.bb1 ],
-                       [ getelementptr inbounds ([3 x i32]* @dllimport_a, i32 0, i32 0), %entry ]
-  ret i32* %retval.0
-; CHECK-LABEL: @dllimport(
-; CHECK: switch i32
-; CHECK-NOT: @switch.table
 }

@@ -1,3 +1,5 @@
+.. _developer_policy:
+
 =====================
 LLVM Developer Policy
 =====================
@@ -24,8 +26,8 @@ This policy is also designed to accomplish the following objectives:
 
 #. Keep the top of Subversion trees as stable as possible.
 
-#. Establish awareness of the project's :ref:`copyright, license, and patent
-   policies <copyright-license-patents>` with contributors to the project.
+#. Establish awareness of the project's `copyright, license, and patent
+   policies`_ with contributors to the project.
 
 This policy is aimed at frequent contributors to LLVM. People interested in
 contributing one-off patches can do so in an informal way by sending them to the
@@ -68,14 +70,11 @@ of bugs and enhancements occurring in LLVM.  We really appreciate people who are
 proactive at catching incoming bugs in their components and dealing with them
 promptly.
 
-Please be aware that all public LLVM mailing lists are public and archived, and
-that notices of confidentiality or non-disclosure cannot be respected.
-
 .. _patch:
 .. _one-off patches:
 
-Making and Submitting a Patch
------------------------------
+Making a Patch
+--------------
 
 When making a patch for review, the goal is to make it as easy for the reviewer
 to read it as possible.  As such, we recommend that you:
@@ -97,12 +96,6 @@ to read it as possible.  As such, we recommend that you:
    script, please separate out those changes into a separate patch from the rest
    of your changes.
 
-Once your patch is ready, submit it by emailing it to the appropriate project's
-commit mailing list (or commit it directly if applicable). Alternatively, some
-patches get sent to the project's development list or component of the LLVM bug
-tracker, but the commit list is the primary place for reviews and should
-generally be preferred.
-
 When sending a patch to a mailing list, it is a good idea to send it as an
 *attachment* to the message, not embedded into the text of the message.  This
 ensures that your mailer will not mangle the patch when it sends it (e.g. by
@@ -116,10 +109,6 @@ rather than ``Content-Disposition: attachment``. Apple Mail gamely displays such
 a file inline, making it difficult to work with for reviewers using that
 program.
 
-When submitting patches, please do not add confidentiality or non-disclosure
-notices to the patches themselves.  These notices conflict with the `LLVM
-License`_ and may result in your contribution being excluded.
-
 .. _code review:
 
 Code Reviews
@@ -131,8 +120,7 @@ software. We generally follow these policies:
 #. All developers are required to have significant changes reviewed before they
    are committed to the repository.
 
-#. Code reviews are conducted by email on the relevant project's commit mailing
-   list, or alternatively on the project's development list or bug tracker.
+#. Code reviews are conducted by email, usually on the llvm-commits list.
 
 #. Code can be reviewed either before it is committed or after.  We expect major
    changes to be reviewed before being committed, but smaller changes (or
@@ -142,24 +130,7 @@ software. We generally follow these policies:
    all necessary review-related changes.
 
 #. Code review can be an iterative process, which continues until the patch is
-   ready to be committed. Specifically, once a patch is sent out for review, it
-   needs an explicit "looks good" before it is submitted. Do not assume silent
-   approval, or request active objections to the patch with a deadline.
-
-Sometimes code reviews will take longer than you would hope for, especially for
-larger features. Accepted ways to speed up review times for your patches are:
-
-* Review other people's patches. If you help out, everybody will be more
-  willing to do the same for you; goodwill is our currency.
-* Ping the patch. If it is urgent, provide reasons why it is important to you to
-  get this patch landed and ping it every couple of days. If it is
-  not urgent, the common courtesy ping rate is one week. Remember that you're
-  asking for valuable time from other professional developers.
-* Ask for help on IRC. Developers on IRC will be able to either help you
-  directly, or tell you who might be a good reviewer.
-* Split your patch into multiple smaller patches that build on each other. The
-  smaller your patch, the higher the probability that somebody will take a quick
-  look at it.
+   ready to be committed.
 
 Developers should participate in code reviews as both reviewers and
 reviewees. If someone is kind enough to review your code, you should return the
@@ -209,13 +180,16 @@ Developers are required to create test cases for any bugs fixed and any new
 features added.  Some tips for getting your testcase approved:
 
 * All feature and regression test cases are added to the ``llvm/test``
-  directory. The appropriate sub-directory should be selected (see the
-  :doc:`Testing Guide <TestingGuide>` for details).
+  directory. The appropriate sub-directory should be selected (see the `Testing
+  Guide <TestingGuide.html>`_ for details).
 
-* Test cases should be written in :doc:`LLVM assembly language <LangRef>`.
+* Test cases should be written in `LLVM assembly language <LangRef.html>`_
+  unless the feature or regression being tested requires another language
+  (e.g. the bug being fixed or feature being implemented is in the llvm-gcc C++
+  front-end, in which case it must be written in C++).
 
 * Test cases, especially for regressions, should be reduced as much as possible,
-  by :doc:`bugpoint <Bugpoint>` or manually. It is unacceptable to place an
+  by `bugpoint <Bugpoint.html>`_ or manually. It is unacceptable to place an
   entire failing program into ``llvm/test`` as this creates a *time-to-test*
   burden on all developers. Please keep them short.
 
@@ -288,7 +262,7 @@ quality patches.  If you would like commit access, please send an email to
    from, e.g. "J. Random Hacker <hacker@yoyodyne.com>".
 
 #. A "password hash" of the password you want to use, e.g. "``2ACR96qjUqsyM``".
-   Note that you don't ever tell us what your password is; you just give it to
+   Note that you don't ever tell us what your password is, you just give it to
    us in an encrypted form.  To get this, run "``htpasswd``" (a utility that
    comes with apache) in crypt mode (often enabled with "``-d``"), or find a web
    page that will do it for you.
@@ -297,17 +271,17 @@ Once you've been granted commit access, you should be able to check out an LLVM
 tree with an SVN URL of "https://username@llvm.org/..." instead of the normal
 anonymous URL of "http://llvm.org/...".  The first time you commit you'll have
 to type in your password.  Note that you may get a warning from SVN about an
-untrusted key; you can ignore this.  To verify that your commit access works,
+untrusted key, you can ignore this.  To verify that your commit access works,
 please do a test commit (e.g. change a comment or add a blank line).  Your first
 commit to a repository may require the autogenerated email to be approved by a
-mailing list.  This is normal and will be done when the mailing list owner has
+mailing list.  This is normal, and will be done when the mailing list owner has
 time.
 
 If you have recently been granted commit access, these policies apply:
 
 #. You are granted *commit-after-approval* to all parts of LLVM.  To get
    approval, submit a `patch`_ to `llvm-commits
-   <http://lists.cs.uiuc.edu/mailman/listinfo/llvm-commits>`_. When approved,
+   <http://lists.cs.uiuc.edu/mailman/listinfo/llvm-commits>`_. When approved
    you may commit it yourself.
 
 #. You are allowed to commit patches without approval which you think are
@@ -319,7 +293,7 @@ If you have recently been granted commit access, these policies apply:
 #. You are allowed to commit patches without approval to those portions of LLVM
    that you have contributed or maintain (i.e., have been assigned
    responsibility for), with the proviso that such commits must not break the
-   build.  This is a "trust but verify" policy, and commits of this nature are
+   build.  This is a "trust but verify" policy and commits of this nature are
    reviewed after they are committed.
 
 #. Multiple violations of these policies or a single egregious violation may
@@ -328,7 +302,7 @@ If you have recently been granted commit access, these policies apply:
 In any case, your changes are still subject to `code review`_ (either before or
 after they are committed, depending on the nature of the change).  You are
 encouraged to review other peoples' patches as well, but you aren't required
-to do so.
+to.
 
 .. _discuss the change/gather consensus:
 
@@ -336,7 +310,7 @@ Making a Major Change
 ---------------------
 
 When a developer begins a major new project with the aim of contributing it back
-to LLVM, they should inform the community with an email to the `llvmdev
+to LLVM, s/he should inform the community with an email to the `llvmdev
 <http://lists.cs.uiuc.edu/mailman/listinfo/llvmdev>`_ email list, to the extent
 possible. The reason for this is to:
 
@@ -417,49 +391,17 @@ to go about making the change.
 Attribution of Changes
 ----------------------
 
-When contributors submit a patch to an LLVM project, other developers with
-commit access may commit it for the author once appropriate (based on the
-progression of code review, etc.). When doing so, it is important to retain
-correct attribution of contributions to their contributors. However, we do not
-want the source code to be littered with random attributions "this code written
-by J. Random Hacker" (this is noisy and distracting). In practice, the revision
-control system keeps a perfect history of who changed what, and the CREDITS.txt
-file describes higher-level contributions. If you commit a patch for someone
-else, please say "patch contributed by J. Random Hacker!" in the commit
-message. Overall, please do not add contributor names to the source code.
+We believe in correct attribution of contributions to their contributors.
+However, we do not want the source code to be littered with random attributions
+"this code written by J. Random Hacker" (this is noisy and distracting).  In
+practice, the revision control system keeps a perfect history of who changed
+what, and the CREDITS.txt file describes higher-level contributions.  If you
+commit a patch for someone else, please say "patch contributed by J. Random
+Hacker!" in the commit message.
 
-Also, don't commit patches authored by others unless they have submitted the
-patch to the project or you have been authorized to submit them on their behalf
-(you work together and your company authorized you to contribute the patches,
-etc.). The author should first submit them to the relevant project's commit
-list, development list, or LLVM bug tracker component. If someone sends you
-a patch privately, encourage them to submit it to the appropriate list first.
+Overall, please do not add contributor names to the source code.
 
-
-IR Backwards Compatibility
---------------------------
-
-When the IR format has to be changed, keep in mind that we try to maintain some
-backwards compatibility. The rules are intended as a balance between convenience
-for llvm users and not imposing a big burden on llvm developers:
-
-* The textual format is not backwards compatible. We don't change it too often,
-  but there are no specific promises.
-
-* The bitcode format produced by a X.Y release will be readable by all following
-  X.Z releases and the (X+1).0 release.
-
-* Newer releases can ignore features from older releases, but they cannot
-  miscompile them. For example, if nsw is ever replaced with something else,
-  dropping it would be a valid way to upgrade the IR.
-
-* Debug metadata is special in that it is currently dropped during upgrades.
-
-* Non-debug metadata is defined to be safe to drop, so a valid way to upgrade
-  it is to drop it. That is not very user friendly and a bit more effort is
-  expected, but no promises are made.
-
-.. _copyright-license-patents:
+.. _copyright, license, and patent policies:
 
 Copyright, License, and Patents
 ===============================
@@ -537,12 +479,12 @@ to move code from (e.g.)  libc++ to the LLVM core without concern, but that code
 cannot be moved from the LLVM core to libc++ without the copyright owner's
 permission.
 
-Note that the LLVM Project does distribute dragonegg, **which is
-GPL.** This means that anything "linked" into dragonegg must itself be compatible
+Note that the LLVM Project does distribute llvm-gcc and dragonegg, **which are
+GPL.** This means that anything "linked" into llvm-gcc must itself be compatible
 with the GPL, and must be releasable under the terms of the GPL.  This implies
-that **any code linked into dragonegg and distributed to others may be subject to
+that **any code linked into llvm-gcc and distributed to others may be subject to
 the viral aspects of the GPL** (for example, a proprietary code generator linked
-into dragonegg must be made available under the GPL).  This is not a problem for
+into llvm-gcc must be made available under the GPL).  This is not a problem for
 code already distributed under a more liberal license (like the UIUC license),
 and GPL-containing subprojects are kept in separate SVN repositories whose
 LICENSE.txt files specifically indicate that they contain GPL code.

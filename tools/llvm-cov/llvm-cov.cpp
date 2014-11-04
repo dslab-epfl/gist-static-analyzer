@@ -1,4 +1,4 @@
-//===- llvm-cov.cpp - LLVM coverage tool ----------------------------------===//
+//===- tools/llvm-cov/llvm-cov.cpp - LLVM coverage tool -------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -11,63 +11,68 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/ADT/StringRef.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/Path.h"
-#include <string>
-
+#include "llvm/ADT/OwningPtr.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/GCOV.h"
+#include "llvm/Support/ManagedStatic.h"
+#include "llvm/Support/MemoryObject.h"
+#include "llvm/Support/PrettyStackTrace.h"
+#include "llvm/Support/Signals.h"
+#include "llvm/Support/system_error.h"
 using namespace llvm;
 
-/// \brief The main entry point for the 'show' subcommand.
-int show_main(int argc, const char **argv);
+static cl::opt<bool>
+DumpGCOV("dump", cl::init(false), cl::desc("dump gcov file"));
 
-/// \brief The main entry point for the 'report' subcommand.
-int report_main(int argc, const char **argv);
+static cl::opt<std::string>
+InputGCNO("gcno", cl::desc("<input gcno file>"), cl::init(""));
 
-/// \brief The main entry point for the 'convert-for-testing' subcommand.
-int convert_for_testing_main(int argc, const char **argv);
+static cl::opt<std::string>
+InputGCDA("gcda", cl::desc("<input gcda file>"), cl::init(""));
 
-/// \brief The main entry point for the gcov compatible coverage tool.
-int gcov_main(int argc, const char **argv);
 
-int main(int argc, const char **argv) {
-  // If argv[0] is or ends with 'gcov', always be gcov compatible
-  if (sys::path::stem(argv[0]).endswith_lower("gcov"))
-    return gcov_main(argc, argv);
+//===----------------------------------------------------------------------===//
+int main(int argc, char **argv) {
+  // Print a stack trace if we signal out.
+  sys::PrintStackTraceOnErrorSignal();
+  PrettyStackTraceProgram X(argc, argv);
+  llvm_shutdown_obj Y;  // Call llvm_shutdown() on exit.
 
-  // Check if we are invoking a specific tool command.
-  if (argc > 1) {
-    int (*func)(int, const char **) = nullptr;
+  cl::ParseCommandLineOptions(argc, argv, "llvm cov\n");
 
-    StringRef command = argv[1];
-    if (command.equals_lower("show"))
-      func = show_main;
-    else if (command.equals_lower("report"))
-      func = report_main;
-    else if (command.equals_lower("convert-for-testing"))
-      func = convert_for_testing_main;
-    else if (command.equals_lower("gcov"))
-      func = gcov_main;
+  GCOVFile GF;
+  if (InputGCNO.empty())
+    errs() << " " << argv[0] << ": No gcov input file!\n";
 
-    if (func) {
-      std::string Invocation = std::string(argv[0]) + " " + argv[1];
-      argv[1] = Invocation.c_str();
-      return func(argc - 1, argv + 1);
+  OwningPtr<MemoryBuffer> GCNO_Buff;
+  if (error_code ec = MemoryBuffer::getFileOrSTDIN(InputGCNO, GCNO_Buff)) {
+    errs() << InputGCNO << ": " << ec.message() << "\n";
+    return 1;
+  }
+  GCOVBuffer GCNO_GB(GCNO_Buff.take());
+  if (!GF.read(GCNO_GB)) {
+    errs() << "Invalid .gcno File!\n";
+    return 1;
+  }
+
+  if (!InputGCDA.empty()) {
+    OwningPtr<MemoryBuffer> GCDA_Buff;
+    if (error_code ec = MemoryBuffer::getFileOrSTDIN(InputGCDA, GCDA_Buff)) {
+      errs() << InputGCDA << ": " << ec.message() << "\n";
+      return 1;
+    }
+    GCOVBuffer GCDA_GB(GCDA_Buff.take());
+    if (!GF.read(GCDA_GB)) {
+      errs() << "Invalid .gcda File!\n";
+      return 1;
     }
   }
 
-  // Give a warning and fall back to gcov
-  errs().changeColor(raw_ostream::RED);
-  errs() << "warning:";
-  // Assume that argv[1] wasn't a command when it stats with a '-' or is a
-  // filename (i.e. contains a '.')
-  if (argc > 1 && !StringRef(argv[1]).startswith("-") &&
-      StringRef(argv[1]).find(".") == StringRef::npos)
-    errs() << " Unrecognized command '" << argv[1] << "'.";
-  errs() << " Using the gcov compatible mode "
-            "(this behaviour may be dropped in the future).";
-  errs().resetColor();
-  errs() << "\n";
 
-  return gcov_main(argc, argv);
+  if (DumpGCOV)
+    GF.dump();
+
+  FileInfo FI;
+  GF.collectLineCounts(FI);
+  return 0;
 }

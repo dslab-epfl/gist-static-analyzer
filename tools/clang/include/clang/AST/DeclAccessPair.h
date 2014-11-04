@@ -19,7 +19,6 @@
 #define LLVM_CLANG_AST_DECLACCESSPAIR_H
 
 #include "clang/Basic/Specifiers.h"
-#include "llvm/Support/DataTypes.h"
 
 namespace clang {
 
@@ -28,7 +27,7 @@ class NamedDecl;
 /// A POD class for pairing a NamedDecl* with an access specifier.
 /// Can be put into unions.
 class DeclAccessPair {
-  uintptr_t Ptr; // we'd use llvm::PointerUnion, but it isn't trivial
+  NamedDecl *Ptr; // we'd use llvm::PointerUnion, but it isn't trivial
 
   enum { Mask = 0x3 };
 
@@ -40,10 +39,10 @@ public:
   }
 
   NamedDecl *getDecl() const {
-    return reinterpret_cast<NamedDecl*>(~Mask & Ptr);
+    return (NamedDecl*) (~Mask & (uintptr_t) Ptr);
   }
   AccessSpecifier getAccess() const {
-    return AccessSpecifier(Mask & Ptr);
+    return AccessSpecifier(Mask & (uintptr_t) Ptr);
   }
 
   void setDecl(NamedDecl *D) {
@@ -53,7 +52,8 @@ public:
     set(getDecl(), AS);
   }
   void set(NamedDecl *D, AccessSpecifier AS) {
-    Ptr = uintptr_t(AS) | reinterpret_cast<uintptr_t>(D);
+    Ptr = reinterpret_cast<NamedDecl*>(uintptr_t(AS) |
+                                       reinterpret_cast<uintptr_t>(D));
   }
 
   operator NamedDecl*() const { return getDecl(); }

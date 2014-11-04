@@ -8,11 +8,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "RewriterTestContext.h"
-#include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/ASTConsumer.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclGroup.h"
 #include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/Tooling/Refactoring.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Basic/FileManager.h"
@@ -22,7 +23,6 @@
 #include "clang/Frontend/FrontendAction.h"
 #include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Rewrite/Core/Rewriter.h"
-#include "clang/Tooling/Refactoring.h"
 #include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/Path.h"
@@ -120,21 +120,6 @@ TEST_F(ReplacementTest, CanApplyReplacements) {
   EXPECT_EQ("line1\nreplaced\nother\nline4", Context.getRewrittenText(ID));
 }
 
-// FIXME: Remove this test case when Replacements is implemented as std::vector
-// instead of std::set. The other ReplacementTest tests will need to be updated
-// at that point as well.
-TEST_F(ReplacementTest, VectorCanApplyReplacements) {
-  FileID ID = Context.createInMemoryFile("input.cpp",
-                                         "line1\nline2\nline3\nline4");
-  std::vector<Replacement> Replaces;
-  Replaces.push_back(Replacement(Context.Sources, Context.getLocation(ID, 2, 1),
-                                 5, "replaced"));
-  Replaces.push_back(
-      Replacement(Context.Sources, Context.getLocation(ID, 3, 1), 5, "other"));
-  EXPECT_TRUE(applyAllReplacements(Replaces, Context.Rewrite));
-  EXPECT_EQ("line1\nreplaced\nother\nline4", Context.getRewrittenText(ID));
-}
-
 TEST_F(ReplacementTest, SkipsDuplicateReplacements) {
   FileID ID = Context.createInMemoryFile("input.cpp",
                                          "line1\nline2\nline3\nline4");
@@ -166,97 +151,46 @@ TEST_F(ReplacementTest, ApplyAllFailsIfOneApplyFails) {
   EXPECT_EQ("z", Context.getRewrittenText(IDz));
 }
 
-TEST(ShiftedCodePositionTest, FindsNewCodePosition) {
-  Replacements Replaces;
-  Replaces.insert(Replacement("", 0, 1, ""));
-  Replaces.insert(Replacement("", 4, 3, " "));
-  // Assume ' int   i;' is turned into 'int i;' and cursor is located at '|'.
-  EXPECT_EQ(0u, shiftedCodePosition(Replaces, 0)); // |int   i;
-  EXPECT_EQ(0u, shiftedCodePosition(Replaces, 1)); //  |nt   i;
-  EXPECT_EQ(1u, shiftedCodePosition(Replaces, 2)); //  i|t   i;
-  EXPECT_EQ(2u, shiftedCodePosition(Replaces, 3)); //  in|   i;
-  EXPECT_EQ(3u, shiftedCodePosition(Replaces, 4)); //  int|  i;
-  EXPECT_EQ(4u, shiftedCodePosition(Replaces, 5)); //  int | i;
-  EXPECT_EQ(4u, shiftedCodePosition(Replaces, 6)); //  int  |i;
-  EXPECT_EQ(4u, shiftedCodePosition(Replaces, 7)); //  int   |;
-  EXPECT_EQ(5u, shiftedCodePosition(Replaces, 8)); //  int   i|
-}
-
-// FIXME: Remove this test case when Replacements is implemented as std::vector
-// instead of std::set. The other ReplacementTest tests will need to be updated
-// at that point as well.
-TEST(ShiftedCodePositionTest, VectorFindsNewCodePositionWithInserts) {
-  std::vector<Replacement> Replaces;
-  Replaces.push_back(Replacement("", 0, 1, ""));
-  Replaces.push_back(Replacement("", 4, 3, " "));
-  // Assume ' int   i;' is turned into 'int i;' and cursor is located at '|'.
-  EXPECT_EQ(0u, shiftedCodePosition(Replaces, 0)); // |int   i;
-  EXPECT_EQ(0u, shiftedCodePosition(Replaces, 1)); //  |nt   i;
-  EXPECT_EQ(1u, shiftedCodePosition(Replaces, 2)); //  i|t   i;
-  EXPECT_EQ(2u, shiftedCodePosition(Replaces, 3)); //  in|   i;
-  EXPECT_EQ(3u, shiftedCodePosition(Replaces, 4)); //  int|  i;
-  EXPECT_EQ(4u, shiftedCodePosition(Replaces, 5)); //  int | i;
-  EXPECT_EQ(4u, shiftedCodePosition(Replaces, 6)); //  int  |i;
-  EXPECT_EQ(4u, shiftedCodePosition(Replaces, 7)); //  int   |;
-  EXPECT_EQ(5u, shiftedCodePosition(Replaces, 8)); //  int   i|
-}
-
-TEST(ShiftedCodePositionTest, FindsNewCodePositionWithInserts) {
-  Replacements Replaces;
-  Replaces.insert(Replacement("", 4, 0, "\"\n\""));
-  // Assume '"12345678"' is turned into '"1234"\n"5678"'.
-  EXPECT_EQ(4u, shiftedCodePosition(Replaces, 4)); // "123|5678"
-  EXPECT_EQ(8u, shiftedCodePosition(Replaces, 5)); // "1234|678"
-}
-
 class FlushRewrittenFilesTest : public ::testing::Test {
-public:
-   FlushRewrittenFilesTest() {}
+ public:
+  FlushRewrittenFilesTest() {
+    std::string ErrorInfo;
+    TemporaryDirectory = llvm::sys::Path::GetTemporaryDirectory(&ErrorInfo);
+    assert(ErrorInfo.empty());
+  }
 
   ~FlushRewrittenFilesTest() {
-    for (llvm::StringMap<std::string>::iterator I = TemporaryFiles.begin(),
-                                                E = TemporaryFiles.end();
-         I != E; ++I) {
-      llvm::StringRef Name = I->second;
-      std::error_code EC = llvm::sys::fs::remove(Name);
-      (void)EC;
-      assert(!EC);
-    }
+    std::string ErrorInfo;
+    TemporaryDirectory.eraseFromDisk(true, &ErrorInfo);
+    assert(ErrorInfo.empty());
   }
 
   FileID createFile(llvm::StringRef Name, llvm::StringRef Content) {
-    SmallString<1024> Path;
-    int FD;
-    std::error_code EC = llvm::sys::fs::createTemporaryFile(Name, "", FD, Path);
-    assert(!EC);
-    (void)EC;
-
-    llvm::raw_fd_ostream OutStream(FD, true);
+    llvm::SmallString<1024> Path(TemporaryDirectory.str());
+    llvm::sys::path::append(Path, Name);
+    std::string ErrorInfo;
+    llvm::raw_fd_ostream OutStream(Path.c_str(),
+                                   ErrorInfo, llvm::raw_fd_ostream::F_Binary);
+    assert(ErrorInfo.empty());
     OutStream << Content;
     OutStream.close();
     const FileEntry *File = Context.Files.getFile(Path);
-    assert(File != nullptr);
-
-    StringRef Found = TemporaryFiles.GetOrCreateValue(Name, Path.str()).second;
-    assert(Found == Path);
-    (void)Found;
+    assert(File != NULL);
     return Context.Sources.createFileID(File, SourceLocation(), SrcMgr::C_User);
   }
 
   std::string getFileContentFromDisk(llvm::StringRef Name) {
-    std::string Path = TemporaryFiles.lookup(Name);
-    assert(!Path.empty());
+    llvm::SmallString<1024> Path(TemporaryDirectory.str());
+    llvm::sys::path::append(Path, Name);
     // We need to read directly from the FileManager without relaying through
     // a FileEntry, as otherwise we'd read through an already opened file
     // descriptor, which might not see the changes made.
     // FIXME: Figure out whether there is a way to get the SourceManger to
     // reopen the file.
-    std::unique_ptr<const llvm::MemoryBuffer> FileBuffer(
-        Context.Files.getBufferForFile(Path, nullptr));
-    return FileBuffer->getBuffer();
+    return Context.Files.getBufferForFile(Path, NULL)->getBuffer();
   }
 
-  llvm::StringMap<std::string> TemporaryFiles;
+  llvm::sys::Path TemporaryDirectory;
   RewriterTestContext Context;
 };
 
@@ -299,12 +233,11 @@ private:
   public:
     TestAction(TestVisitor *Visitor) : Visitor(Visitor) {}
 
-    virtual std::unique_ptr<clang::ASTConsumer>
-    CreateASTConsumer(clang::CompilerInstance &compiler,
-                      llvm::StringRef dummy) {
+    virtual clang::ASTConsumer* CreateASTConsumer(
+        clang::CompilerInstance& compiler, llvm::StringRef dummy) {
       Visitor->SM = &compiler.getSourceManager();
       /// TestConsumer will be deleted by the framework calling us.
-      return llvm::make_unique<FindConsumer>(Visitor);
+      return new FindConsumer(Visitor);
     }
 
   private:
@@ -366,102 +299,6 @@ TEST(Replacement, TemplatedFunctionCall) {
   EXPECT_TRUE(CallToF.runOver(
         "template <typename T> void F(); void G() { F<int>(); }"));
   expectReplacementAt(CallToF.Replace, "input.cc", 43, 8);
-}
-
-TEST(Range, overlaps) {
-  EXPECT_TRUE(Range(10, 10).overlapsWith(Range(0, 11)));
-  EXPECT_TRUE(Range(0, 11).overlapsWith(Range(10, 10)));
-  EXPECT_FALSE(Range(10, 10).overlapsWith(Range(0, 10)));
-  EXPECT_FALSE(Range(0, 10).overlapsWith(Range(10, 10)));
-  EXPECT_TRUE(Range(0, 10).overlapsWith(Range(2, 6)));
-  EXPECT_TRUE(Range(2, 6).overlapsWith(Range(0, 10)));
-}
-
-TEST(Range, contains) {
-  EXPECT_TRUE(Range(0, 10).contains(Range(0, 10)));
-  EXPECT_TRUE(Range(0, 10).contains(Range(2, 6)));
-  EXPECT_FALSE(Range(2, 6).contains(Range(0, 10)));
-  EXPECT_FALSE(Range(0, 10).contains(Range(0, 11)));
-}
-
-TEST(DeduplicateTest, removesDuplicates) {
-  std::vector<Replacement> Input;
-  Input.push_back(Replacement("fileA", 50, 0, " foo "));
-  Input.push_back(Replacement("fileA", 10, 3, " bar "));
-  Input.push_back(Replacement("fileA", 10, 2, " bar ")); // Length differs
-  Input.push_back(Replacement("fileA", 9,  3, " bar ")); // Offset differs
-  Input.push_back(Replacement("fileA", 50, 0, " foo ")); // Duplicate
-  Input.push_back(Replacement("fileA", 51, 3, " bar "));
-  Input.push_back(Replacement("fileB", 51, 3, " bar ")); // Filename differs!
-  Input.push_back(Replacement("fileB", 60, 1, " bar "));
-  Input.push_back(Replacement("fileA", 60, 2, " bar "));
-  Input.push_back(Replacement("fileA", 51, 3, " moo ")); // Replacement text
-                                                         // differs!
-
-  std::vector<Replacement> Expected;
-  Expected.push_back(Replacement("fileA", 9,  3, " bar "));
-  Expected.push_back(Replacement("fileA", 10, 2, " bar "));
-  Expected.push_back(Replacement("fileA", 10, 3, " bar "));
-  Expected.push_back(Replacement("fileA", 50, 0, " foo "));
-  Expected.push_back(Replacement("fileA", 51, 3, " bar "));
-  Expected.push_back(Replacement("fileA", 51, 3, " moo "));
-  Expected.push_back(Replacement("fileB", 60, 1, " bar "));
-  Expected.push_back(Replacement("fileA", 60, 2, " bar "));
-
-  std::vector<Range> Conflicts; // Ignored for this test
-  deduplicate(Input, Conflicts);
-
-  EXPECT_EQ(3U, Conflicts.size());
-  EXPECT_EQ(Expected, Input);
-}
-
-TEST(DeduplicateTest, detectsConflicts) {
-  {
-    std::vector<Replacement> Input;
-    Input.push_back(Replacement("fileA", 0, 5, " foo "));
-    Input.push_back(Replacement("fileA", 0, 5, " foo ")); // Duplicate not a
-                                                          // conflict.
-    Input.push_back(Replacement("fileA", 2, 6, " bar "));
-    Input.push_back(Replacement("fileA", 7, 3, " moo "));
-
-    std::vector<Range> Conflicts;
-    deduplicate(Input, Conflicts);
-
-    // One duplicate is removed and the remaining three items form one
-    // conflicted range.
-    ASSERT_EQ(3u, Input.size());
-    ASSERT_EQ(1u, Conflicts.size());
-    ASSERT_EQ(0u, Conflicts.front().getOffset());
-    ASSERT_EQ(3u, Conflicts.front().getLength());
-  }
-  {
-    std::vector<Replacement> Input;
-
-    // Expected sorted order is shown. It is the sorted order to which the
-    // returned conflict info refers to.
-    Input.push_back(Replacement("fileA", 0,  5, " foo "));  // 0
-    Input.push_back(Replacement("fileA", 5,  5, " bar "));  // 1
-    Input.push_back(Replacement("fileA", 6,  0, " bar "));  // 3
-    Input.push_back(Replacement("fileA", 5,  5, " moo "));  // 2
-    Input.push_back(Replacement("fileA", 7,  2, " bar "));  // 4
-    Input.push_back(Replacement("fileA", 15, 5, " golf ")); // 5
-    Input.push_back(Replacement("fileA", 16, 5, " bag "));  // 6
-    Input.push_back(Replacement("fileA", 10, 3, " club ")); // 7
-
-    // #3 is special in that it is completely contained by another conflicting
-    // Replacement. #4 ensures #3 hasn't messed up the conflicting range size.
-
-    std::vector<Range> Conflicts;
-    deduplicate(Input, Conflicts);
-
-    // No duplicates
-    ASSERT_EQ(8u, Input.size());
-    ASSERT_EQ(2u, Conflicts.size());
-    ASSERT_EQ(1u, Conflicts[0].getOffset());
-    ASSERT_EQ(4u, Conflicts[0].getLength());
-    ASSERT_EQ(6u, Conflicts[1].getOffset());
-    ASSERT_EQ(2u, Conflicts[1].getLength());
-  }
 }
 
 } // end namespace tooling

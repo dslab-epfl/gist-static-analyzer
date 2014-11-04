@@ -26,52 +26,43 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Hexagon.h"
-#include "HexagonMachineFunctionInfo.h"
-#include "HexagonSubtarget.h"
+#define DEBUG_TYPE "xfer"
 #include "HexagonTargetMachine.h"
+#include "HexagonSubtarget.h"
+#include "HexagonMachineFunctionInfo.h"
+#include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/LatencyPriorityQueue.h"
 #include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
-#include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/ScheduleHazardRecognizer.h"
 #include "llvm/CodeGen/SchedulerRegistry.h"
-#include "llvm/Support/Compiler.h"
-#include "llvm/Support/Debug.h"
-#include "llvm/Support/MathExtras.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetRegisterInfo.h"
+#include "llvm/Support/Compiler.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/MathExtras.h"
 
 using namespace llvm;
-
-#define DEBUG_TYPE "xfer"
-
-namespace llvm {
-  void initializeHexagonSplitTFRCondSetsPass(PassRegistry&);
-}
-
 
 namespace {
 
 class HexagonSplitTFRCondSets : public MachineFunctionPass {
-    const HexagonTargetMachine &QTM;
+    HexagonTargetMachine& QTM;
     const HexagonSubtarget &QST;
 
  public:
     static char ID;
-    HexagonSplitTFRCondSets(const HexagonTargetMachine& TM) :
-      MachineFunctionPass(ID), QTM(TM), QST(*TM.getSubtargetImpl()) {
-      initializeHexagonSplitTFRCondSetsPass(*PassRegistry::getPassRegistry());
-    }
+    HexagonSplitTFRCondSets(HexagonTargetMachine& TM) :
+      MachineFunctionPass(ID), QTM(TM), QST(*TM.getSubtargetImpl()) {}
 
-    const char *getPassName() const override {
+    const char *getPassName() const {
       return "Hexagon Split TFRCondSets";
     }
-    bool runOnMachineFunction(MachineFunction &Fn) override;
+    bool runOnMachineFunction(MachineFunction &Fn);
 };
 
 
@@ -80,7 +71,7 @@ char HexagonSplitTFRCondSets::ID = 0;
 
 bool HexagonSplitTFRCondSets::runOnMachineFunction(MachineFunction &Fn) {
 
-  const TargetInstrInfo *TII = QTM.getSubtargetImpl()->getInstrInfo();
+  const TargetInstrInfo *TII = QTM.getInstrInfo();
 
   // Loop over all of the basic blocks.
   for (MachineFunction::iterator MBBb = Fn.begin(), MBBe = Fn.end();
@@ -219,19 +210,6 @@ bool HexagonSplitTFRCondSets::runOnMachineFunction(MachineFunction &Fn) {
 //                         Public Constructor Functions
 //===----------------------------------------------------------------------===//
 
-static void initializePassOnce(PassRegistry &Registry) {
-  const char *Name = "Hexagon Split TFRCondSets";
-  PassInfo *PI = new PassInfo(Name, "hexagon-split-tfr",
-                              &HexagonSplitTFRCondSets::ID, nullptr, false,
-                              false);
-  Registry.registerPass(*PI, true);
-}
-
-void llvm::initializeHexagonSplitTFRCondSetsPass(PassRegistry &Registry) {
-  CALL_ONCE_INITIALIZATION(initializePassOnce)
-}
-
-FunctionPass*
-llvm::createHexagonSplitTFRCondSets(const HexagonTargetMachine &TM) {
+FunctionPass *llvm::createHexagonSplitTFRCondSets(HexagonTargetMachine &TM) {
   return new HexagonSplitTFRCondSets(TM);
 }

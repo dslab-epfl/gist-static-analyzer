@@ -11,12 +11,8 @@ define double @test1(double %A1, double %A2, double %B1, double %B2) {
 	%Z2 = fadd double %Y2, %B2
 	%R  = fmul double %Z1, %Z2
 	ret double %R
-; CHECK-LABEL: @test1(
-; CHECK: fsub <2 x double>
-; CHECK: fmul <2 x double>
-; CHECK: fadd <2 x double>
-; CHECK: extract
-; CHECK: extract
+; CHECK: @test1
+; CHECK-NOT: fmul <2 x double>
 ; CHECK: ret double %R
 }
 
@@ -38,7 +34,7 @@ define double @test1a(double %A1, double %A2, double %B1, double %B2) {
 	%S2 = fadd double %W2, %Q2
 	%R  = fmul double %S1, %S2
 	ret double %R
-; CHECK-LABEL: @test1a(
+; CHECK: @test1a
 ; CHECK: %X1.v.i1.1 = insertelement <2 x double> undef, double %B1, i32 0
 ; CHECK: %X1.v.i1.2 = insertelement <2 x double> %X1.v.i1.1, double %B2, i32 1
 ; CHECK: %X1.v.i0.1 = insertelement <2 x double> undef, double %A1, i32 0
@@ -66,13 +62,8 @@ define double @test2(double %A1, double %A2, double %B1, double %B2) {
 	%Z2 = fadd double %Y1, %B2
 	%R  = fmul double %Z1, %Z2
 	ret double %R
-; CHECK-LABEL: @test2(
-; CHECK: insertelement
-; CHECK: insertelement
-; CHECK: insertelement
-; CHECK: insertelement
-; CHECK: fsub <2 x double>
-; CHECK: fmul <2 x double>
+; CHECK: @test2
+; CHECK-NOT: fmul <2 x double>
 ; CHECK: ret double %R
 }
 
@@ -88,16 +79,8 @@ define double @test4(double %A1, double %A2, double %B1, double %B2) {
 	%W2 = fadd double %Y1, %Z2
 	%R  = fmul double %Z1, %Z2
 	ret double %R
-; CHECK-LABEL: @test4(
-; CHECK: insertelement
-; CHECK: insertelement
-; CHECK: insertelement
-; CHECK: insertelement
-; CHECK: fsub <2 x double>
-; CHECK: fmul <2 x double>
-; CHECK: insertelement
-; CHECK: insertelement
-; CHECK: fadd <2 x double>
+; CHECK: @test4
+; CHECK-NOT: fmul <2 x double>
 ; CHECK: ret double %R
 }
 
@@ -113,7 +96,7 @@ define <8 x i8> @test6(<8 x i8> %A1, <8 x i8> %A2, <8 x i8> %B1, <8 x i8> %B2) {
         %Q2 = shufflevector <8 x i8> %Z2, <8 x i8> %Z2, <8 x i32> <i32 6, i32 7, i32 0, i32 1, i32 2, i32 4, i32 4, i32 1>
 	%R  = mul <8 x i8> %Q1, %Q2
 	ret <8 x i8> %R
-; CHECK-LABEL: @test6(
+; CHECK: @test6
 ; CHECK-NOT: sub <16 x i8>
 ; CHECK: ret <8 x i8>
 }

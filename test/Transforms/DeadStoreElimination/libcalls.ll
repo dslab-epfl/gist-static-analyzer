@@ -2,7 +2,7 @@
 
 declare i8* @strcpy(i8* %dest, i8* %src) nounwind
 define void @test1(i8* %src) {
-; CHECK-LABEL: @test1(
+; CHECK: @test1
   %B = alloca [16 x i8]
   %dest = getelementptr inbounds [16 x i8]* %B, i64 0, i64 0
 ; CHECK-NOT: @strcpy
@@ -13,7 +13,7 @@ define void @test1(i8* %src) {
 
 declare i8* @strncpy(i8* %dest, i8* %src, i32 %n) nounwind
 define void @test2(i8* %src) {
-; CHECK-LABEL: @test2(
+; CHECK: @test2
   %B = alloca [16 x i8]
   %dest = getelementptr inbounds [16 x i8]* %B, i64 0, i64 0
 ; CHECK-NOT: @strncpy
@@ -24,7 +24,7 @@ define void @test2(i8* %src) {
 
 declare i8* @strcat(i8* %dest, i8* %src) nounwind
 define void @test3(i8* %src) {
-; CHECK-LABEL: @test3(
+; CHECK: @test3
   %B = alloca [16 x i8]
   %dest = getelementptr inbounds [16 x i8]* %B, i64 0, i64 0
 ; CHECK-NOT: @strcat
@@ -35,7 +35,7 @@ define void @test3(i8* %src) {
 
 declare i8* @strncat(i8* %dest, i8* %src, i32 %n) nounwind
 define void @test4(i8* %src) {
-; CHECK-LABEL: @test4(
+; CHECK: @test4
   %B = alloca [16 x i8]
   %dest = getelementptr inbounds [16 x i8]* %B, i64 0, i64 0
 ; CHECK-NOT: @strncat
@@ -45,7 +45,7 @@ define void @test4(i8* %src) {
 }
 
 define void @test5(i8* nocapture %src) {
-; CHECK-LABEL: @test5(
+; CHECK: @test5
   %dest = alloca [100 x i8], align 16
   %arraydecay = getelementptr inbounds [100 x i8]* %dest, i64 0, i64 0
   %call = call i8* @strcpy(i8* %arraydecay, i8* %src)
@@ -57,7 +57,7 @@ define void @test5(i8* nocapture %src) {
 
 declare void @user(i8* %p)
 define void @test6(i8* %src) {
-; CHECK-LABEL: @test6(
+; CHECK: @test6
   %B = alloca [16 x i8]
   %dest = getelementptr inbounds [16 x i8]* %B, i64 0, i64 0
 ; CHECK: @strcpy

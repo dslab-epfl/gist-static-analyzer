@@ -34,11 +34,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_CODEGEN_REGALLOCBASE_H
-#define LLVM_LIB_CODEGEN_REGALLOCBASE_H
+#ifndef LLVM_CODEGEN_REGALLOCBASE
+#define LLVM_CODEGEN_REGALLOCBASE
 
-#include "llvm/CodeGen/LiveInterval.h"
+#include "LiveIntervalUnion.h"
 #include "llvm/CodeGen/RegisterClassInfo.h"
+#include "llvm/ADT/OwningPtr.h"
 
 namespace llvm {
 
@@ -56,7 +57,6 @@ class Spiller;
 /// live range splitting. They must also override enqueue/dequeue to provide an
 /// assignment order.
 class RegAllocBase {
-  virtual void anchor();
 protected:
   const TargetRegisterInfo *TRI;
   MachineRegisterInfo *MRI;
@@ -65,8 +65,7 @@ protected:
   LiveRegMatrix *Matrix;
   RegisterClassInfo RegClassInfo;
 
-  RegAllocBase()
-    : TRI(nullptr), MRI(nullptr), VRM(nullptr), LIS(nullptr), Matrix(nullptr) {}
+  RegAllocBase(): TRI(0), MRI(0), VRM(0), LIS(0), Matrix(0) {}
 
   virtual ~RegAllocBase() {}
 
@@ -91,10 +90,10 @@ protected:
   // or new set of split live virtual registers. It is up to the splitter to
   // converge quickly toward fully spilled live ranges.
   virtual unsigned selectOrSplit(LiveInterval &VirtReg,
-                                 SmallVectorImpl<unsigned> &splitLVRs) = 0;
+                                 SmallVectorImpl<LiveInterval*> &splitLVRs) = 0;
 
   // Use this group name for NamedRegionTimer.
-  static const char TimerGroupName[];
+  static const char *TimerGroupName;
 
 public:
   /// VerifyEnabled - True when -verify-regalloc is given.
@@ -106,4 +105,4 @@ private:
 
 } // end namespace llvm
 
-#endif
+#endif // !defined(LLVM_CODEGEN_REGALLOCBASE)

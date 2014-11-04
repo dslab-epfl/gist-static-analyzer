@@ -15,9 +15,7 @@
 #ifndef LLVM_ADT_POINTERUNION_H
 #define LLVM_ADT_POINTERUNION_H
 
-#include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/PointerIntPair.h"
-#include "llvm/Support/Compiler.h"
 
 namespace llvm {
 
@@ -73,7 +71,7 @@ namespace llvm {
   ///    printf("%d %d", P.is<int*>(), P.is<float*>());  // prints "1 0"
   ///    X = P.get<int*>();     // ok.
   ///    Y = P.get<float*>();   // runtime assertion failure.
-  ///    Z = P.get<double*>();  // compile time failure.
+  ///    Z = P.get<double*>();  // runtime assertion failure (regardless of tag)
   ///    P = (float*)0;
   ///    Y = P.get<float*>();   // ok.
   ///    X = P.get<int*>();     // runtime assertion failure.
@@ -97,11 +95,15 @@ namespace llvm {
   public:
     PointerUnion() {}
     
-    PointerUnion(PT1 V) : Val(
-      const_cast<void *>(PointerLikeTypeTraits<PT1>::getAsVoidPointer(V))) {
+    PointerUnion(PT1 V) {
+      Val.setPointer(
+         const_cast<void *>(PointerLikeTypeTraits<PT1>::getAsVoidPointer(V)));
+      Val.setInt(0);
     }
-    PointerUnion(PT2 V) : Val(
-      const_cast<void *>(PointerLikeTypeTraits<PT2>::getAsVoidPointer(V)), 1) {
+    PointerUnion(PT2 V) {
+      Val.setPointer(
+         const_cast<void *>(PointerLikeTypeTraits<PT2>::getAsVoidPointer(V)));
+      Val.setInt(1);
     }
     
     /// isNull - Return true if the pointer held in the union is null,
@@ -111,7 +113,7 @@ namespace llvm {
       // we recursively strip off low bits if we have a nested PointerUnion.
       return !PointerLikeTypeTraits<PT1>::getFromVoidPointer(Val.getPointer());
     }
-    LLVM_EXPLICIT operator bool() const { return !isNull(); }
+    operator bool() const { return !isNull(); }
 
     /// is<T>() return true if the Union currently holds the type matching T.
     template<typename T>
@@ -154,24 +156,19 @@ namespace llvm {
          "Can't get the address because PointerLikeTypeTraits changes the ptr");
       return (PT1 *)Val.getAddrOfPointer();
     }
-
-    /// \brief Assignment from nullptr which just clears the union.
-    const PointerUnion &operator=(std::nullptr_t) {
-      Val.initWithPointer(nullptr);
-      return *this;
-    }
     
     /// Assignment operators - Allow assigning into this union from either
     /// pointer type, setting the discriminator to remember what it came from.
     const PointerUnion &operator=(const PT1 &RHS) {
-      Val.initWithPointer(
+      Val.setPointer(
          const_cast<void *>(PointerLikeTypeTraits<PT1>::getAsVoidPointer(RHS)));
+      Val.setInt(0);
       return *this;
     }
     const PointerUnion &operator=(const PT2 &RHS) {
-      Val.setPointerAndInt(
-        const_cast<void *>(PointerLikeTypeTraits<PT2>::getAsVoidPointer(RHS)),
-        1);
+      Val.setPointer(
+        const_cast<void *>(PointerLikeTypeTraits<PT2>::getAsVoidPointer(RHS)));
+      Val.setInt(1);
       return *this;
     }
     
@@ -182,19 +179,7 @@ namespace llvm {
       return V;
     }
   };
-
-  template<typename PT1, typename PT2>
-  static bool operator==(PointerUnion<PT1, PT2> lhs,
-                         PointerUnion<PT1, PT2> rhs) {
-    return lhs.getOpaqueValue() == rhs.getOpaqueValue();
-  }
-
-  template<typename PT1, typename PT2>
-  static bool operator!=(PointerUnion<PT1, PT2> lhs,
-                         PointerUnion<PT1, PT2> rhs) {
-    return lhs.getOpaqueValue() != rhs.getOpaqueValue();
-  }
-
+  
   // Teach SmallPtrSet that PointerUnion is "basically a pointer", that has
   // # low bits available = min(PT1bits,PT2bits)-1.
   template<typename PT1, typename PT2>
@@ -271,7 +256,7 @@ namespace llvm {
     /// isNull - Return true if the pointer held in the union is null,
     /// regardless of which type it is.
     bool isNull() const { return Val.isNull(); }
-    LLVM_EXPLICIT operator bool() const { return !isNull(); }
+    operator bool() const { return !isNull(); }
     
     /// is<T>() return true if the Union currently holds the type matching T.
     template<typename T>
@@ -303,12 +288,6 @@ namespace llvm {
     T dyn_cast() const {
       if (is<T>()) return get<T>();
       return T();
-    }
-
-    /// \brief Assignment from nullptr which just clears the union.
-    const PointerUnion3 &operator=(std::nullptr_t) {
-      Val = nullptr;
-      return *this;
     }
     
     /// Assignment operators - Allow assigning into this union from either
@@ -385,7 +364,7 @@ namespace llvm {
     /// isNull - Return true if the pointer held in the union is null,
     /// regardless of which type it is.
     bool isNull() const { return Val.isNull(); }
-    LLVM_EXPLICIT operator bool() const { return !isNull(); }
+    operator bool() const { return !isNull(); }
     
     /// is<T>() return true if the Union currently holds the type matching T.
     template<typename T>
@@ -418,12 +397,6 @@ namespace llvm {
     T dyn_cast() const {
       if (is<T>()) return get<T>();
       return T();
-    }
-
-    /// \brief Assignment from nullptr which just clears the union.
-    const PointerUnion4 &operator=(std::nullptr_t) {
-      Val = nullptr;
-      return *this;
     }
     
     /// Assignment operators - Allow assigning into this union from either
@@ -473,33 +446,6 @@ namespace llvm {
         PointerLikeTypeTraits<typename PointerUnion4<PT1, PT2, PT3, PT4>::ValTy>
           ::NumLowBitsAvailable
     };
-  };
-
-  // Teach DenseMap how to use PointerUnions as keys.
-  template<typename T, typename U>
-  struct DenseMapInfo<PointerUnion<T, U> > {
-    typedef PointerUnion<T, U> Pair;
-    typedef DenseMapInfo<T> FirstInfo;
-    typedef DenseMapInfo<U> SecondInfo;
-
-    static inline Pair getEmptyKey() {
-      return Pair(FirstInfo::getEmptyKey());
-    }
-    static inline Pair getTombstoneKey() {
-      return Pair(FirstInfo::getTombstoneKey());
-    }
-    static unsigned getHashValue(const Pair &PairVal) {
-      intptr_t key = (intptr_t)PairVal.getOpaqueValue();
-      return DenseMapInfo<intptr_t>::getHashValue(key);
-    }
-    static bool isEqual(const Pair &LHS, const Pair &RHS) {
-      return LHS.template is<T>() == RHS.template is<T>() &&
-             (LHS.template is<T>() ?
-              FirstInfo::isEqual(LHS.template get<T>(),
-                                 RHS.template get<T>()) :
-              SecondInfo::isEqual(LHS.template get<U>(),
-                                  RHS.template get<U>()));
-    }
   };
 }
 

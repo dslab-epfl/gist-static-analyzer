@@ -34,6 +34,6 @@ land.end:                                         ; preds = %land.rhs, %entry
   store i8 %conv9, i8* @a, align 1
   ret void
 
-; CHECK-LABEL: @func(
+; CHECK: @func
 ; CHECK-NOT: select
 }

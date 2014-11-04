@@ -1,4 +1,4 @@
-; RUN: opt < %s -tailcallelim -S | FileCheck %s
+; RUN: opt < %s -tailcallelim -S | not grep call
 ; PR4323
 
 ; Several cases where tail call elimination should move the load above the call,
@@ -21,7 +21,6 @@ if:		; preds = %entry
 
 else:		; preds = %entry
 	%tmp7 = add i32 %start_arg, 1		; <i32> [#uses=1]
-; CHECK-NOT: call
 	%tmp8 = call fastcc i32 @raise_load_1(i32* %a_arg, i32 %a_len_arg, i32 %tmp7)		; <i32> [#uses=1]
 	%tmp9 = load i32* %a_arg		; <i32> [#uses=1]
 	%tmp10 = add i32 %tmp9, %tmp8		; <i32> [#uses=1]
@@ -48,7 +47,6 @@ unwind:		; preds = %else
 
 recurse:		; preds = %else
 	%tmp7 = add i32 %start_arg, 1		; <i32> [#uses=1]
-; CHECK-NOT: call
 	%tmp8 = call fastcc i32 @raise_load_2(i32* %a_arg, i32 %a_len_arg, i32 %tmp7)		; <i32> [#uses=1]
 	%tmp9 = load i32* @global		; <i32> [#uses=1]
 	%tmp10 = add i32 %tmp9, %tmp8		; <i32> [#uses=1]
@@ -68,7 +66,6 @@ if:		; preds = %entry
 
 else:		; preds = %entry
 	%tmp7 = add i32 %start_arg, 1		; <i32> [#uses=1]
-; CHECK-NOT: call
 	%tmp8 = call fastcc i32 @raise_load_3(i32* %a_arg, i32 %a_len_arg, i32 %tmp7)		; <i32> [#uses=1]
 	%tmp9 = load i32* @extern_weak_global		; <i32> [#uses=1]
 	%tmp10 = add i32 %tmp9, %tmp8		; <i32> [#uses=1]
@@ -97,7 +94,6 @@ unwind:		; preds = %else
 recurse:		; preds = %else
 	%tmp7 = add i32 %start_arg, 1		; <i32> [#uses=1]
 	%first = load i32* %a_arg		; <i32> [#uses=1]
-; CHECK-NOT: call
 	%tmp8 = call fastcc i32 @raise_load_4(i32* %a_arg, i32 %first, i32 %tmp7)		; <i32> [#uses=1]
 	%second = load i32* %a_arg		; <i32> [#uses=1]
 	%tmp10 = add i32 %second, %tmp8		; <i32> [#uses=1]

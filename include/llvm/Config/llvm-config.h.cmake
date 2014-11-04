@@ -1,4 +1,4 @@
-/*===------- llvm/Config/llvm-config.h - llvm configuration -------*- C -*-===*/
+/*===-- llvm/config/llvm-config.h - llvm configure variable -------*- C -*-===*/
 /*                                                                            */
 /*                     The LLVM Compiler Infrastructure                       */
 /*                                                                            */
@@ -7,12 +7,14 @@
 /*                                                                            */
 /*===----------------------------------------------------------------------===*/
 
-/* This file enumerates variables from the LLVM configuration so that they
-   can be in exported headers and won't override package specific directives.
-   This is a C header that can be included in the llvm-c headers. */
+/* This file enumerates all of the llvm variables from configure so that
+   they can be in exported headers and won't override package specific
+   directives.  This is a C file so we can include it in the llvm-c headers.  */
 
-#ifndef LLVM_CONFIG_H
-#define LLVM_CONFIG_H
+/* To avoid multiple inclusions of these variables when we include the exported
+   headers and config.h, conditionally include these.  */
+/* TODO: This is a bit of a hack.  */
+#ifndef CONFIG_H
 
 /* Installation directory for binary executables */
 #cmakedefine LLVM_BINDIR "${LLVM_BINDIR}"
@@ -39,13 +41,16 @@
 #cmakedefine01 LLVM_HAS_ATOMICS
 
 /* Host triple LLVM will be executed on */
-#cmakedefine LLVM_HOST_TRIPLE "${LLVM_HOST_TRIPLE}"
+#cmakedefine LLVM_HOSTTRIPLE "${LLVM_HOSTTRIPLE}"
 
 /* Installation directory for include files */
 #cmakedefine LLVM_INCLUDEDIR "${LLVM_INCLUDEDIR}"
 
 /* Installation directory for .info files */
 #cmakedefine LLVM_INFODIR "${LLVM_INFODIR}"
+
+/* Installation directory for libraries */
+#cmakedefine LLVM_LIBDIR "${LLVM_LIBDIR}"
 
 /* Installation directory for man pages */
 #cmakedefine LLVM_MANDIR "${LLVM_MANDIR}"
@@ -77,22 +82,40 @@
 /* Define if this is Win32ish platform */
 #cmakedefine LLVM_ON_WIN32 ${LLVM_ON_WIN32}
 
+/* Define to path to circo program if found or 'echo circo' otherwise */
+#cmakedefine LLVM_PATH_CIRCO "${LLVM_PATH_CIRCO}"
+
+/* Define to path to dot program if found or 'echo dot' otherwise */
+#cmakedefine LLVM_PATH_DOT "${LLVM_PATH_DOT}"
+
+/* Define to path to dotty program if found or 'echo dotty' otherwise */
+#cmakedefine LLVM_PATH_DOTTY "${LLVM_PATH_DOTTY}"
+
+/* Define to path to fdp program if found or 'echo fdp' otherwise */
+#cmakedefine LLVM_PATH_FDP "${LLVM_PATH_FDP}"
+
+/* Define to path to Graphviz program if found or 'echo Graphviz' otherwise */
+#cmakedefine LLVM_PATH_GRAPHVIZ "${LLVM_PATH_GRAPHVIZ}"
+
+/* Define to path to gv program if found or 'echo gv' otherwise */
+#cmakedefine LLVM_PATH_GV "${LLVM_PATH_GV}"
+
+/* Define to path to neato program if found or 'echo neato' otherwise */
+#cmakedefine LLVM_PATH_NEATO "${LLVM_PATH_NEATO}"
+
+/* Define to path to twopi program if found or 'echo twopi' otherwise */
+#cmakedefine LLVM_PATH_TWOPI "${LLVM_PATH_TWOPI}"
+
+/* Define to path to xdot.py program if found or 'echo xdot.py' otherwise */
+#cmakedefine LLVM_PATH_XDOT_PY "${LLVM_PATH_XDOT_PY}"
+
 /* Installation prefix directory */
 #cmakedefine LLVM_PREFIX "${LLVM_PREFIX}"
-
-/* Define if we have the Intel JIT API runtime support library */
-#cmakedefine LLVM_USE_INTEL_JITEVENTS 1
-
-/* Define if we have the oprofile JIT-support library */
-#cmakedefine LLVM_USE_OPROFILE 1
 
 /* Major version of the LLVM API */
 #cmakedefine LLVM_VERSION_MAJOR ${LLVM_VERSION_MAJOR}
 
 /* Minor version of the LLVM API */
 #cmakedefine LLVM_VERSION_MINOR ${LLVM_VERSION_MINOR}
-
-/* Define if we link Polly to the tools */
-#cmakedefine LINK_POLLY_INTO_TOOLS
 
 #endif

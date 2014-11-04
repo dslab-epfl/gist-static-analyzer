@@ -5,7 +5,7 @@
 
 target triple = "x86-apple-darwin"
 
-; CHECK-LABEL: @test(
+; CHECK: @test
 ; multiplies are hoisted out of the loop
 ; CHECK: while.body.lr.ph:
 ; CHECK: mul i64

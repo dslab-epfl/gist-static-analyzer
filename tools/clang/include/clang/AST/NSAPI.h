@@ -42,8 +42,7 @@ public:
     NSStr_stringWithUTF8String,
     NSStr_stringWithCStringEncoding,
     NSStr_stringWithCString,
-    NSStr_initWithString,
-    NSStr_initWithUTF8String
+    NSStr_initWithString
   };
   static const unsigned NumNSStringMethods = 5;
 
@@ -53,7 +52,7 @@ public:
   Selector getNSStringSelector(NSStringMethodKind MK) const;
 
   /// \brief Return NSStringMethodKind if \param Sel is such a selector.
-  Optional<NSStringMethodKind> getNSStringMethodKind(Selector Sel) const;
+  llvm::Optional<NSStringMethodKind> getNSStringMethodKind(Selector Sel) const;
 
   /// \brief Returns true if the expression \param E is a reference of
   /// "NSUTF8StringEncoding" enum constant.
@@ -77,16 +76,15 @@ public:
     NSArr_initWithArray,
     NSArr_initWithObjects,
     NSArr_objectAtIndex,
-    NSMutableArr_replaceObjectAtIndex,
-    NSArr_initWithObjectsCount
+    NSMutableArr_replaceObjectAtIndex
   };
-  static const unsigned NumNSArrayMethods = 10;
+  static const unsigned NumNSArrayMethods = 9;
 
   /// \brief The Objective-C NSArray selectors.
   Selector getNSArraySelector(NSArrayMethodKind MK) const;
 
   /// \brief Return NSArrayMethodKind if \p Sel is such a selector.
-  Optional<NSArrayMethodKind> getNSArrayMethodKind(Selector Sel);
+  llvm::Optional<NSArrayMethodKind> getNSArrayMethodKind(Selector Sel);
 
   /// \brief Enumerates the NSDictionary methods used to generate literals.
   enum NSDictionaryMethodKind {
@@ -98,18 +96,17 @@ public:
     NSDict_dictionaryWithObjectsAndKeys,
     NSDict_initWithDictionary,
     NSDict_initWithObjectsAndKeys,
-    NSDict_initWithObjectsForKeys,
     NSDict_objectForKey,
-    NSMutableDict_setObjectForKey,
-    NSDict_initWithObjectsForKeysCount
+    NSMutableDict_setObjectForKey
   };
-  static const unsigned NumNSDictionaryMethods = 12;
-  
+  static const unsigned NumNSDictionaryMethods = 10;
+
   /// \brief The Objective-C NSDictionary selectors.
   Selector getNSDictionarySelector(NSDictionaryMethodKind MK) const;
 
   /// \brief Return NSDictionaryMethodKind if \p Sel is such a selector.
-  Optional<NSDictionaryMethodKind> getNSDictionaryMethodKind(Selector Sel);
+  llvm::Optional<NSDictionaryMethodKind>
+      getNSDictionaryMethodKind(Selector Sel);
 
   /// \brief Returns selector for "objectForKeyedSubscript:".
   Selector getObjectForKeyedSubscriptSelector() const {
@@ -173,12 +170,12 @@ public:
   }
 
   /// \brief Return NSNumberLiteralMethodKind if \p Sel is such a selector.
-  Optional<NSNumberLiteralMethodKind>
+  llvm::Optional<NSNumberLiteralMethodKind>
       getNSNumberLiteralMethodKind(Selector Sel) const;
 
   /// \brief Determine the appropriate NSNumber factory method kind for a
   /// literal of the given type.
-  Optional<NSNumberLiteralMethodKind>
+  llvm::Optional<NSNumberLiteralMethodKind>
       getNSNumberFactoryMethodKind(QualType T) const;
 
   /// \brief Returns true if \param T is a typedef of "BOOL" in objective-c.
@@ -187,9 +184,6 @@ public:
   bool isObjCNSIntegerType(QualType T) const;
   /// \brief Returns true if \param T is a typedef of "NSUInteger" in objective-c.
   bool isObjCNSUIntegerType(QualType T) const;
-  /// \brief Returns one of NSIntegral typedef names if \param T is a typedef
-  /// of that name in objective-c.
-  StringRef GetNSIntegralKind(QualType T) const;
 
 private:
   bool isObjCTypedef(QualType T, StringRef name, IdentifierInfo *&II) const;

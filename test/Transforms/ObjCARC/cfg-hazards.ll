@@ -8,9 +8,8 @@ declare void @use_pointer(i8*)
 declare i8* @objc_retain(i8*)
 declare void @objc_release(i8*)
 declare void @callee()
-declare void @block_callee(void ()*)
 
-; CHECK-LABEL: define void @test0(
+; CHECK: define void @test0(
 ; CHECK:   call i8* @objc_retain(
 ; CHECK: for.body:
 ; CHECK-NOT: @objc
@@ -35,7 +34,7 @@ for.end:                                          ; preds = %for.body
   ret void
 }
 
-; CHECK-LABEL: define void @test1(
+; CHECK: define void @test1(
 ; CHECK:   call i8* @objc_retain(
 ; CHECK: for.body:
 ; CHECK-NOT: @objc
@@ -60,7 +59,7 @@ for.end:                                          ; preds = %for.body
   ret void
 }
 
-; CHECK-LABEL: define void @test2(
+; CHECK: define void @test2(
 ; CHECK:   call i8* @objc_retain(
 ; CHECK: for.body:
 ; CHECK-NOT: @objc
@@ -87,9 +86,9 @@ for.end:                                          ; preds = %for.body
 
 ; Delete nested retain+release pairs around loops.
 
-;      CHECK: define void @test3(i8* %a) #0 {
+;      CHECK: define void @test3(i8* %a) nounwind {
 ; CHECK-NEXT: entry:
-; CHECK-NEXT:   tail call i8* @objc_retain(i8* %a) [[NUW:#[0-9]+]]
+; CHECK-NEXT:   tail call i8* @objc_retain(i8* %a) nounwind
 ; CHECK-NEXT:   br label %loop
 ;  CHECK-NOT:   @objc_
 ;      CHECK: exit:
@@ -113,9 +112,9 @@ exit:
   ret void
 }
 
-;      CHECK: define void @test4(i8* %a) #0 {
+;      CHECK: define void @test4(i8* %a) nounwind {
 ; CHECK-NEXT: entry:
-; CHECK-NEXT:   tail call i8* @objc_retain(i8* %a) [[NUW]]
+; CHECK-NEXT:   tail call i8* @objc_retain(i8* %a) nounwind
 ; CHECK-NEXT:   br label %loop
 ;  CHECK-NOT:   @objc_
 ;      CHECK: exit:
@@ -143,9 +142,9 @@ exit:
   ret void
 }
 
-;      CHECK: define void @test5(i8* %a) #0 {
+;      CHECK: define void @test5(i8* %a) nounwind {
 ; CHECK-NEXT: entry:
-; CHECK-NEXT:   tail call i8* @objc_retain(i8* %a) [[NUW]]
+; CHECK-NEXT:   tail call i8* @objc_retain(i8* %a) nounwind
 ; CHECK-NEXT:   call void @callee()
 ; CHECK-NEXT:   br label %loop
 ;  CHECK-NOT:   @objc_
@@ -177,9 +176,9 @@ exit:
   ret void
 }
 
-;      CHECK: define void @test6(i8* %a) #0 {
+;      CHECK: define void @test6(i8* %a) nounwind {
 ; CHECK-NEXT: entry:
-; CHECK-NEXT:   tail call i8* @objc_retain(i8* %a) [[NUW]]
+; CHECK-NEXT:   tail call i8* @objc_retain(i8* %a) nounwind
 ; CHECK-NEXT:   br label %loop
 ;  CHECK-NOT:   @objc_
 ;      CHECK: exit:
@@ -210,9 +209,9 @@ exit:
   ret void
 }
 
-;      CHECK: define void @test7(i8* %a) #0 {
+;      CHECK: define void @test7(i8* %a) nounwind {
 ; CHECK-NEXT: entry:
-; CHECK-NEXT:   tail call i8* @objc_retain(i8* %a) [[NUW]]
+; CHECK-NEXT:   tail call i8* @objc_retain(i8* %a) nounwind
 ; CHECK-NEXT:   call void @callee()
 ; CHECK-NEXT:   br label %loop
 ;  CHECK-NOT:   @objc_
@@ -243,9 +242,9 @@ exit:
   ret void
 }
 
-;      CHECK: define void @test8(i8* %a) #0 {
+;      CHECK: define void @test8(i8* %a) nounwind {
 ; CHECK-NEXT: entry:
-; CHECK-NEXT:   tail call i8* @objc_retain(i8* %a) [[NUW]]
+; CHECK-NEXT:   tail call i8* @objc_retain(i8* %a) nounwind
 ; CHECK-NEXT:   br label %loop
 ;  CHECK-NOT:   @objc_
 ;      CHECK: exit:
@@ -275,7 +274,7 @@ exit:
   ret void
 }
 
-;      CHECK: define void @test9(i8* %a) #0 {
+;      CHECK: define void @test9(i8* %a) nounwind {
 ; CHECK-NEXT: entry:
 ; CHECK-NEXT:   br label %loop
 ;  CHECK-NOT:   @objc_
@@ -304,7 +303,7 @@ exit:
   ret void
 }
 
-;      CHECK: define void @test10(i8* %a) #0 {
+;      CHECK: define void @test10(i8* %a) nounwind {
 ; CHECK-NEXT: entry:
 ; CHECK-NEXT:   br label %loop
 ;  CHECK-NOT:   @objc_
@@ -333,7 +332,7 @@ exit:
   ret void
 }
 
-;      CHECK: define void @test11(i8* %a) #0 {
+;      CHECK: define void @test11(i8* %a) nounwind {
 ; CHECK-NEXT: entry:
 ; CHECK-NEXT:   br label %loop
 ;  CHECK-NOT:   @objc_
@@ -363,15 +362,15 @@ exit:
 
 ; Don't delete anything if they're not balanced.
 
-;      CHECK: define void @test12(i8* %a) #0 {
+;      CHECK: define void @test12(i8* %a) nounwind {
 ; CHECK-NEXT: entry:
-; CHECK-NEXT:   %outer = tail call i8* @objc_retain(i8* %a) [[NUW]]
-; CHECK-NEXT:   %inner = tail call i8* @objc_retain(i8* %a) [[NUW]]
+; CHECK-NEXT:   %outer = tail call i8* @objc_retain(i8* %a) nounwind
+; CHECK-NEXT:   %inner = tail call i8* @objc_retain(i8* %a) nounwind
 ; CHECK-NEXT:   br label %loop
 ;  CHECK-NOT:   @objc_
 ;      CHECK: exit:
-; CHECK-NEXT: call void @objc_release(i8* %a) [[NUW]]
-; CHECK-NEXT: call void @objc_release(i8* %a) [[NUW]], !clang.imprecise_release !0
+; CHECK-NEXT: call void @objc_release(i8* %a) nounwind
+; CHECK-NEXT: call void @objc_release(i8* %a) nounwind, !clang.imprecise_release !0
 ; CHECK-NEXT:   ret void
 ; CHECK-NEXT: }
 define void @test12(i8* %a) nounwind {
@@ -394,42 +393,5 @@ exit:
   call void @objc_release(i8* %a) nounwind, !clang.imprecise_release !0
   ret void
 }
-
-; Do not improperly pair retains in a for loop with releases outside of a for
-; loop when the proper pairing is disguised by a separate provenance represented
-; by an alloca.
-; rdar://12969722
-
-; CHECK: define void @test13(i8* %a) [[NUW]] {
-; CHECK: entry:
-; CHECK:   tail call i8* @objc_retain(i8* %a) [[NUW]]
-; CHECK: loop:
-; CHECK:   tail call i8* @objc_retain(i8* %a) [[NUW]]
-; CHECK:   call void @block_callee
-; CHECK:   call void @objc_release(i8* %reloaded_a) [[NUW]]
-; CHECK: exit:
-; CHECK:   call void @objc_release(i8* %a) [[NUW]]
-; CHECK: }
-define void @test13(i8* %a) nounwind {
-entry:
-  %block = alloca i8*
-  %a1 = tail call i8* @objc_retain(i8* %a) nounwind
-  br label %loop
-
-loop:
-  %a2 = tail call i8* @objc_retain(i8* %a) nounwind
-  store i8* %a, i8** %block, align 8
-  %casted_block = bitcast i8** %block to void ()*
-  call void @block_callee(void ()* %casted_block)
-  %reloaded_a = load i8** %block, align 8
-  call void @objc_release(i8* %reloaded_a) nounwind, !clang.imprecise_release !0
-  br i1 undef, label %loop, label %exit
-  
-exit:
-  call void @objc_release(i8* %a) nounwind, !clang.imprecise_release !0
-  ret void
-}
-
-; CHECK: attributes [[NUW]] = { nounwind }
 
 !0 = metadata !{}

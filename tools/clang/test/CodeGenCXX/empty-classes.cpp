@@ -29,7 +29,7 @@ struct D : A, Empty {
 #define CHECK(x) if (!(x)) return __LINE__
 
 // PR7012
-// CHECK-LABEL: define i32 @_Z1fv()
+// CHECK: define i32 @_Z1fv()
 int f() {
   B b1;
 

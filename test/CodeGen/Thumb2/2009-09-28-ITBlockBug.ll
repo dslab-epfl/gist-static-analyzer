@@ -1,11 +1,11 @@
-; RUN: llc < %s -mtriple=thumbv7-apple-darwin -mcpu=cortex-a8 -disable-cgp-branch-opts -arm-atomic-cfg-tidy=0 | FileCheck %s
+; RUN: llc < %s -mtriple=thumbv7-apple-darwin -mcpu=cortex-a8 -disable-cgp-branch-opts | FileCheck %s
 
 %struct.pix_pos = type { i32, i32, i32, i32, i32, i32 }
 
 @getNeighbour = external global void (i32, i32, i32, i32, %struct.pix_pos*)*, align 4 ; <void (i32, i32, i32, i32, %struct.pix_pos*)**> [#uses=2]
 
 define void @t() nounwind {
-; CHECK-LABEL: t:
+; CHECK: t:
 ; CHECK:      it eq
 ; CHECK-NEXT: cmpeq
 entry:

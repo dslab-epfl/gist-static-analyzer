@@ -10,7 +10,7 @@ entry:
 	tail call void @llvm.memcpy.p0i8.p0i8.i64( i8* %a, i8* %b, i64 %n, i32 1, i1 0 )
 	ret i8* %a
         
-; LINUX-LABEL: test1:
+; LINUX: test1:
 ; LINUX: memcpy
 }
 
@@ -22,7 +22,7 @@ entry:
 	tail call void @llvm.memcpy.p0i8.p0i8.i64(i8* %tmp14, i8* %tmp25, i64 %n, i32 8, i1 0 )
 	ret i8* %tmp14
         
-; LINUX-LABEL: test2:
+; LINUX: test2:
 ; LINUX: memcpy
 }
 
@@ -36,10 +36,10 @@ define void @test3(i8* nocapture %A, i8* nocapture %B) nounwind optsize noredzon
 entry:
   tail call void @llvm.memcpy.p0i8.p0i8.i64(i8* %A, i8* %B, i64 64, i32 1, i1 false)
   ret void
-; LINUX-LABEL: test3:
+; LINUX: test3:
 ; LINUX: memcpy
 
-; DARWIN-LABEL: test3:
+; DARWIN: test3:
 ; DARWIN-NOT: memcpy
 ; DARWIN: movq
 ; DARWIN: movq
@@ -64,7 +64,7 @@ define void @test4(i8* nocapture %A, i8* nocapture %B) nounwind noredzone {
 entry:
   tail call void @llvm.memcpy.p0i8.p0i8.i64(i8* %A, i8* %B, i64 64, i32 1, i1 false)
   ret void
-; LINUX-LABEL: test4:
+; LINUX: test4:
 ; LINUX: movq
 ; LINUX: movq
 ; LINUX: movq
@@ -87,34 +87,8 @@ entry:
   tail call void @llvm.memcpy.p0i8.p0i8.i64(i8* %C, i8* getelementptr inbounds ([30 x i8]* @.str, i64 0, i64 0), i64 16, i32 1, i1 false)
   ret void
 
-; DARWIN-LABEL: test5:
 ; DARWIN: movabsq	$7016996765293437281
 ; DARWIN: movabsq	$7016996765293437184
 }
 
 
-; PR14896
-@.str2 = private unnamed_addr constant [2 x i8] c"x\00", align 1
-
-define void @test6() nounwind uwtable {
-entry:
-; DARWIN: test6
-; DARWIN: movw $0, 8
-; DARWIN: movq $120, 0
-  tail call void @llvm.memcpy.p0i8.p0i8.i64(i8* null, i8* getelementptr inbounds ([2 x i8]* @.str2, i64 0, i64 0), i64 10, i32 1, i1 false)
-  ret void
-}
-
-define void @PR15348(i8* %a, i8* %b) {
-; Ensure that alignment of '0' in an @llvm.memcpy intrinsic results in
-; unaligned loads and stores.
-; LINUX: PR15348
-; LINUX: movb
-; LINUX: movb
-; LINUX: movq
-; LINUX: movq
-; LINUX: movq
-; LINUX: movq
-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %a, i8* %b, i64 17, i32 0, i1 false)
-  ret void
-}

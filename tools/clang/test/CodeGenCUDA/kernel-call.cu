@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -emit-llvm %s -o - | FileCheck %s
 
-#include "Inputs/cuda.h"
+#include "../SemaCUDA/cuda.h"
 
 __global__ void g1(int x) {}
 

@@ -1,5 +1,4 @@
 ; RUN: llvm-as < %s | llvm-dis | FileCheck %s
-; RUN: verify-uselistorder %s
 ; Basic smoke test for half type.
 
 ; CHECK: define half @halftest

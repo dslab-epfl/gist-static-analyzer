@@ -1,5 +1,4 @@
 ; RUN: llvm-as < %s | llvm-dis | FileCheck %s
-; RUN: verify-uselistorder %s
 
 @addr = external global i64
 

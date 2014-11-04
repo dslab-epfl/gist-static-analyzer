@@ -1,4 +1,4 @@
-; RUN: opt -dse -disable-output < %s
+; RUN: opt  %s -dse -disable-output
 ; test that we don't crash
 declare void @bar()
 

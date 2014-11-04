@@ -1,6 +1,4 @@
-; RUN: llc < %s -march=x86 -mattr=-sse2,-sse3 | FileCheck %s
-
-; CHECK: fchs
+; RUN: llc < %s -march=x86 -mattr=-sse2,-sse3 | grep fchs
 
 
 define double @T() {

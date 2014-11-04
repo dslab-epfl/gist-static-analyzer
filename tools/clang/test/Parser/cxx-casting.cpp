@@ -58,9 +58,9 @@ void test2(char x, struct B * b) {
               expected-error {{expected ']'}}
 #define LC <:
 #define C :
-  test1::A LC:B> c; // expected-error {{class template 'test1::A' requires template arguments}} expected-error 2{{}}
+  test1::A LC:B> c; // expected-error {{class template test1::A requires template arguments}} expected-error 2{{}}
   (void)static_cast LC:c>(&x); // expected-error {{expected '<' after 'static_cast'}} expected-error 2{{}} expected-note{{}}
-  test1::A<:C B> d; // expected-error {{class template 'test1::A' requires template arguments}} expected-error 2{{}}
+  test1::A<:C B> d; // expected-error {{class template test1::A requires template arguments}} expected-error 2{{}}
   (void)static_cast<:C c>(&x); // expected-error {{expected '<' after 'static_cast'}} expected-error 2{{}} expected-note{{}}
 
 #define LCC <::
@@ -85,26 +85,9 @@ void test3() {
   E< ::F>();
 
   // Make sure that parser doesn't expand '[:' to '< ::'
-  ::D[:F> A5; // expected-error {{class template '::D' requires template arguments}} \
+  ::D[:F> A5; // expected-error {{class template ::D requires template arguments}} \
               // expected-error {{expected expression}} \
               // expected-error {{expected unqualified-id}}
-}
-
-// Ensure that a C-style cast doesn't turn off colon protection.
-void PR19748() {
-  struct A {};
-  int A = 0, b;
-  int test1 = true ? (int)A : b;
-
-  struct f {};
-  extern B f(), (*p)();
-  (true ? (B(*)())f : p)();
-}
-
-void PR19751(int n) {
-  struct T { void operator++(int); };
-  (T())++; // ok, not an ill-formed cast to function type
-  (T())++n; // expected-error {{C-style cast from 'int' to 'T ()' is not allowed}}
 }
 
 // PR13619. Must be at end of file.

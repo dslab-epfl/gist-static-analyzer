@@ -12,26 +12,20 @@
 //===----------------------------------------------------------------------===//
 
 #include "X86MCTargetDesc.h"
+#include "X86MCAsmInfo.h"
 #include "InstPrinter/X86ATTInstPrinter.h"
 #include "InstPrinter/X86IntelInstPrinter.h"
-#include "X86MCAsmInfo.h"
-#include "llvm/ADT/Triple.h"
+#include "llvm/MC/MachineLocation.h"
 #include "llvm/MC/MCCodeGenInfo.h"
 #include "llvm/MC/MCInstrAnalysis.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
-#include "llvm/MC/MachineLocation.h"
-#include "llvm/Support/ErrorHandling.h"
+#include "llvm/ADT/Triple.h"
 #include "llvm/Support/Host.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/TargetRegistry.h"
-
-#if _MSC_VER
-#include <intrin.h>
-#endif
-
-using namespace llvm;
 
 #define GET_REGINFO_MC_DESC
 #include "X86GenRegisterInfo.inc"
@@ -42,16 +36,20 @@ using namespace llvm;
 #define GET_SUBTARGETINFO_MC_DESC
 #include "X86GenSubtargetInfo.inc"
 
+#if _MSC_VER
+#include <intrin.h>
+#endif
+
+using namespace llvm;
+
+
 std::string X86_MC::ParseX86Triple(StringRef TT) {
   Triple TheTriple(TT);
   std::string FS;
   if (TheTriple.getArch() == Triple::x86_64)
-    FS = "+64bit-mode,-32bit-mode,-16bit-mode";
-  else if (TheTriple.getEnvironment() != Triple::CODE16)
-    FS = "-64bit-mode,+32bit-mode,-16bit-mode";
+    FS = "+64bit-mode";
   else
-    FS = "-64bit-mode,-32bit-mode,+16bit-mode";
-
+    FS = "-64bit-mode";
   return FS;
 }
 
@@ -197,13 +195,15 @@ void X86_MC::DetectFamilyModel(unsigned EAX, unsigned &Family,
   }
 }
 
-unsigned X86_MC::getDwarfRegFlavour(Triple TT, bool isEH) {
-  if (TT.getArch() == Triple::x86_64)
+unsigned X86_MC::getDwarfRegFlavour(StringRef TT, bool isEH) {
+  Triple TheTriple(TT);
+  if (TheTriple.getArch() == Triple::x86_64)
     return DWARFFlavour::X86_64;
 
-  if (TT.isOSDarwin())
+  if (TheTriple.isOSDarwin())
     return isEH ? DWARFFlavour::X86_32_DarwinEH : DWARFFlavour::X86_32_Generic;
-  if (TT.isOSCygMing())
+  if (TheTriple.getOS() == Triple::MinGW32 ||
+      TheTriple.getOS() == Triple::Cygwin)
     // Unsupported by now, just quick fallback
     return DWARFFlavour::X86_32_Generic;
   return DWARFFlavour::X86_32_Generic;
@@ -228,8 +228,14 @@ MCSubtargetInfo *X86_MC::createX86MCSubtargetInfo(StringRef TT, StringRef CPU,
   }
 
   std::string CPUName = CPU;
-  if (CPUName.empty())
+  if (CPUName.empty()) {
+#if defined(i386) || defined(__i386__) || defined(__x86__) || defined(_M_IX86)\
+    || defined(__x86_64__) || defined(_M_AMD64) || defined (_M_X64)
+    CPUName = sys::getHostCPUName();
+#else
     CPUName = "generic";
+#endif
+  }
 
   MCSubtargetInfo *X = new MCSubtargetInfo();
   InitX86MCSubtargetInfo(X, TT, CPUName, ArchFS);
@@ -250,30 +256,28 @@ static MCRegisterInfo *createX86MCRegisterInfo(StringRef TT) {
 
   MCRegisterInfo *X = new MCRegisterInfo();
   InitX86MCRegisterInfo(X, RA,
-                        X86_MC::getDwarfRegFlavour(TheTriple, false),
-                        X86_MC::getDwarfRegFlavour(TheTriple, true),
-                        RA);
+                        X86_MC::getDwarfRegFlavour(TT, false),
+                        X86_MC::getDwarfRegFlavour(TT, true));
   X86_MC::InitLLVM2SEHRegisterMapping(X);
   return X;
 }
 
-static MCAsmInfo *createX86MCAsmInfo(const MCRegisterInfo &MRI, StringRef TT) {
+static MCAsmInfo *createX86MCAsmInfo(const Target &T, StringRef TT) {
   Triple TheTriple(TT);
   bool is64Bit = TheTriple.getArch() == Triple::x86_64;
 
   MCAsmInfo *MAI;
-  if (TheTriple.isOSBinFormatMachO()) {
+  if (TheTriple.isOSDarwin() || TheTriple.getEnvironment() == Triple::MachO) {
     if (is64Bit)
       MAI = new X86_64MCAsmInfoDarwin(TheTriple);
     else
       MAI = new X86MCAsmInfoDarwin(TheTriple);
-  } else if (TheTriple.isOSBinFormatELF()) {
+  } else if (TheTriple.getEnvironment() == Triple::ELF) {
     // Force the use of an ELF container.
     MAI = new X86ELFMCAsmInfo(TheTriple);
-  } else if (TheTriple.isWindowsMSVCEnvironment()) {
+  } else if (TheTriple.getOS() == Triple::Win32) {
     MAI = new X86MCAsmInfoMicrosoft(TheTriple);
-  } else if (TheTriple.isOSCygMing() ||
-             TheTriple.isWindowsItaniumEnvironment()) {
+  } else if (TheTriple.getOS() == Triple::MinGW32 || TheTriple.getOS() == Triple::Cygwin) {
     MAI = new X86MCAsmInfoGNUCOFF(TheTriple);
   } else {
     // The default is ELF.
@@ -285,16 +289,14 @@ static MCAsmInfo *createX86MCAsmInfo(const MCRegisterInfo &MRI, StringRef TT) {
   int stackGrowth = is64Bit ? -8 : -4;
 
   // Initial state of the frame pointer is esp+stackGrowth.
-  unsigned StackPtr = is64Bit ? X86::RSP : X86::ESP;
-  MCCFIInstruction Inst = MCCFIInstruction::createDefCfa(
-      nullptr, MRI.getDwarfRegNum(StackPtr, true), -stackGrowth);
-  MAI->addInitialFrameState(Inst);
+  MachineLocation Dst(MachineLocation::VirtualFP);
+  MachineLocation Src(is64Bit ? X86::RSP : X86::ESP, stackGrowth);
+  MAI->addInitialFrameState(0, Dst, Src);
 
   // Add return address to move list
-  unsigned InstPtr = is64Bit ? X86::RIP : X86::EIP;
-  MCCFIInstruction Inst2 = MCCFIInstruction::createOffset(
-      nullptr, MRI.getDwarfRegNum(InstPtr, true), stackGrowth);
-  MAI->addInitialFrameState(Inst2);
+  MachineLocation CSDst(is64Bit ? X86::RSP : X86::ESP, stackGrowth);
+  MachineLocation CSSrc(is64Bit ? X86::RIP : X86::EIP);
+  MAI->addInitialFrameState(0, CSDst, CSSrc);
 
   return MAI;
 }
@@ -353,21 +355,17 @@ static MCStreamer *createMCStreamer(const Target &T, StringRef TT,
                                     MCContext &Ctx, MCAsmBackend &MAB,
                                     raw_ostream &_OS,
                                     MCCodeEmitter *_Emitter,
-                                    const MCSubtargetInfo &STI,
                                     bool RelaxAll,
                                     bool NoExecStack) {
   Triple TheTriple(TT);
 
-  switch (TheTriple.getObjectFormat()) {
-  default: llvm_unreachable("unsupported object format");
-  case Triple::MachO:
+  if (TheTriple.isOSDarwin() || TheTriple.getEnvironment() == Triple::MachO)
     return createMachOStreamer(Ctx, MAB, _OS, _Emitter, RelaxAll);
-  case Triple::COFF:
-    assert(TheTriple.isOSWindows() && "only Windows COFF is supported");
-    return createX86WinCOFFStreamer(Ctx, MAB, _Emitter, _OS, RelaxAll);
-  case Triple::ELF:
-    return createELFStreamer(Ctx, MAB, _OS, _Emitter, RelaxAll, NoExecStack);
-  }
+
+  if (TheTriple.isOSWindows() && TheTriple.getEnvironment() != Triple::ELF)
+    return createWinCOFFStreamer(Ctx, MAB, *_Emitter, _OS, RelaxAll);
+
+  return createELFStreamer(Ctx, MAB, _OS, _Emitter, RelaxAll, NoExecStack);
 }
 
 static MCInstPrinter *createX86MCInstPrinter(const Target &T,
@@ -377,21 +375,10 @@ static MCInstPrinter *createX86MCInstPrinter(const Target &T,
                                              const MCRegisterInfo &MRI,
                                              const MCSubtargetInfo &STI) {
   if (SyntaxVariant == 0)
-    return new X86ATTInstPrinter(MAI, MII, MRI, STI);
+    return new X86ATTInstPrinter(MAI, MII, MRI);
   if (SyntaxVariant == 1)
     return new X86IntelInstPrinter(MAI, MII, MRI);
-  return nullptr;
-}
-
-static MCRelocationInfo *createX86MCRelocationInfo(StringRef TT,
-                                                   MCContext &Ctx) {
-  Triple TheTriple(TT);
-  if (TheTriple.isOSBinFormatMachO() && TheTriple.getArch() == Triple::x86_64)
-    return createX86_64MachORelocationInfo(Ctx);
-  else if (TheTriple.isOSBinFormatELF())
-    return createX86_64ELFRelocationInfo(Ctx);
-  // Default to the stock relocation info.
-  return llvm::createMCRelocationInfo(TT, Ctx);
+  return 0;
 }
 
 static MCInstrAnalysis *createX86MCInstrAnalysis(const MCInstrInfo *Info) {
@@ -451,10 +438,4 @@ extern "C" void LLVMInitializeX86TargetMC() {
                                         createX86MCInstPrinter);
   TargetRegistry::RegisterMCInstPrinter(TheX86_64Target,
                                         createX86MCInstPrinter);
-
-  // Register the MC relocation info.
-  TargetRegistry::RegisterMCRelocationInfo(TheX86_32Target,
-                                           createX86MCRelocationInfo);
-  TargetRegistry::RegisterMCRelocationInfo(TheX86_64Target,
-                                           createX86MCRelocationInfo);
 }

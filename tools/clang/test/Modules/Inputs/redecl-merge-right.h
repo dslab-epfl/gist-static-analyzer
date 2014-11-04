@@ -1,4 +1,4 @@
-@import redecl_merge_top;
+@__experimental_modules_import redecl_merge_top;
 
 @interface Super
 @end
@@ -79,12 +79,9 @@ extern int var2;
 static double var3;
 
 int ONE;
-@import redecl_merge_top.Explicit;
+@__experimental_modules_import redecl_merge_top.Explicit;
 const int one = ONE;
 
 @interface ClassWithDef 
 - (void)method;
 @end
-
-void eventually_noreturn(void) __attribute__((noreturn));
-void eventually_noreturn2(void) __attribute__((noreturn));

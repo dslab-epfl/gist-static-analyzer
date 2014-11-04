@@ -1,4 +1,5 @@
-; RUN: llc < %s -march=arm -mtriple=arm-linux-gnueabi | FileCheck %s
+; RUN: llc < %s -march=arm -mtriple=arm-linux-gnueabi | \
+; RUN:   not grep "bx lr"
 
 	%struct.anon = type { i32 (i32, i32, i32)*, i32, i32, [3 x i32], i8*, i8*, i8* }
 @r = external global [14 x i32]		; <[14 x i32]*> [#uses=4]
@@ -7,8 +8,6 @@
 @numi = external global i32		; <i32*> [#uses=1]
 @counter = external global [2 x i32]		; <[2 x i32]*> [#uses=1]
 
-; CHECK-LABEL: main_bb_2E_i_bb205_2E_i_2E_i_bb115_2E_i_2E_i:
-; CHECK-NOT: bx lr
 
 define void @main_bb_2E_i_bb205_2E_i_2E_i_bb115_2E_i_2E_i() {
 newFuncRoot:
@@ -50,13 +49,4 @@ bb115.i.i:		; preds = %bb115.i.i.bb115.i.i_crit_edge, %newFuncRoot
 	%tmp168.i.i = load i32* @numi		; <i32> [#uses=1]
 	icmp slt i32 %tmp166.i.i, %tmp168.i.i		; <i1>:0 [#uses=1]
 	br i1 %0, label %bb115.i.i.bb115.i.i_crit_edge, label %bb115.i.i.bb170.i.i_crit_edge.exitStub
-}
-
-define void @PR15520(void ()* %fn) {
-  call void %fn()
-  ret void
-
-; CHECK-LABEL: PR15520:
-; CHECK: mov lr, pc
-; CHECK: mov pc, r0
 }

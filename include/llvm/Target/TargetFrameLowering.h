@@ -15,6 +15,7 @@
 #define LLVM_TARGET_TARGETFRAMELOWERING_H
 
 #include "llvm/CodeGen/MachineBasicBlock.h"
+
 #include <utility>
 #include <vector>
 
@@ -47,12 +48,11 @@ private:
   unsigned StackAlignment;
   unsigned TransientStackAlignment;
   int LocalAreaOffset;
-  bool StackRealignable;
 public:
   TargetFrameLowering(StackDirection D, unsigned StackAl, int LAO,
-                      unsigned TransAl = 1, bool StackReal = true)
+                      unsigned TransAl = 1)
     : StackDir(D), StackAlignment(StackAl), TransientStackAlignment(TransAl),
-      LocalAreaOffset(LAO), StackRealignable(StackReal) {}
+      LocalAreaOffset(LAO) {}
 
   virtual ~TargetFrameLowering();
 
@@ -77,34 +77,10 @@ public:
     return TransientStackAlignment;
   }
 
-  /// isStackRealignable - This method returns whether the stack can be
-  /// realigned.
-  bool isStackRealignable() const {
-    return StackRealignable;
-  }
-
   /// getOffsetOfLocalArea - This method returns the offset of the local area
   /// from the stack pointer on entrance to a function.
   ///
   int getOffsetOfLocalArea() const { return LocalAreaOffset; }
-
-  /// isFPCloseToIncomingSP - Return true if the frame pointer is close to
-  /// the incoming stack pointer, false if it is close to the post-prologue
-  /// stack pointer.
-  virtual bool isFPCloseToIncomingSP() const { return true; }
-
-  /// assignCalleeSavedSpillSlots - Allows target to override spill slot
-  /// assignment logic.  If implemented, assignCalleeSavedSpillSlots() should
-  /// assign frame slots to all CSI entries and return true.  If this method
-  /// returns false, spill slots will be assigned using generic implementation.
-  /// assignCalleeSavedSpillSlots() may add, delete or rearrange elements of
-  /// CSI.
-  virtual bool
-  assignCalleeSavedSpillSlots(MachineFunction &MF,
-                              const TargetRegisterInfo *TRI,
-                              std::vector<CalleeSavedInfo> &CSI) const {
-    return false;
-  }
 
   /// getCalleeSavedSpillSlots - This method returns a pointer to an array of
   /// pairs, that contains an entry for each callee saved register that must be
@@ -118,7 +94,7 @@ public:
   virtual const SpillSlot *
   getCalleeSavedSpillSlots(unsigned &NumEntries) const {
     NumEntries = 0;
-    return nullptr;
+    return 0;
   }
 
   /// targetHandlesStackFrameRounding - Returns true if the target is
@@ -137,10 +113,6 @@ public:
   /// Adjust the prologue to have the function use segmented stacks. This works
   /// by adding a check even before the "normal" function prologue.
   virtual void adjustForSegmentedStacks(MachineFunction &MF) const { }
-
-  /// Adjust the prologue to add Erlang Run-Time System (ERTS) specific code in
-  /// the assembly prologue to explicitly handle the stack.
-  virtual void adjustForHiPEPrologue(MachineFunction &MF) const { }
 
   /// spillCalleeSavedRegisters - Issues instruction(s) to spill all callee
   /// saved registers and returns true if it isn't possible / profitable to do
@@ -203,7 +175,7 @@ public:
   /// before PrologEpilogInserter scans the physical registers used to determine
   /// what callee saved registers should be spilled. This method is optional.
   virtual void processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
-                                             RegScavenger *RS = nullptr) const {
+                                                RegScavenger *RS = NULL) const {
 
   }
 
@@ -212,23 +184,7 @@ public:
   /// finalized.  Once the frame is finalized, MO_FrameIndex operands are
   /// replaced with direct constants.  This method is optional.
   ///
-  virtual void processFunctionBeforeFrameFinalized(MachineFunction &MF,
-                                             RegScavenger *RS = nullptr) const {
-  }
-
-  /// eliminateCallFramePseudoInstr - This method is called during prolog/epilog
-  /// code insertion to eliminate call frame setup and destroy pseudo
-  /// instructions (but only if the Target is using them).  It is responsible
-  /// for eliminating these instructions, replacing them with concrete
-  /// instructions.  This method need only be implemented if using call frame
-  /// setup/destroy pseudo instructions.
-  ///
-  virtual void
-  eliminateCallFramePseudoInstr(MachineFunction &MF,
-                                MachineBasicBlock &MBB,
-                                MachineBasicBlock::iterator MI) const {
-    llvm_unreachable("Call Frame Pseudo Instructions do not exist on this "
-                     "target!");
+  virtual void processFunctionBeforeFrameFinalized(MachineFunction &MF) const {
   }
 };
 

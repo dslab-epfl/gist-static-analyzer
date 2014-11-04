@@ -15,97 +15,48 @@
 
 #include "CXString.h"
 #include "CXTranslationUnit.h"
-#include "clang-c/Index.h"
 #include "clang/Frontend/ASTUnit.h"
+#include "clang-c/Index.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/ErrorHandling.h"
 
 using namespace clang;
+using namespace clang::cxstring;
 
-/// Describes the kind of underlying data in CXString.
-enum CXStringFlag {
-  /// CXString contains a 'const char *' that it doesn't own.
-  CXS_Unmanaged,
-
-  /// CXString contains a 'const char *' that it allocated with malloc().
-  CXS_Malloc,
-
-  /// CXString contains a CXStringBuf that needs to be returned to the
-  /// CXStringPool.
-  CXS_StringBuf
-};
-
-namespace clang {
-namespace cxstring {
+enum CXStringFlag { CXS_Unmanaged, CXS_Malloc, CXS_StringBuf };
 
 //===----------------------------------------------------------------------===//
 // Basic generation of CXStrings.
 //===----------------------------------------------------------------------===//
 
-CXString createEmpty() {
+CXString cxstring::createCXString(const char *String, bool DupString){
   CXString Str;
-  Str.data = "";
-  Str.private_flags = CXS_Unmanaged;
+  if (DupString) {
+    Str.data = strdup(String);
+    Str.private_flags = (unsigned) CXS_Malloc;
+  } else {
+    Str.data = (void*)String;
+    Str.private_flags = (unsigned) CXS_Unmanaged;
+  }
   return Str;
 }
 
-CXString createNull() {
-  CXString Str;
-  Str.data = nullptr;
-  Str.private_flags = CXS_Unmanaged;
-  return Str;
-}
-
-CXString createRef(const char *String) {
-  if (String && String[0] == '\0')
-    return createEmpty();
-
-  CXString Str;
-  Str.data = String;
-  Str.private_flags = CXS_Unmanaged;
-  return Str;
-}
-
-CXString createDup(const char *String) {
-  if (!String)
-    return createNull();
-
-  if (String[0] == '\0')
-    return createEmpty();
-
-  CXString Str;
-  Str.data = strdup(String);
-  Str.private_flags = CXS_Malloc;
-  return Str;
-}
-
-CXString createRef(StringRef String) {
-  // If the string is not nul-terminated, we have to make a copy.
-
-  // FIXME: This is doing a one past end read, and should be removed! For memory
-  // we don't manage, the API string can become unterminated at any time outside
-  // our control.
-
-  if (!String.empty() && String.data()[String.size()] != 0)
-    return createDup(String);
-
+CXString cxstring::createCXString(StringRef String, bool DupString) {
   CXString Result;
-  Result.data = String.data();
-  Result.private_flags = (unsigned) CXS_Unmanaged;
+  if (DupString || (!String.empty() && String.data()[String.size()] != 0)) {
+    char *Spelling = (char *)malloc(String.size() + 1);
+    memmove(Spelling, String.data(), String.size());
+    Spelling[String.size()] = 0;
+    Result.data = Spelling;
+    Result.private_flags = (unsigned) CXS_Malloc;
+  } else {
+    Result.data = (void*) String.data();
+    Result.private_flags = (unsigned) CXS_Unmanaged;
+  }
   return Result;
 }
 
-CXString createDup(StringRef String) {
-  CXString Result;
-  char *Spelling = static_cast<char *>(malloc(String.size() + 1));
-  memmove(Spelling, String.data(), String.size());
-  Spelling[String.size()] = 0;
-  Result.data = Spelling;
-  Result.private_flags = (unsigned) CXS_Malloc;
-  return Result;
-}
-
-CXString createCXString(CXStringBuf *buf) {
+CXString cxstring::createCXString(CXStringBuf *buf) {
   CXString Str;
   Str.data = buf;
   Str.private_flags = (unsigned) CXS_StringBuf;
@@ -117,37 +68,42 @@ CXString createCXString(CXStringBuf *buf) {
 // String pools.
 //===----------------------------------------------------------------------===//
 
-CXStringPool::~CXStringPool() {
-  for (std::vector<CXStringBuf *>::iterator I = Pool.begin(), E = Pool.end();
-       I != E; ++I) {
-    delete *I;
+  
+typedef std::vector<CXStringBuf *> CXStringPool;
+
+void *cxstring::createCXStringPool() {
+  return new CXStringPool();
+}
+
+void cxstring::disposeCXStringPool(void *p) {
+  CXStringPool *pool = static_cast<CXStringPool*>(p);
+  if (pool) {
+    for (CXStringPool::iterator I = pool->begin(), E = pool->end();
+         I != E; ++I) {
+      delete *I;
+    }
+    delete pool;
   }
 }
 
-CXStringBuf *CXStringPool::getCXStringBuf(CXTranslationUnit TU) {
-  if (Pool.empty())
+CXStringBuf *cxstring::getCXStringBuf(CXTranslationUnit TU) {
+  CXStringPool *pool = static_cast<CXStringPool*>(TU->StringPool);
+  if (pool->empty())
     return new CXStringBuf(TU);
-
-  CXStringBuf *Buf = Pool.back();
-  Buf->Data.clear();
-  Pool.pop_back();
-  return Buf;
+  CXStringBuf *buf = pool->back();
+  buf->Data.clear();
+  pool->pop_back();
+  return buf;
 }
 
-CXStringBuf *getCXStringBuf(CXTranslationUnit TU) {
-  return TU->StringPool->getCXStringBuf(TU);
+void cxstring::disposeCXStringBuf(CXStringBuf *buf) {
+  if (buf)
+    static_cast<CXStringPool*>(buf->TU->StringPool)->push_back(buf);
 }
 
-void CXStringBuf::dispose() {
-  TU->StringPool->Pool.push_back(this);
-}
-
-bool isManagedByPool(CXString str) {
+bool cxstring::isManagedByPool(CXString str) {
   return ((CXStringFlag) str.private_flags) == CXS_StringBuf;
 }
-
-} // end namespace cxstring
-} // end namespace clang
 
 //===----------------------------------------------------------------------===//
 // libClang public APIs.
@@ -156,9 +112,9 @@ bool isManagedByPool(CXString str) {
 extern "C" {
 const char *clang_getCString(CXString string) {
   if (string.private_flags == (unsigned) CXS_StringBuf) {
-    return static_cast<const cxstring::CXStringBuf *>(string.data)->Data.data();
+    return ((CXStringBuf*)string.data)->Data.data();
   }
-  return static_cast<const char *>(string.data);
+  return (const char*) string.data;
 }
 
 void clang_disposeString(CXString string) {
@@ -167,11 +123,10 @@ void clang_disposeString(CXString string) {
       break;
     case CXS_Malloc:
       if (string.data)
-        free(const_cast<void *>(string.data));
+        free((void*)string.data);
       break;
     case CXS_StringBuf:
-      static_cast<cxstring::CXStringBuf *>(
-          const_cast<void *>(string.data))->dispose();
+      disposeCXStringBuf((CXStringBuf *) string.data);
       break;
   }
 }

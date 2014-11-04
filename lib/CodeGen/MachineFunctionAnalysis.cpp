@@ -20,7 +20,7 @@ using namespace llvm;
 char MachineFunctionAnalysis::ID = 0;
 
 MachineFunctionAnalysis::MachineFunctionAnalysis(const TargetMachine &tm) :
-  FunctionPass(ID), TM(tm), MF(nullptr) {
+  FunctionPass(ID), TM(tm), MF(0) {
   initializeMachineModuleInfoPass(*PassRegistry::getPassRegistry());
 }
 
@@ -46,11 +46,12 @@ bool MachineFunctionAnalysis::doInitialization(Module &M) {
 bool MachineFunctionAnalysis::runOnFunction(Function &F) {
   assert(!MF && "MachineFunctionAnalysis already initialized!");
   MF = new MachineFunction(&F, TM, NextFnNum++,
-                           getAnalysis<MachineModuleInfo>());
+                           getAnalysis<MachineModuleInfo>(),
+                           getAnalysisIfAvailable<GCModuleInfo>());
   return false;
 }
 
 void MachineFunctionAnalysis::releaseMemory() {
   delete MF;
-  MF = nullptr;
+  MF = 0;
 }

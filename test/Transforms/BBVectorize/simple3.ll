@@ -1,9 +1,9 @@
 target datalayout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v64:64:64-v128:128:128-a0:0:64-s0:64:64-f80:128:128"
-; RUN: opt < %s -bb-vectorize -bb-vectorize-req-chain-depth=3 -bb-vectorize-vector-bits=192 -bb-vectorize-ignore-target-info -instcombine -gvn -S | FileCheck %s
+; RUN: opt < %s -bb-vectorize -bb-vectorize-req-chain-depth=3 -bb-vectorize-vector-bits=192 -instcombine -gvn -S | FileCheck %s
 
 ; Basic depth-3 chain
 define double @test1(double %A1, double %A2, double %A3, double %B1, double %B2, double %B3) {
-; CHECK-LABEL: @test1(
+; CHECK: @test1
 ; CHECK: %X1.v.i1.11 = insertelement <3 x double> undef, double %B1, i32 0
 ; CHECK: %X1.v.i1.22 = insertelement <3 x double> %X1.v.i1.11, double %B2, i32 1
 ; CHECK: %X1.v.i1 = insertelement <3 x double> %X1.v.i1.22, double %B3, i32 2

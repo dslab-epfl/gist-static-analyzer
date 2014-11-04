@@ -1,5 +1,4 @@
 ; RUN: llvm-as < %s | llvm-dis | llvm-as | llvm-dis
-; RUN: verify-uselistorder %s
 ; PR2480
 
 define i32 @test(i32 %X) nounwind {

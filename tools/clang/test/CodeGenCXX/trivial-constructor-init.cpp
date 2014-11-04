@@ -1,4 +1,5 @@
-// RUN: %clang_cc1 -emit-llvm %s -o - -std=c++11 -triple %itanium_abi_triple | FileCheck %s
+// RUN: %clang_cc1  -S %s -o %t-64.s
+// RUN: %clang_cc1  -S %s -o %t-32.s
 
 extern "C" int printf(...);
 
@@ -14,21 +15,6 @@ struct A {
 };
 
 A a;
-
-struct B {
-  B() = default;
-  B(const B&);
-};
-
-// CHECK-NOT: _ZL1b
-static B b;
-
-struct C {
-  ~C();
-};
-
-// CHECK: _ZL1c
-static C c[4];
 
 int main() {
 }

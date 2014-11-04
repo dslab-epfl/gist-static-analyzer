@@ -11,13 +11,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Support/FileSystem.h"
-#include <algorithm>
+#include "Windows.h"
 #include <stdio.h>
 #include <vector>
-
-// The Windows.h header must be after LLVM and standard headers.
-#include "WindowsSupport.h"
+#include <algorithm>
 
 #ifdef __MINGW32__
  #include <imagehlp.h>
@@ -136,7 +133,7 @@ typedef PVOID (WINAPI *fpSymFunctionTableAccess64)(HANDLE, DWORD64);
 static fpSymFunctionTableAccess64 SymFunctionTableAccess64;
 
 static bool load64BitDebugHelp(void) {
-  HMODULE hLib = ::LoadLibraryW(L"Dbghelp.dll");
+  HMODULE hLib = ::LoadLibrary("Dbghelp.dll");
   if (hLib) {
     StackWalk64 = (fpStackWalk64)
                       ::GetProcAddress(hLib, "StackWalk64");
@@ -161,7 +158,7 @@ static BOOL WINAPI LLVMConsoleCtrlHandler(DWORD dwCtrlType);
 // InterruptFunction - The function to call if ctrl-c is pressed.
 static void (*InterruptFunction)() = 0;
 
-static std::vector<std::string> *FilesToRemove = NULL;
+static std::vector<llvm::sys::Path> *FilesToRemove = NULL;
 static std::vector<std::pair<void(*)(void*), void*> > *CallBacksToRun = 0;
 static bool RegisteredUnhandledExceptionFilter = false;
 static bool CleanupExecuted = false;
@@ -181,19 +178,34 @@ namespace llvm {
 //===----------------------------------------------------------------------===//
 
 #ifdef _MSC_VER
-/// AvoidMessageBoxHook - Emulates hitting "retry" from an "abort, retry,
-/// ignore" CRT debug report dialog.  "retry" raises an exception which
-/// ultimately triggers our stack dumper.
-static int AvoidMessageBoxHook(int ReportType, char *Message, int *Return) {
-  // Set *Return to the retry code for the return value of _CrtDbgReport:
-  // http://msdn.microsoft.com/en-us/library/8hyw4sy7(v=vs.71).aspx
-  // This may also trigger just-in-time debugging via DebugBreak().
+/// CRTReportHook - Function called on a CRT debugging event.
+static int CRTReportHook(int ReportType, char *Message, int *Return) {
+  // Don't cause a DebugBreak() on return.
   if (Return)
-    *Return = 1;
+    *Return = 0;
+
+  switch (ReportType) {
+  default:
+  case _CRT_ASSERT:
+    fprintf(stderr, "CRT assert: %s\n", Message);
+    // FIXME: Is there a way to just crash? Perhaps throw to the unhandled
+    // exception code? Perhaps SetErrorMode() handles this.
+    _exit(3);
+    break;
+  case _CRT_ERROR:
+    fprintf(stderr, "CRT error: %s\n", Message);
+    // FIXME: Is there a way to just crash? Perhaps throw to the unhandled
+    // exception code? Perhaps SetErrorMode() handles this.
+    _exit(3);
+    break;
+  case _CRT_WARN:
+    fprintf(stderr, "CRT warn: %s\n", Message);
+    break;
+  }
+
   // Don't call _CrtDbgReport.
   return TRUE;
 }
-
 #endif
 
 static void RegisterHandler() {
@@ -229,7 +241,7 @@ static void RegisterHandler() {
   // Environment variable to disable any kind of crash dialog.
   if (getenv("LLVM_DISABLE_CRASH_REPORT")) {
 #ifdef _MSC_VER
-    _CrtSetReportHook(AvoidMessageBoxHook);
+    _CrtSetReportHook(CRTReportHook);
 #endif
     SetErrorMode(SEM_FAILCRITICALERRORS |
                  SEM_NOGPFAULTERRORBOX |
@@ -242,7 +254,7 @@ static void RegisterHandler() {
 }
 
 // RemoveFileOnSignal - The public API
-bool sys::RemoveFileOnSignal(StringRef Filename, std::string* ErrMsg) {
+bool sys::RemoveFileOnSignal(const sys::Path &Filename, std::string* ErrMsg) {
   RegisterHandler();
 
   if (CleanupExecuted) {
@@ -252,7 +264,7 @@ bool sys::RemoveFileOnSignal(StringRef Filename, std::string* ErrMsg) {
   }
 
   if (FilesToRemove == NULL)
-    FilesToRemove = new std::vector<std::string>;
+    FilesToRemove = new std::vector<sys::Path>;
 
   FilesToRemove->push_back(Filename);
 
@@ -261,14 +273,14 @@ bool sys::RemoveFileOnSignal(StringRef Filename, std::string* ErrMsg) {
 }
 
 // DontRemoveFileOnSignal - The public API
-void sys::DontRemoveFileOnSignal(StringRef Filename) {
+void sys::DontRemoveFileOnSignal(const sys::Path &Filename) {
   if (FilesToRemove == NULL)
     return;
 
   RegisterHandler();
 
   FilesToRemove->push_back(Filename);
-  std::vector<std::string>::reverse_iterator I =
+  std::vector<sys::Path>::reverse_iterator I =
   std::find(FilesToRemove->rbegin(), FilesToRemove->rend(), Filename);
   if (I != FilesToRemove->rend())
     FilesToRemove->erase(I.base()-1);
@@ -281,10 +293,6 @@ void sys::DontRemoveFileOnSignal(StringRef Filename) {
 void sys::PrintStackTraceOnErrorSignal() {
   RegisterHandler();
   LeaveCriticalSection(&CriticalSection);
-}
-
-void llvm::sys::PrintStackTrace(FILE *) {
-  // FIXME: Implement.
 }
 
 
@@ -318,7 +326,7 @@ static void Cleanup() {
 
   if (FilesToRemove != NULL)
     while (!FilesToRemove->empty()) {
-      llvm::sys::fs::remove(FilesToRemove->back());
+      FilesToRemove->back().eraseFromDisk();
       FilesToRemove->pop_back();
     }
 

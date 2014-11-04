@@ -1,7 +1,7 @@
-; RUN: llc -mtriple=arm-eabi %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm | FileCheck %s
 
 ; Do not if-convert when branches go to the different loops.
-; CHECK-LABEL: t:
+; CHECK: t:
 ; CHECK-NOT: subgt
 ; CHECK-NOT: suble
 ; Don't use

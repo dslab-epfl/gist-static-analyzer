@@ -12,9 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_POWERPC_PPCPERFECTSHUFFLE_H
-#define LLVM_LIB_TARGET_POWERPC_PPCPERFECTSHUFFLE_H
-
 // 31 entries have cost 0
 // 292 entries have cost 1
 // 1384 entries have cost 2
@@ -6587,5 +6584,3 @@ static const unsigned PerfectShuffleTable[6561+1] = {
   835584U,	// <u,u,u,u>: Cost 0 copy LHS
   0
 };
-
-#endif

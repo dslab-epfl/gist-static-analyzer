@@ -1,32 +1,23 @@
 set(LLVM_LINK_COMPONENTS
-  BitReader
-  BitWriter
-  Core
-  IPO
-  IRReader
-  InstCombine
-  Instrumentation
-  Linker
-  MC
-  ObjCARCOpts
-  ProfileData
-  ScalarOpts
-  Support
-  Target
-  TransformUtils
+  asmparser
+  bitreader
+  bitwriter
+  instrumentation
+  ipo
+  linker
+  vectorize
   )
 
 add_clang_library(clangCodeGen
   BackendUtil.cpp
-  CGAtomic.cpp
   CGBlocks.cpp
   CGBuiltin.cpp
+  CGCall.cpp
+  CGClass.cpp
   CGCUDANV.cpp
   CGCUDARuntime.cpp
   CGCXX.cpp
   CGCXXABI.cpp
-  CGCall.cpp
-  CGClass.cpp
   CGCleanup.cpp
   CGDebugInfo.cpp
   CGDecl.cpp
@@ -34,43 +25,44 @@ add_clang_library(clangCodeGen
   CGException.cpp
   CGExpr.cpp
   CGExprAgg.cpp
-  CGExprCXX.cpp
   CGExprComplex.cpp
   CGExprConstant.cpp
+  CGExprCXX.cpp
   CGExprScalar.cpp
-  CGLoopInfo.cpp
   CGObjC.cpp
   CGObjCGNU.cpp
   CGObjCMac.cpp
   CGObjCRuntime.cpp
   CGOpenCLRuntime.cpp
-  CGOpenMPRuntime.cpp
   CGRecordLayoutBuilder.cpp
+  CGRTTI.cpp
   CGStmt.cpp
-  CGStmtOpenMP.cpp
-  CGVTT.cpp
   CGVTables.cpp
-  CodeGenABITypes.cpp
+  CGVTT.cpp
   CodeGenAction.cpp
   CodeGenFunction.cpp
   CodeGenModule.cpp
-  CodeGenPGO.cpp
   CodeGenTBAA.cpp
   CodeGenTypes.cpp
-  CoverageMappingGen.cpp
   ItaniumCXXABI.cpp
   MicrosoftCXXABI.cpp
   ModuleBuilder.cpp
-  SanitizerBlacklist.cpp
-  SanitizerMetadata.cpp
   TargetInfo.cpp
+  )
 
-  DEPENDS
-  intrinsics_gen
+add_dependencies(clangCodeGen
+  ClangARMNeon
+  ClangAttrClasses
+  ClangAttrList
+  ClangCommentNodes
+  ClangDeclNodes
+  ClangDiagnosticCommon
+  ClangDiagnosticFrontend
+  ClangStmtNodes
+  )
 
-  LINK_LIBS
-  clangAST
+target_link_libraries(clangCodeGen
   clangBasic
+  clangAST
   clangFrontend
-  clangLex
   )

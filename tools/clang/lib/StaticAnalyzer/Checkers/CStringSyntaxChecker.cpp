@@ -13,14 +13,14 @@
 //
 //===----------------------------------------------------------------------===//
 #include "ClangSACheckers.h"
+#include "clang/Analysis/AnalysisContext.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/OperationKinds.h"
 #include "clang/AST/StmtVisitor.h"
-#include "clang/Analysis/AnalysisContext.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Basic/TypeTraits.h"
-#include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "llvm/ADT/SmallString.h"
@@ -31,7 +31,6 @@ using namespace ento;
 
 namespace {
 class WalkAST: public StmtVisitor<WalkAST> {
-  const CheckerBase *Checker;
   BugReporter &BR;
   AnalysisDeclContext* AC;
 
@@ -82,8 +81,9 @@ class WalkAST: public StmtVisitor<WalkAST> {
   bool containsBadStrncatPattern(const CallExpr *CE);
 
 public:
-  WalkAST(const CheckerBase *checker, BugReporter &br, AnalysisDeclContext *ac)
-      : Checker(checker), BR(br), AC(ac) {}
+  WalkAST(BugReporter &br, AnalysisDeclContext* ac) :
+      BR(br), AC(ac) {
+  }
 
   // Statement visitor methods.
   void VisitChildren(Stmt *S);
@@ -101,8 +101,6 @@ public:
 //   - strncat(dst, src, sizeof(dst) - 1);
 //   - strncat(dst, src, sizeof(dst));
 bool WalkAST::containsBadStrncatPattern(const CallExpr *CE) {
-  if (CE->getNumArgs() != 3)
-    return false;
   const Expr *DstArg = CE->getArg(0);
   const Expr *SrcArg = CE->getArg(1);
   const Expr *LenArg = CE->getArg(2);
@@ -141,6 +139,7 @@ void WalkAST::VisitCallExpr(CallExpr *CE) {
     if (containsBadStrncatPattern(CE)) {
       const Expr *DstArg = CE->getArg(0);
       const Expr *LenArg = CE->getArg(2);
+      SourceRange R = LenArg->getSourceRange();
       PathDiagnosticLocation Loc =
         PathDiagnosticLocation::createBegin(LenArg, BR.getSourceManager(), AC);
 
@@ -157,9 +156,8 @@ void WalkAST::VisitCallExpr(CallExpr *CE) {
         os << "U";
       os << "se a safer 'strlcat' API";
 
-      BR.EmitBasicReport(FD, Checker, "Anti-pattern in the argument",
-                         "C String API", os.str(), Loc,
-                         LenArg->getSourceRange());
+      BR.EmitBasicReport(FD, "Anti-pattern in the argument", "C String API",
+                         os.str(), Loc, &R, 1);
     }
   }
 
@@ -180,7 +178,7 @@ public:
 
   void checkASTCodeBody(const Decl *D, AnalysisManager& Mgr,
       BugReporter &BR) const {
-    WalkAST walker(this, BR, Mgr.getAnalysisDeclContext(D));
+    WalkAST walker(BR, Mgr.getAnalysisDeclContext(D));
     walker.Visit(D->getBody());
   }
 };

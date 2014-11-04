@@ -2,10 +2,10 @@
 
 ;; Check that FP_TO_SINT and FP_TO_UINT generate convert with truncate
 
-; CHECK-LABEL: test1:
+; CHECK: test1:
 ; CHECK: vcvttpd2dqy
 ; CHECK: ret
-; CHECK-LABEL: test2:
+; CHECK: test2:
 ; CHECK: vcvttpd2dqy
 ; CHECK: ret
 

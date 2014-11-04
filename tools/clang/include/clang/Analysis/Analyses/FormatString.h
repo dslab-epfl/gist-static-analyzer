@@ -16,8 +16,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_ANALYSIS_ANALYSES_FORMATSTRING_H
-#define LLVM_CLANG_ANALYSIS_ANALYSES_FORMATSTRING_H
+#ifndef LLVM_CLANG_FORMAT_H
+#define LLVM_CLANG_FORMAT_H
 
 #include "clang/AST/CanonicalType.h"
 
@@ -49,7 +49,7 @@ public:
   const char *toString() const { return representation; }
 
   // Overloaded operators for bool like qualities
-  LLVM_EXPLICIT operator bool() const { return flag; }
+  operator bool() const { return flag; }
   OptionalFlag& operator=(const bool &rhs) {
     flag = rhs;
     return *this;  // Return a reference to myself.
@@ -73,18 +73,14 @@ public:
     AsIntMax,     // 'j'
     AsSizeT,      // 'z'
     AsPtrDiff,    // 't'
-    AsInt32,      // 'I32' (MSVCRT, like __int32)
-    AsInt3264,    // 'I'   (MSVCRT, like __int3264 from MIDL)
-    AsInt64,      // 'I64' (MSVCRT, like __int64)
     AsLongDouble, // 'L'
     AsAllocate,   // for '%as', GNU extension to C90 scanf
     AsMAllocate,  // for '%ms', GNU extension to scanf
-    AsWide,       // 'w' (MSVCRT, like l but only for c, C, s, S, or Z
     AsWideChar = AsLong // for '%ls', only makes sense for printf
   };
 
   LengthModifier()
-    : Position(nullptr), kind(None) {}
+    : Position(0), kind(None) {}
   LengthModifier(const char *pos, Kind k)
     : Position(pos), kind(k) {}
 
@@ -99,9 +95,6 @@ public:
       case AsLongLong:
       case AsChar:
         return 2;
-      case AsInt32:
-      case AsInt64:
-        return 3;
       case None:
         return 0;
     }
@@ -155,8 +148,6 @@ public:
 
     // ** Printf-specific **
 
-    ZArg, // MS extension
-
     // Objective-C specific specifiers.
     ObjCObjArg,  // '@'
     ObjCBeg = ObjCObjArg, ObjCEnd = ObjCObjArg,
@@ -172,11 +163,10 @@ public:
   };
 
   ConversionSpecifier(bool isPrintf = true)
-    : IsPrintf(isPrintf), Position(nullptr), EndScanList(nullptr),
-      kind(InvalidSpecifier) {}
+    : IsPrintf(isPrintf), Position(0), EndScanList(0), kind(InvalidSpecifier) {}
 
   ConversionSpecifier(bool isPrintf, const char *pos, Kind k)
-    : IsPrintf(isPrintf), Position(pos), EndScanList(nullptr), kind(k) {}
+    : IsPrintf(isPrintf), Position(pos), EndScanList(0), kind(k) {}
 
   const char *getStart() const {
     return Position;
@@ -211,7 +201,7 @@ public:
 
   bool isPrintfKind() const { return IsPrintf; }
   
-  Optional<ConversionSpecifier> getStandardSpecifier() const;
+  llvm::Optional<ConversionSpecifier> getStandardSpecifier() const;
 
 protected:
   bool IsPrintf;
@@ -230,11 +220,10 @@ private:
   const char *Name;
   bool Ptr;
 public:
-  ArgType(Kind k = UnknownTy, const char *n = nullptr)
-      : K(k), Name(n), Ptr(false) {}
-  ArgType(QualType t, const char *n = nullptr)
+  ArgType(Kind k = UnknownTy, const char *n = 0) : K(k), Name(n), Ptr(false) {}
+  ArgType(QualType t, const char *n = 0)
       : K(SpecificTy), T(t), Name(n), Ptr(false) {}
-  ArgType(CanQualType t) : K(SpecificTy), T(t), Name(nullptr), Ptr(false) {}
+  ArgType(CanQualType t) : K(SpecificTy), T(t), Name(0), Ptr(false) {}
 
   static ArgType Invalid() { return ArgType(InvalidTy); }
   bool isValid() const { return K != InvalidTy; }
@@ -267,7 +256,7 @@ public:
   UsesPositionalArg(usesPositionalArg), UsesDotPrefix(0) {}
 
   OptionalAmount(bool valid = true)
-  : start(nullptr),length(0), hs(valid ? NotSpecified : Invalid), amt(0),
+  : start(0),length(0), hs(valid ? NotSpecified : Invalid), amt(0),
   UsesPositionalArg(0), UsesDotPrefix(0) {}
 
   bool isInvalid() const {
@@ -372,7 +361,7 @@ public:
 
   bool hasStandardLengthModifier() const;
 
-  Optional<LengthModifier> getCorrectedLengthModifier() const;
+  llvm::Optional<LengthModifier> getCorrectedLengthModifier() const;
 
   bool hasStandardConversionSpecifier(const LangOptions &LangOpt) const;
 
@@ -394,7 +383,7 @@ class PrintfConversionSpecifier :
   public analyze_format_string::ConversionSpecifier  {
 public:
   PrintfConversionSpecifier()
-    : ConversionSpecifier(true, nullptr, InvalidSpecifier) {}
+    : ConversionSpecifier(true, 0, InvalidSpecifier) {}
 
   PrintfConversionSpecifier(const char *pos, Kind k)
     : ConversionSpecifier(true, pos, k) {}
@@ -530,7 +519,7 @@ class ScanfConversionSpecifier :
     public analyze_format_string::ConversionSpecifier  {
 public:
   ScanfConversionSpecifier()
-    : ConversionSpecifier(false, nullptr, InvalidSpecifier) {}
+    : ConversionSpecifier(false, 0, InvalidSpecifier) {}
 
   ScanfConversionSpecifier(const char *pos, Kind k)
     : ConversionSpecifier(false, pos, k) {}
@@ -577,8 +566,7 @@ public:
 
   ArgType getArgType(ASTContext &Ctx) const;
 
-  bool fixType(QualType QT, QualType RawQT, const LangOptions &LangOpt,
-               ASTContext &Ctx);
+  bool fixType(QualType QT, const LangOptions &LangOpt, ASTContext &Ctx);
 
   void toString(raw_ostream &os) const;
 
@@ -647,9 +635,6 @@ public:
 bool ParsePrintfString(FormatStringHandler &H,
                        const char *beg, const char *end, const LangOptions &LO,
                        const TargetInfo &Target);
-  
-bool ParseFormatStringHasSArg(const char *beg, const char *end, const LangOptions &LO,
-                              const TargetInfo &Target);
 
 bool ParseScanfString(FormatStringHandler &H,
                       const char *beg, const char *end, const LangOptions &LO,

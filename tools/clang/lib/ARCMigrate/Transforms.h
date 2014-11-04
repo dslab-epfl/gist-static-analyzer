@@ -1,4 +1,4 @@
-//===-- Transforms.h - Transformations to ARC mode --------------*- C++ -*-===//
+//===-- Transforms.h - Tranformations to ARC mode ---------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -10,8 +10,8 @@
 #ifndef LLVM_CLANG_LIB_ARCMIGRATE_TRANSFORMS_H
 #define LLVM_CLANG_LIB_ARCMIGRATE_TRANSFORMS_H
 
-#include "clang/AST/ParentMap.h"
 #include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/AST/ParentMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/Support/SaveAndRestore.h"
 
@@ -127,29 +127,24 @@ public:
 
 class PropertyRewriteTraverser : public ASTTraverser {
 public:
-  void traverseObjCImplementation(ObjCImplementationContext &ImplCtx) override;
+  virtual void traverseObjCImplementation(ObjCImplementationContext &ImplCtx);
 };
 
 class BlockObjCVariableTraverser : public ASTTraverser {
 public:
-  void traverseBody(BodyContext &BodyCtx) override;
-};
-
-class ProtectedScopeTraverser : public ASTTraverser {
-public:
-  void traverseBody(BodyContext &BodyCtx) override;
+  virtual void traverseBody(BodyContext &BodyCtx);
 };
 
 // GC transformations
 
 class GCAttrsTraverser : public ASTTraverser {
 public:
-  void traverseTU(MigrationContext &MigrateCtx) override;
+  virtual void traverseTU(MigrationContext &MigrateCtx);
 };
 
 class GCCollectableCallsTraverser : public ASTTraverser {
 public:
-  void traverseBody(BodyContext &BodyCtx) override;
+  virtual void traverseBody(BodyContext &BodyCtx);
 };
 
 //===----------------------------------------------------------------------===//
@@ -161,21 +156,18 @@ bool canApplyWeak(ASTContext &Ctx, QualType type,
                   bool AllowOnUnknownClass = false);
 
 bool isPlusOneAssign(const BinaryOperator *E);
-bool isPlusOne(const Expr *E);
 
 /// \brief 'Loc' is the end of a statement range. This returns the location
 /// immediately after the semicolon following the statement.
 /// If no semicolon is found or the location is inside a macro, the returned
 /// source location will be invalid.
-SourceLocation findLocationAfterSemi(SourceLocation loc, ASTContext &Ctx,
-                                     bool IsDecl = false);
+SourceLocation findLocationAfterSemi(SourceLocation loc, ASTContext &Ctx);
 
-/// \brief 'Loc' is the end of a statement range. This returns the location
+/// \brief \arg Loc is the end of a statement range. This returns the location
 /// of the semicolon following the statement.
 /// If no semicolon is found or the location is inside a macro, the returned
 /// source location will be invalid.
-SourceLocation findSemiAfterLocation(SourceLocation loc, ASTContext &Ctx,
-                                     bool IsDecl = false);
+SourceLocation findSemiAfterLocation(SourceLocation loc, ASTContext &Ctx);
 
 bool hasSideEffects(Expr *E, ASTContext &Ctx);
 bool isGlobalVar(Expr *E);
@@ -189,7 +181,7 @@ class BodyTransform : public RecursiveASTVisitor<BodyTransform<BODY_TRANS> > {
 
   typedef RecursiveASTVisitor<BodyTransform<BODY_TRANS> > base;
 public:
-  BodyTransform(MigrationPass &pass) : Pass(pass), ParentD(nullptr) { }
+  BodyTransform(MigrationPass &pass) : Pass(pass), ParentD(0) { }
 
   bool TraverseStmt(Stmt *rootS) {
     if (rootS)

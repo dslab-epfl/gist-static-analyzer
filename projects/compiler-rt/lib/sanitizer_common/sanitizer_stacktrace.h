@@ -19,63 +19,38 @@ namespace __sanitizer {
 
 static const uptr kStackTraceMax = 256;
 
-#if SANITIZER_LINUX && (defined(__aarch64__) || defined(__powerpc__) || \
-                        defined(__powerpc64__) || defined(__sparc__) || \
-                        defined(__mips__))
-# define SANITIZER_CAN_FAST_UNWIND 0
-#elif SANITIZER_WINDOWS
-# define SANITIZER_CAN_FAST_UNWIND 0
-#else
-# define SANITIZER_CAN_FAST_UNWIND 1
-#endif
-
 struct StackTrace {
   typedef bool (*SymbolizeCallback)(const void *pc, char *out_buffer,
                                      int out_size);
-  uptr top_frame_bp;
   uptr size;
+  uptr max_size;
   uptr trace[kStackTraceMax];
-
-  // Prints a symbolized stacktrace, followed by an empty line.
-  static void PrintStack(const uptr *addr, uptr size);
-  void Print() const {
-    PrintStack(trace, size);
+  static void PrintStack(const uptr *addr, uptr size,
+                         bool symbolize, const char *strip_file_prefix,
+                         SymbolizeCallback symbolize_callback);
+  void CopyTo(uptr *dst, uptr dst_size) {
+    for (uptr i = 0; i < size && i < dst_size; i++)
+      dst[i] = trace[i];
+    for (uptr i = size; i < dst_size; i++)
+      dst[i] = 0;
   }
 
-  void CopyFrom(const uptr *src, uptr src_size) {
-    top_frame_bp = 0;
+  void CopyFrom(uptr *src, uptr src_size) {
     size = src_size;
     if (size > kStackTraceMax) size = kStackTraceMax;
-    for (uptr i = 0; i < size; i++)
+    for (uptr i = 0; i < size; i++) {
       trace[i] = src[i];
+    }
   }
 
-  static bool WillUseFastUnwind(bool request_fast_unwind) {
-    // Check if fast unwind is available. Fast unwind is the only option on Mac.
-    // It is also the only option on FreeBSD as the slow unwinding that
-    // leverages _Unwind_Backtrace() yields the call stack of the signal's
-    // handler and not of the code that raised the signal (as it does on Linux).
-    if (!SANITIZER_CAN_FAST_UNWIND)
-      return false;
-    else if (SANITIZER_MAC != 0 || SANITIZER_FREEBSD != 0)
-      return true;
-    return request_fast_unwind;
-  }
-
-  void Unwind(uptr max_depth, uptr pc, uptr bp, void *context, uptr stack_top,
-              uptr stack_bottom, bool request_fast_unwind);
+  void FastUnwindStack(uptr pc, uptr bp, uptr stack_top, uptr stack_bottom);
 
   static uptr GetCurrentPc();
-  static uptr GetPreviousInstructionPc(uptr pc);
 
- private:
-  void FastUnwindStack(uptr pc, uptr bp, uptr stack_top, uptr stack_bottom,
-                       uptr max_depth);
-  void SlowUnwindStack(uptr pc, uptr max_depth);
-  void SlowUnwindStackWithContext(uptr pc, void *context,
-                                  uptr max_depth);
-  void PopStackFrames(uptr count);
-  uptr LocatePcInTrace(uptr pc);
+  static uptr CompressStack(StackTrace *stack,
+                            u32 *compressed, uptr size);
+  static void UncompressStack(StackTrace *stack,
+                              u32 *compressed, uptr size);
 };
 
 }  // namespace __sanitizer
@@ -87,10 +62,6 @@ struct StackTrace {
   uptr pc = GET_CALLER_PC();                  \
   uptr local_stack;                           \
   uptr sp = (uptr)&local_stack
-
-#define GET_CALLER_PC_BP \
-  uptr bp = GET_CURRENT_FRAME();              \
-  uptr pc = GET_CALLER_PC();
 
 // Use this macro if you want to print stack trace with the current
 // function in the top frame.

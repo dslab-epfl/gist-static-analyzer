@@ -1,4 +1,3 @@
-; REQUIRES: asserts
 ; RUN: llc < %s -march=x86 -mcpu=yonah -stats 2>&1 | grep "Number of block tails merged" | grep 16
 ; PR1909
 

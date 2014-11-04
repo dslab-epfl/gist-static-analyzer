@@ -60,8 +60,9 @@ void test2(A** ap) {
   bp = ap; // expected-warning{{incompatible pointer types assigning to 'B **' from 'A **'}}
 }
 
-int& cv(A*);
-float& cv(const A*);
+// FIXME: we should either allow overloading here or give a better diagnostic
+int& cv(A*); // expected-note {{previous declaration}} expected-note 2 {{not viable}}
+float& cv(const A*); // expected-error {{cannot be overloaded}}
 
 int& cv2(void*);
 float& cv2(const void*);
@@ -69,20 +70,22 @@ float& cv2(const void*);
 void cv_test(A* a, B* b, const A* ac, const B* bc) {
   int &i1 = cv(a);
   int &i2 = cv(b);
-  float &f1 = cv(ac);
-  float &f2 = cv(bc);
+  float &f1 = cv(ac); // expected-error {{no matching function}}
+  float &f2 = cv(bc); // expected-error {{no matching function}}
   int& i3 = cv2(a);
   float& f3 = cv2(ac);
 }
 
-int& qualid(id<P0>);
-float& qualid(id<P1>);
+// We agree with GCC that these can't be overloaded.
+int& qualid(id<P0>); // expected-note {{previous declaration}} expected-note {{not viable}}
+float& qualid(id<P1>); // expected-error {{cannot be overloaded}}
 
 void qualid_test(A *a, B *b, C *c) {
   int& i1 = qualid(a);
   int& i2 = qualid(b);
 
-  float& f1 = qualid(c);
+  // This doesn't work only because the overload was rejected above.
+  float& f1 = qualid(c); // expected-error {{no matching function}}
 
   id<P0> p1 = 0;
   p1 = 0;

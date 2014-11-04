@@ -94,7 +94,7 @@ struct Current : Derived {
                            Derived::Base1(), // expected-error {{type 'Derived::Base1' is not a direct or virtual base of 'Current'}}
                            Derived::V(),
                            ::NonExisting(), // expected-error {{member initializer 'NonExisting' does not name a non-static data member or}}
-                           INT::NonExisting()  {} // expected-error {{'INT' (aka 'int') is not a class, namespace, or scoped enumeration}} \
+                           INT::NonExisting()  {} // expected-error {{expected a class or namespace}} \
                                                   // expected-error {{member initializer 'NonExisting' does not name a non-static data member or}}
 };
 
@@ -238,8 +238,7 @@ namespace test3 {
     B(const String& s, int e=0) // expected-error {{unknown type name}} 
       : A(e), m_String(s) , m_ErrorStr(__null) {} // expected-error {{no matching constructor}} expected-error {{does not name}}
     B(const B& e)
-      : A(e), m_String(e.m_String), m_ErrorStr(__null) { // expected-error {{does not name}} \
-      // expected-error {{no member named 'm_String' in 'test3::B'}}
+      : A(e), m_String(e.m_String), m_ErrorStr(__null) { // expected-error {{does not name}} expected-error {{no member named 'm_String' in 'test3::B'}}
     }
   };
 }
@@ -283,10 +282,4 @@ namespace PR12049 {
 
       int member; // expected-error {{expected ')'}}
   };
-}
-
-namespace PR14073 {
-  struct S1 { union { int n; }; S1() : n(n) {} };  // expected-warning {{field 'n' is uninitialized when used here}}
-  struct S2 { union { union { int n; }; char c; }; S2() : n(n) {} };  // expected-warning {{field 'n' is uninitialized when used here}}
-  struct S3 { struct { int n; }; S3() : n(n) {} };  // expected-warning {{field 'n' is uninitialized when used here}}
 }

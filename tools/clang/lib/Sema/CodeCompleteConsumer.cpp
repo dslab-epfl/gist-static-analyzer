@@ -11,14 +11,15 @@
 //
 //===----------------------------------------------------------------------===//
 #include "clang/Sema/CodeCompleteConsumer.h"
-#include "clang-c/Index.h"
+#include "clang/Sema/Scope.h"
+#include "clang/Sema/Sema.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/DeclTemplate.h"
-#include "clang/Sema/Scope.h"
-#include "clang/Sema/Sema.h"
-#include "llvm/ADT/STLExtras.h"
+#include "clang/Lex/Preprocessor.h"
+#include "clang-c/Index.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
@@ -218,7 +219,7 @@ const char *CodeCompletionString::getAnnotation(unsigned AnnotationNr) const {
   if (AnnotationNr < NumAnnotations)
     return reinterpret_cast<const char * const*>(end())[AnnotationNr];
   else
-    return nullptr;
+    return 0;
 }
 
 
@@ -247,8 +248,8 @@ const char *CodeCompletionString::getTypedText() const {
   for (iterator C = begin(), CEnd = end(); C != CEnd; ++C)
     if (C->Kind == CK_TypedText)
       return C->Text;
-
-  return nullptr;
+  
+  return 0;
 }
 
 const char *CodeCompletionAllocator::CopyString(StringRef String) {
@@ -266,8 +267,8 @@ const char *CodeCompletionAllocator::CopyString(Twine String) {
   return CopyString(String.toStringRef(Data));
 }
 
-StringRef CodeCompletionTUInfo::getParentName(const DeclContext *DC) {
-  const NamedDecl *ND = dyn_cast<NamedDecl>(DC);
+StringRef CodeCompletionTUInfo::getParentName(DeclContext *DC) {
+  NamedDecl *ND = dyn_cast<NamedDecl>(DC);
   if (!ND)
     return StringRef();
   
@@ -278,13 +279,13 @@ StringRef CodeCompletionTUInfo::getParentName(const DeclContext *DC) {
 
   // If we already processed this DeclContext and assigned empty to it, the
   // data pointer will be non-null.
-  if (CachedParentName.data() != nullptr)
+  if (CachedParentName.data() != 0)
     return StringRef();
 
   // Find the interesting names.
-  SmallVector<const DeclContext *, 2> Contexts;
+  llvm::SmallVector<DeclContext *, 2> Contexts;
   while (DC && !DC->isFunctionOrMethod()) {
-    if (const NamedDecl *ND = dyn_cast<NamedDecl>(DC)) {
+    if (NamedDecl *ND = dyn_cast<NamedDecl>(DC)) {
       if (ND->getIdentifier())
         Contexts.push_back(DC);
     }
@@ -293,7 +294,7 @@ StringRef CodeCompletionTUInfo::getParentName(const DeclContext *DC) {
   }
 
   {
-    SmallString<128> S;
+    llvm::SmallString<128> S;
     llvm::raw_svector_ostream OS(S);
     bool First = true;
     for (unsigned I = Contexts.size(); I != 0; --I) {
@@ -303,12 +304,12 @@ StringRef CodeCompletionTUInfo::getParentName(const DeclContext *DC) {
         OS << "::";
       }
       
-      const DeclContext *CurDC = Contexts[I-1];
-      if (const ObjCCategoryImplDecl *CatImpl = dyn_cast<ObjCCategoryImplDecl>(CurDC))
+      DeclContext *CurDC = Contexts[I-1];
+      if (ObjCCategoryImplDecl *CatImpl = dyn_cast<ObjCCategoryImplDecl>(CurDC))
         CurDC = CatImpl->getCategoryDecl();
       
-      if (const ObjCCategoryDecl *Cat = dyn_cast<ObjCCategoryDecl>(CurDC)) {
-        const ObjCInterfaceDecl *Interface = Cat->getClassInterface();
+      if (ObjCCategoryDecl *Cat = dyn_cast<ObjCCategoryDecl>(CurDC)) {
+        ObjCInterfaceDecl *Interface = Cat->getClassInterface();
         if (!Interface) {
           // Assign an empty StringRef but with non-null data to distinguish
           // between empty because we didn't process the DeclContext yet.
@@ -376,7 +377,7 @@ void CodeCompletionBuilder::AddChunk(CodeCompletionString::ChunkKind CK,
   Chunks.push_back(Chunk(CK, Text));
 }
 
-void CodeCompletionBuilder::addParentContext(const DeclContext *DC) {
+void CodeCompletionBuilder::addParentContext(DeclContext *DC) {
   if (DC->isTranslationUnit()) {
     return;
   }
@@ -384,7 +385,7 @@ void CodeCompletionBuilder::addParentContext(const DeclContext *DC) {
   if (DC->isFunctionOrMethod())
     return;
   
-  const NamedDecl *ND = dyn_cast<NamedDecl>(DC);
+  NamedDecl *ND = dyn_cast<NamedDecl>(DC);
   if (!ND)
     return;
   
@@ -393,6 +394,33 @@ void CodeCompletionBuilder::addParentContext(const DeclContext *DC) {
 
 void CodeCompletionBuilder::addBriefComment(StringRef Comment) {
   BriefComment = Allocator.CopyString(Comment);
+}
+
+unsigned CodeCompletionResult::getPriorityFromDecl(NamedDecl *ND) {
+  if (!ND)
+    return CCP_Unlikely;
+  
+  // Context-based decisions.
+  DeclContext *DC = ND->getDeclContext()->getRedeclContext();
+  if (DC->isFunctionOrMethod() || isa<BlockDecl>(DC)) {
+    // _cmd is relatively rare
+    if (ImplicitParamDecl *ImplicitParam = dyn_cast<ImplicitParamDecl>(ND))
+      if (ImplicitParam->getIdentifier() &&
+          ImplicitParam->getIdentifier()->isStr("_cmd"))
+        return CCP_ObjC_cmd;
+    
+    return CCP_LocalDeclaration;
+  }
+  if (DC->isRecord() || isa<ObjCContainerDecl>(DC))
+    return CCP_MemberDeclaration;
+  
+  // Content-based decisions.
+  if (isa<EnumConstantDecl>(ND))
+    return CCP_Constant;
+  if (isa<TypeDecl>(ND) || isa<ObjCInterfaceDecl>(ND))
+    return CCP_Type;
+  
+  return CCP_Declaration;
 }
 
 //===----------------------------------------------------------------------===//
@@ -405,7 +433,7 @@ CodeCompleteConsumer::OverloadCandidate::getFunction() const {
   else if (getKind() == CK_FunctionTemplate)
     return FunctionTemplate->getTemplatedDecl();
   else
-    return nullptr;
+    return 0;
 }
 
 const FunctionType *
@@ -498,7 +526,7 @@ PrintingCodeCompleteConsumer::ProcessOverloadCandidates(Sema &SemaRef,
 }
 
 /// \brief Retrieve the effective availability of the given declaration.
-static AvailabilityResult getDeclAvailability(const Decl *D) {
+static AvailabilityResult getDeclAvailability(Decl *D) {
   AvailabilityResult AR = D->getAvailability();
   if (isa<EnumConstantDecl>(D))
     AR = std::max(AR, cast<Decl>(D->getDeclContext())->getAvailability());
@@ -531,7 +559,7 @@ void CodeCompletionResult::computeCursorKindAndAvailability(bool Accessible) {
       break;
     }
 
-    if (const FunctionDecl *Function = dyn_cast<FunctionDecl>(Declaration))
+    if (FunctionDecl *Function = dyn_cast<FunctionDecl>(Declaration))
       if (Function->isDeleted())
         Availability = CXAvailability_NotAvailable;
       

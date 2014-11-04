@@ -11,23 +11,32 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/GlobalAlias.h"
-#include "llvm/IR/GlobalValue.h"
-#include "llvm/IR/GlobalVariable.h"
-#include "llvm/IR/Mangler.h"
+#include "llvm/GlobalAlias.h"
+#include "llvm/GlobalValue.h"
+#include "llvm/GlobalVariable.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCCodeGenInfo.h"
-#include "llvm/MC/MCContext.h"
-#include "llvm/MC/MCTargetOptions.h"
-#include "llvm/MC/SectionKind.h"
+#include "llvm/Target/TargetMachine.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Target/TargetLowering.h"
-#include "llvm/Target/TargetLoweringObjectFile.h"
-#include "llvm/Target/TargetSubtargetInfo.h"
 using namespace llvm;
+
+//---------------------------------------------------------------------------
+// Command-line options that tend to be useful on more than one back-end.
+//
+
+namespace llvm {
+  bool HasDivModLibcall;
+  bool AsmVerbosityDefault(false);
+}
+
+static cl::opt<bool>
+DataSections("fdata-sections",
+  cl::desc("Emit data into separate sections"),
+  cl::init(false));
+static cl::opt<bool>
+FunctionSections("ffunction-sections",
+  cl::desc("Emit functions into separate sections"),
+  cl::init(false));
 
 //---------------------------------------------------------------------------
 // TargetMachine Class
@@ -37,35 +46,19 @@ TargetMachine::TargetMachine(const Target &T,
                              StringRef TT, StringRef CPU, StringRef FS,
                              const TargetOptions &Options)
   : TheTarget(T), TargetTriple(TT), TargetCPU(CPU), TargetFS(FS),
-    CodeGenInfo(nullptr), AsmInfo(nullptr),
-    RequireStructuredCFG(false),
+    CodeGenInfo(0), AsmInfo(0),
+    MCRelaxAll(false),
+    MCNoExecStack(false),
+    MCSaveTempLabels(false),
+    MCUseLoc(true),
+    MCUseCFI(true),
+    MCUseDwarfDirectory(false),
     Options(Options) {
 }
 
 TargetMachine::~TargetMachine() {
   delete CodeGenInfo;
   delete AsmInfo;
-}
-
-/// \brief Reset the target options based on the function's attributes.
-void TargetMachine::resetTargetOptions(const Function &F) const {
-#define RESET_OPTION(X, Y)                                                     \
-  do {                                                                         \
-    if (F.hasFnAttribute(Y))                                                  \
-      Options.X = (F.getAttributes()                                          \
-                       .getAttribute(AttributeSet::FunctionIndex, Y)           \
-                       .getValueAsString() == "true");                         \
-  } while (0)
-
-  RESET_OPTION(NoFramePointerElim, "no-frame-pointer-elim");
-  RESET_OPTION(LessPreciseFPMADOption, "less-precise-fpmad");
-  RESET_OPTION(UnsafeFPMath, "unsafe-fp-math");
-  RESET_OPTION(NoInfsFPMath, "no-infs-fp-math");
-  RESET_OPTION(NoNaNsFPMath, "no-nans-fp-math");
-  RESET_OPTION(UseSoftFloat, "use-soft-float");
-  RESET_OPTION(DisableTailCalls, "disable-tail-calls");
-
-  Options.MCOptions.SanitizeAddress = F.hasFnAttribute(Attribute::SanitizeAddress);
 }
 
 /// getRelocationModel - Returns the code generation relocation model. The
@@ -85,8 +78,8 @@ CodeModel::Model TargetMachine::getCodeModel() const {
 }
 
 /// Get the IR-specified TLS model for Var.
-static TLSModel::Model getSelectedTLSModel(const GlobalValue *GV) {
-  switch (GV->getThreadLocalMode()) {
+static TLSModel::Model getSelectedTLSModel(const GlobalVariable *Var) {
+  switch (Var->getThreadLocalMode()) {
   case GlobalVariable::NotThreadLocal:
     llvm_unreachable("getSelectedTLSModel for non-TLS variable");
     break;
@@ -103,13 +96,19 @@ static TLSModel::Model getSelectedTLSModel(const GlobalValue *GV) {
 }
 
 TLSModel::Model TargetMachine::getTLSModel(const GlobalValue *GV) const {
-  bool isLocal = GV->hasLocalLinkage();
-  bool isDeclaration = GV->isDeclaration();
+  // If GV is an alias then use the aliasee for determining
+  // thread-localness.
+  if (const GlobalAlias *GA = dyn_cast<GlobalAlias>(GV))
+    GV = GA->resolveAliasedGlobal(false);
+  const GlobalVariable *Var = cast<GlobalVariable>(GV);
+
+  bool isLocal = Var->hasLocalLinkage();
+  bool isDeclaration = Var->isDeclaration();
   bool isPIC = getRelocationModel() == Reloc::PIC_;
   bool isPIE = Options.PositionIndependentExecutable;
   // FIXME: what should we do for protected and internal visibility?
   // For variables, is internal different from hidden?
-  bool isHidden = GV->hasHiddenVisibility();
+  bool isHidden = Var->hasHiddenVisibility();
 
   TLSModel::Model Model;
   if (isPIC && !isPIE) {
@@ -125,7 +124,7 @@ TLSModel::Model TargetMachine::getTLSModel(const GlobalValue *GV) const {
   }
 
   // If the user specified a more specific model, use that.
-  TLSModel::Model SelectedModel = getSelectedTLSModel(GV);
+  TLSModel::Model SelectedModel = getSelectedTLSModel(Var);
   if (SelectedModel > Model)
     return SelectedModel;
 
@@ -140,56 +139,26 @@ CodeGenOpt::Level TargetMachine::getOptLevel() const {
   return CodeGenInfo->getOptLevel();
 }
 
-void TargetMachine::setOptLevel(CodeGenOpt::Level Level) const {
-  if (CodeGenInfo)
-    CodeGenInfo->setOptLevel(Level);
-}
-
-bool TargetMachine::getAsmVerbosityDefault() const {
-  return Options.MCOptions.AsmVerbose;
+bool TargetMachine::getAsmVerbosityDefault() {
+  return AsmVerbosityDefault;
 }
 
 void TargetMachine::setAsmVerbosityDefault(bool V) {
-  Options.MCOptions.AsmVerbose = V;
+  AsmVerbosityDefault = V;
 }
 
-bool TargetMachine::getFunctionSections() const {
-  return Options.FunctionSections;
+bool TargetMachine::getFunctionSections() {
+  return FunctionSections;
 }
 
-bool TargetMachine::getDataSections() const {
-  return Options.DataSections;
+bool TargetMachine::getDataSections() {
+  return DataSections;
 }
 
 void TargetMachine::setFunctionSections(bool V) {
-  Options.FunctionSections = V;
+  FunctionSections = V;
 }
 
 void TargetMachine::setDataSections(bool V) {
-  Options.DataSections = V;
-}
-
-void TargetMachine::getNameWithPrefix(SmallVectorImpl<char> &Name,
-                                      const GlobalValue *GV, Mangler &Mang,
-                                      bool MayAlwaysUsePrivate) const {
-  if (MayAlwaysUsePrivate || !GV->hasPrivateLinkage()) {
-    // Simple case: If GV is not private, it is not important to find out if
-    // private labels are legal in this case or not.
-    Mang.getNameWithPrefix(Name, GV, false);
-    return;
-  }
-  SectionKind GVKind = TargetLoweringObjectFile::getKindForGlobal(GV, *this);
-  const TargetLoweringObjectFile &TLOF =
-      getSubtargetImpl()->getTargetLowering()->getObjFileLowering();
-  const MCSection *TheSection = TLOF.SectionForGlobal(GV, GVKind, Mang, *this);
-  bool CannotUsePrivateLabel = TLOF.isSectionAtomizableBySymbols(*TheSection);
-  Mang.getNameWithPrefix(Name, GV, CannotUsePrivateLabel);
-}
-
-MCSymbol *TargetMachine::getSymbol(const GlobalValue *GV, Mangler &Mang) const {
-  SmallString<60> NameStr;
-  getNameWithPrefix(NameStr, GV, Mang);
-  const TargetLoweringObjectFile &TLOF =
-      getSubtargetImpl()->getTargetLowering()->getObjFileLowering();
-  return TLOF.getContext().GetOrCreateSymbol(NameStr.str());
+  DataSections = V;
 }

@@ -11,11 +11,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_ANALYSIS_ANALYSES_LIVEVARIABLES_H
-#define LLVM_CLANG_ANALYSIS_ANALYSES_LIVEVARIABLES_H
+#ifndef LLVM_CLANG_LIVEVARIABLES_H
+#define LLVM_CLANG_LIVEVARIABLES_H
 
-#include "clang/AST/Decl.h"
 #include "clang/Analysis/AnalysisContext.h"
+#include "clang/AST/Decl.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/ImmutableSet.h"
 
@@ -38,7 +38,7 @@ public:
     bool equals(const LivenessValues &V) const;
 
     LivenessValues()
-      : liveStmts(nullptr), liveDecls(nullptr) {}
+      : liveStmts(0), liveDecls(0) {}
 
     LivenessValues(llvm::ImmutableSet<const Stmt *> LiveStmts,
                    llvm::ImmutableSet<const VarDecl *> LiveDecls)

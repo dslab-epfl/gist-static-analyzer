@@ -14,57 +14,25 @@
 #ifndef LLVM_OBJECT_ARCHIVE_H
 #define LLVM_OBJECT_ARCHIVE_H
 
-#include "llvm/ADT/iterator_range.h"
-#include "llvm/ADT/StringRef.h"
 #include "llvm/Object/Binary.h"
-#include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/ErrorOr.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/DataTypes.h"
 
 namespace llvm {
 namespace object {
-struct ArchiveMemberHeader {
-  char Name[16];
-  char LastModified[12];
-  char UID[6];
-  char GID[6];
-  char AccessMode[8];
-  char Size[10]; ///< Size of data, not including header or padding.
-  char Terminator[2];
-
-  /// Get the name without looking up long names.
-  llvm::StringRef getName() const;
-
-  /// Members are not larger than 4GB.
-  uint32_t getSize() const;
-
-  sys::fs::perms getAccessMode() const;
-  sys::TimeValue getLastModified() const;
-  unsigned getUID() const;
-  unsigned getGID() const;
-};
 
 class Archive : public Binary {
   virtual void anchor();
 public:
   class Child {
     const Archive *Parent;
-    /// \brief Includes header but not padding byte.
     StringRef Data;
-    /// \brief Offset from Data to the start of the file.
-    uint16_t StartOfFile;
-
-    const ArchiveMemberHeader *getHeader() const {
-      return reinterpret_cast<const ArchiveMemberHeader *>(Data.data());
-    }
 
   public:
-    Child(const Archive *Parent, const char *Start);
+    Child(const Archive *p, StringRef d) : Parent(p), Data(d) {}
 
     bool operator ==(const Child &other) const {
-      assert(Parent == other.Parent);
-      return Data.begin() == other.Data.begin();
+      return (Parent == other.Parent) && (Data.begin() == other.Data.begin());
     }
 
     bool operator <(const Child &other) const {
@@ -72,38 +40,26 @@ public:
     }
 
     Child getNext() const;
+    error_code getName(StringRef &Result) const;
+    int getLastModified() const;
+    int getUID() const;
+    int getGID() const;
+    int getAccessMode() const;
+    ///! Return the size of the archive member without the header or padding.
+    uint64_t getSize() const;
 
-    ErrorOr<StringRef> getName() const;
-    StringRef getRawName() const { return getHeader()->getName(); }
-    sys::TimeValue getLastModified() const {
-      return getHeader()->getLastModified();
-    }
-    unsigned getUID() const { return getHeader()->getUID(); }
-    unsigned getGID() const { return getHeader()->getGID(); }
-    sys::fs::perms getAccessMode() const {
-      return getHeader()->getAccessMode();
-    }
-    /// \return the size of the archive member without the header or padding.
-    uint64_t getSize() const { return Data.size() - StartOfFile; }
-
-    StringRef getBuffer() const {
-      return StringRef(Data.data() + StartOfFile, getSize());
-    }
-
-    ErrorOr<MemoryBufferRef> getMemoryBufferRef() const;
-
-    ErrorOr<std::unique_ptr<Binary>>
-    getAsBinary(LLVMContext *Context = nullptr) const;
+    MemoryBuffer *getBuffer() const;
+    error_code getAsBinary(OwningPtr<Binary> &Result) const;
   };
 
   class child_iterator {
     Child child;
-
   public:
-    child_iterator() : child(Child(nullptr, nullptr)) {}
+    child_iterator() : child(Child(0, StringRef())) {}
     child_iterator(const Child &c) : child(c) {}
-    const Child *operator->() const { return &child; }
-    const Child &operator*() const { return child; }
+    const Child* operator->() const {
+      return &child;
+    }
 
     bool operator==(const child_iterator &other) const {
       return child == other.child;
@@ -113,11 +69,11 @@ public:
       return !(*this == other);
     }
 
-    bool operator<(const child_iterator &other) const {
+    bool operator <(const child_iterator &other) const {
       return child < other.child;
     }
 
-    child_iterator &operator++() { // Preincrement
+    child_iterator& operator++() {  // Preincrement
       child = child.getNext();
       return *this;
     }
@@ -137,8 +93,8 @@ public:
       : Parent(p)
       , SymbolIndex(symi)
       , StringIndex(stri) {}
-    StringRef getName() const;
-    ErrorOr<child_iterator> getMember() const;
+    error_code getName(StringRef &Result) const;
+    error_code getMember(child_iterator &Result) const;
     Symbol getNext() const;
   };
 
@@ -164,44 +120,22 @@ public:
     }
   };
 
-  Archive(MemoryBufferRef Source, std::error_code &EC);
-  static ErrorOr<std::unique_ptr<Archive>> create(MemoryBufferRef Source);
+  Archive(MemoryBuffer *source, error_code &ec);
 
-  enum Kind {
-    K_GNU,
-    K_BSD,
-    K_COFF
-  };
+  child_iterator begin_children(bool skip_internal = true) const;
+  child_iterator end_children() const;
 
-  Kind kind() const { 
-    return Format;
-  }
-
-  child_iterator child_begin(bool SkipInternal = true) const;
-  child_iterator child_end() const;
-  iterator_range<child_iterator> children(bool SkipInternal = true) const {
-    return iterator_range<child_iterator>(child_begin(SkipInternal),
-                                          child_end());
-  }
-
-  symbol_iterator symbol_begin() const;
-  symbol_iterator symbol_end() const;
+  symbol_iterator begin_symbols() const;
+  symbol_iterator end_symbols() const;
 
   // Cast methods.
   static inline bool classof(Binary const *v) {
     return v->isArchive();
   }
 
-  // check if a symbol is in the archive
-  child_iterator findSym(StringRef name) const;
-
-  bool hasSymbolTable() const;
-
 private:
   child_iterator SymbolTable;
   child_iterator StringTable;
-  child_iterator FirstRegular;
-  Kind Format;
 };
 
 }

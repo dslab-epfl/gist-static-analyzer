@@ -1,3 +1,5 @@
+.. _exception_handling:
+
 ==========================
 Exception Handling in LLVM
 ==========================
@@ -32,13 +34,13 @@ execution of an application.
 
 A more complete description of the Itanium ABI exception handling runtime
 support of can be found at `Itanium C++ ABI: Exception Handling
-<http://mentorembedded.github.com/cxx-abi/abi-eh.html>`_. A description of the
+<http://www.codesourcery.com/cxx-abi/abi-eh.html>`_. A description of the
 exception frame format can be found at `Exception Frames
-<http://refspecs.linuxfoundation.org/LSB_3.0.0/LSB-Core-generic/LSB-Core-generic/ehframechpt.html>`_,
+<http://refspecs.freestandards.org/LSB_3.0.0/LSB-Core-generic/LSB-Core-generic/ehframechpt.html>`_,
 with details of the DWARF 4 specification at `DWARF 4 Standard
 <http://dwarfstd.org/Dwarf4Std.php>`_.  A description for the C++ exception
 table formats can be found at `Exception Handling Tables
-<http://mentorembedded.github.com/cxx-abi/exceptions.pdf>`_.
+<http://www.codesourcery.com/cxx-abi/exceptions.pdf>`_.
 
 Setjmp/Longjmp Exception Handling
 ---------------------------------
@@ -142,76 +144,27 @@ continuation points:
 #. where to continue if the call raises an exception, either by a throw or the
    unwinding of a throw
 
-The term used to define the place where an ``invoke`` continues after an
+The term used to define a the place where an ``invoke`` continues after an
 exception is called a *landing pad*. LLVM landing pads are conceptually
 alternative function entry points where an exception structure reference and a
 type info index are passed in as arguments. The landing pad saves the exception
 structure reference and then proceeds to select the catch block that corresponds
 to the type info of the exception object.
 
-The LLVM :ref:`i_landingpad` is used to convey information about the landing
-pad to the back end. For C++, the ``landingpad`` instruction returns a pointer
-and integer pair corresponding to the pointer to the *exception structure* and
-the *selector value* respectively.
+The LLVM `landingpad instruction <LangRef.html#i_landingpad>`_ is used to convey
+information about the landing pad to the back end. For C++, the ``landingpad``
+instruction returns a pointer and integer pair corresponding to the pointer to
+the *exception structure* and the *selector value* respectively.
 
 The ``landingpad`` instruction takes a reference to the personality function to
 be used for this ``try``/``catch`` sequence. The remainder of the instruction is
 a list of *cleanup*, *catch*, and *filter* clauses. The exception is tested
-against the clauses sequentially from first to last. The clauses have the
-following meanings:
-
--  ``catch <type> @ExcType``
-
-   - This clause means that the landingpad block should be entered if the
-     exception being thrown is of type ``@ExcType`` or a subtype of
-     ``@ExcType``. For C++, ``@ExcType`` is a pointer to the ``std::type_info``
-     object (an RTTI object) representing the C++ exception type.
-
-   - If ``@ExcType`` is ``null``, any exception matches, so the landingpad
-     should always be entered. This is used for C++ catch-all blocks ("``catch
-     (...)``").
-
-   - When this clause is matched, the selector value will be equal to the value
-     returned by "``@llvm.eh.typeid.for(i8* @ExcType)``". This will always be a
-     positive value.
-
--  ``filter <type> [<type> @ExcType1, ..., <type> @ExcTypeN]``
-
-   - This clause means that the landingpad should be entered if the exception
-     being thrown does *not* match any of the types in the list (which, for C++,
-     are again specified as ``std::type_info`` pointers).
-
-   - C++ front-ends use this to implement C++ exception specifications, such as
-     "``void foo() throw (ExcType1, ..., ExcTypeN) { ... }``".
-
-   - When this clause is matched, the selector value will be negative.
-
-   - The array argument to ``filter`` may be empty; for example, "``[0 x i8**]
-     undef``". This means that the landingpad should always be entered. (Note
-     that such a ``filter`` would not be equivalent to "``catch i8* null``",
-     because ``filter`` and ``catch`` produce negative and positive selector
-     values respectively.)
-
--  ``cleanup``
-
-   - This clause means that the landingpad should always be entered.
-
-   - C++ front-ends use this for calling objects' destructors.
-
-   - When this clause is matched, the selector value will be zero.
-
-   - The runtime may treat "``cleanup``" differently from "``catch <type>
-     null``".
-
-     In C++, if an unhandled exception occurs, the language runtime will call
-     ``std::terminate()``, but it is implementation-defined whether the runtime
-     unwinds the stack and calls object destructors first. For example, the GNU
-     C++ unwinder does not call object destructors when an unhandled exception
-     occurs. The reason for this is to improve debuggability: it ensures that
-     ``std::terminate()`` is called from the context of the ``throw``, so that
-     this context is not lost by unwinding the stack. A runtime will typically
-     implement this by searching for a matching non-``cleanup`` clause, and
-     aborting if it does not find one, before entering any landingpad blocks.
+against the clauses sequentially from first to last. The selector value is a
+positive number if the exception matched a type info, a negative number if it
+matched a filter, and zero if it matched a cleanup. If nothing is matched, the
+behavior of the program is `undefined`_. If a type info matched, then the
+selector value is the index of the type info in the exception table, which can
+be obtained using the `llvm.eh.typeid.for`_ intrinsic.
 
 Once the landing pad has the type info selector, the code branches to the code
 for the first catch. The catch then checks the value of the type info selector
@@ -250,9 +203,10 @@ A cleanup is extra code which needs to be run as part of unwinding a scope.  C++
 destructors are a typical example, but other languages and language extensions
 provide a variety of different kinds of cleanups. In general, a landing pad may
 need to run arbitrary amounts of cleanup code before actually entering a catch
-block. To indicate the presence of cleanups, a :ref:`i_landingpad` should have
-a *cleanup* clause.  Otherwise, the unwinder will not stop at the landing pad if
-there are no catches or filters that require it to.
+block. To indicate the presence of cleanups, a `landingpad
+instruction <LangRef.html#i_landingpad>`_ should have a *cleanup*
+clause. Otherwise, the unwinder will not stop at the landing pad if there are no
+catches or filters that require it to.
 
 .. note::
 
@@ -272,9 +226,9 @@ Throw Filters
 
 C++ allows the specification of which exception types may be thrown from a
 function. To represent this, a top level landing pad may exist to filter out
-invalid types. To express this in LLVM code the :ref:`i_landingpad` will have a
-filter clause. The clause consists of an array of type infos.
-``landingpad`` will return a negative value
+invalid types. To express this in LLVM code the `landingpad
+instruction <LangRef.html#i_landingpad>`_ will have a filter clause. The clause
+consists of an array of type infos.  ``landingpad`` will return a negative value
 if the exception does not match any of the type infos. If no match is found then
 a call to ``__cxa_call_unexpected`` should be made, otherwise
 ``_Unwind_Resume``.  Each of these functions requires a reference to the
@@ -315,8 +269,8 @@ handling information at various points in generated code.
 
 .. _llvm.eh.typeid.for:
 
-``llvm.eh.typeid.for``
-----------------------
+llvm.eh.typeid.for
+------------------
 
 .. code-block:: llvm
 
@@ -327,19 +281,10 @@ This intrinsic returns the type info index in the exception table of the current
 function.  This value can be used to compare against the result of
 ``landingpad`` instruction.  The single argument is a reference to a type info.
 
-Uses of this intrinsic are generated by the C++ front-end.
-
-SJLJ Intrinsics
----------------
-
-The ``llvm.eh.sjlj`` intrinsics are used internally within LLVM's
-backend.  Uses of them are generated by the backend's
-``SjLjEHPrepare`` pass.
-
 .. _llvm.eh.sjlj.setjmp:
 
-``llvm.eh.sjlj.setjmp``
-~~~~~~~~~~~~~~~~~~~~~~~
+llvm.eh.sjlj.setjmp
+-------------------
 
 .. code-block:: llvm
 
@@ -360,8 +305,8 @@ available for use in a target-specific manner.
 
 .. _llvm.eh.sjlj.longjmp:
 
-``llvm.eh.sjlj.longjmp``
-~~~~~~~~~~~~~~~~~~~~~~~~
+llvm.eh.sjlj.longjmp
+--------------------
 
 .. code-block:: llvm
 
@@ -373,8 +318,8 @@ a buffer populated by `llvm.eh.sjlj.setjmp`_. The frame pointer and stack
 pointer are restored from the buffer, then control is transferred to the
 destination address.
 
-``llvm.eh.sjlj.lsda``
-~~~~~~~~~~~~~~~~~~~~~
+llvm.eh.sjlj.lsda
+-----------------
 
 .. code-block:: llvm
 
@@ -385,8 +330,8 @@ the address of the Language Specific Data Area (LSDA) for the current
 function. The SJLJ front-end code stores this address in the exception handling
 function context for use by the runtime.
 
-``llvm.eh.sjlj.callsite``
-~~~~~~~~~~~~~~~~~~~~~~~~~
+llvm.eh.sjlj.callsite
+---------------------
 
 .. code-block:: llvm
 

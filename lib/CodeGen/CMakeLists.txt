@@ -2,32 +2,28 @@ add_llvm_library(LLVMCodeGen
   AggressiveAntiDepBreaker.cpp
   AllocationOrder.cpp
   Analysis.cpp
-  AtomicExpandPass.cpp
-  BasicTargetTransformInfo.cpp
   BranchFolding.cpp
   CalcSpillWeights.cpp
   CallingConvLower.cpp
   CodeGen.cpp
-  CodeGenPrepare.cpp
+  CodePlacementOpt.cpp
   CriticalAntiDepBreaker.cpp
-  DFAPacketizer.cpp
   DeadMachineInstructionElim.cpp
+  DFAPacketizer.cpp
   DwarfEHPrepare.cpp
   EarlyIfConversion.cpp
   EdgeBundles.cpp
-  ErlangGC.cpp
   ExecutionDepsFix.cpp
   ExpandISelPseudos.cpp
   ExpandPostRAPseudos.cpp
   GCMetadata.cpp
   GCMetadataPrinter.cpp
   GCStrategy.cpp
-  GlobalMerge.cpp
   IfConversion.cpp
   InlineSpiller.cpp
   InterferenceCache.cpp
   IntrinsicLowering.cpp
-  JumpInstrTables.cpp
+  JITCodeEmitter.cpp
   LLVMTargetMachine.cpp
   LatencyPriorityQueue.cpp
   LexicalScopes.cpp
@@ -35,22 +31,21 @@ add_llvm_library(LLVMCodeGen
   LiveInterval.cpp
   LiveIntervalAnalysis.cpp
   LiveIntervalUnion.cpp
-  LiveRangeCalc.cpp
-  LiveRangeEdit.cpp
   LiveRegMatrix.cpp
-  LivePhysRegs.cpp
   LiveStackAnalysis.cpp
   LiveVariables.cpp
+  LiveRangeCalc.cpp
+  LiveRangeEdit.cpp
   LocalStackSlotAllocation.cpp
   MachineBasicBlock.cpp
   MachineBlockFrequencyInfo.cpp
   MachineBlockPlacement.cpp
   MachineBranchProbabilityInfo.cpp
-  MachineCSE.cpp
-  MachineCombiner.cpp
+  MachineCodeEmitter.cpp
   MachineCopyPropagation.cpp
+  MachineCSE.cpp
   MachineDominators.cpp
-  MachineDominanceFrontier.cpp
+  MachinePostDominators.cpp
   MachineFunction.cpp
   MachineFunctionAnalysis.cpp
   MachineFunctionPass.cpp
@@ -59,12 +54,11 @@ add_llvm_library(LLVMCodeGen
   MachineInstrBundle.cpp
   MachineLICM.cpp
   MachineLoopInfo.cpp
+  MachineLoopRanges.cpp
   MachineModuleInfo.cpp
   MachineModuleInfoImpls.cpp
   MachinePassRegistry.cpp
-  MachinePostDominators.cpp
   MachineRegisterInfo.cpp
-  MachineRegionInfo.cpp
   MachineSSAUpdater.cpp
   MachineScheduler.cpp
   MachineSink.cpp
@@ -94,23 +88,21 @@ add_llvm_library(LLVMCodeGen
   ScheduleDAGPrinter.cpp
   ScoreboardHazardRecognizer.cpp
   ShadowStackGC.cpp
+  ShrinkWrapping.cpp
   SjLjEHPrepare.cpp
   SlotIndexes.cpp
-  SpillPlacement.cpp
   Spiller.cpp
+  SpillPlacement.cpp
   SplitKit.cpp
-  StackColoring.cpp
   StackProtector.cpp
   StackSlotColoring.cpp
-  StackMapLivenessAnalysis.cpp
-  StackMaps.cpp
+  StackColoring.cpp
+  StrongPHIElimination.cpp
   TailDuplication.cpp
   TargetFrameLoweringImpl.cpp
-  TargetInstrInfo.cpp
-  TargetLoweringBase.cpp
+  TargetInstrInfoImpl.cpp
   TargetLoweringObjectFileImpl.cpp
   TargetOptionsImpl.cpp
-  TargetRegisterInfo.cpp
   TargetSchedule.cpp
   TwoAddressInstructionPass.cpp
   UnreachableBlockElim.cpp

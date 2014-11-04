@@ -19,19 +19,17 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "scheduler"
 #include "llvm/CodeGen/ResourcePriorityQueue.h"
-#include "llvm/CodeGen/MachineInstr.h"
-#include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/TargetLowering.h"
+#include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetSubtargetInfo.h"
+#include "llvm/Target/TargetLowering.h"
 
 using namespace llvm;
-
-#define DEBUG_TYPE "scheduler"
 
 static cl::opt<bool> DisableDFASched("disable-dfa-sched", cl::Hidden,
   cl::ZeroOrMore, cl::init(false),
@@ -41,29 +39,32 @@ static cl::opt<signed> RegPressureThreshold(
   "dfa-sched-reg-pressure-threshold", cl::Hidden, cl::ZeroOrMore, cl::init(5),
   cl::desc("Track reg pressure and switch priority to in-depth"));
 
-ResourcePriorityQueue::ResourcePriorityQueue(SelectionDAGISel *IS)
-    : Picker(this), InstrItins(IS->MF->getSubtarget().getInstrItineraryData()) {
-  const TargetSubtargetInfo &STI = IS->MF->getSubtarget();
-  TRI = STI.getRegisterInfo();
-  TLI = IS->TLI;
-  TII = STI.getInstrInfo();
-  ResourcesModel = TII->CreateTargetScheduleState(STI);
-  // This hard requirement could be relaxed, but for now
-  // do not let it procede.
-  assert(ResourcesModel && "Unimplemented CreateTargetScheduleState.");
 
-  unsigned NumRC = TRI->getNumRegClasses();
-  RegLimit.resize(NumRC);
-  RegPressure.resize(NumRC);
-  std::fill(RegLimit.begin(), RegLimit.end(), 0);
-  std::fill(RegPressure.begin(), RegPressure.end(), 0);
-  for (TargetRegisterInfo::regclass_iterator I = TRI->regclass_begin(),
-                                             E = TRI->regclass_end();
-       I != E; ++I)
-    RegLimit[(*I)->getID()] = TRI->getRegPressureLimit(*I, *IS->MF);
+ResourcePriorityQueue::ResourcePriorityQueue(SelectionDAGISel *IS) :
+  Picker(this),
+  InstrItins(IS->getTargetLowering().getTargetMachine().getInstrItineraryData())
+{
+   TII = IS->getTargetLowering().getTargetMachine().getInstrInfo();
+   TRI = IS->getTargetLowering().getTargetMachine().getRegisterInfo();
+   TLI = &IS->getTargetLowering();
 
-  ParallelLiveRanges = 0;
-  HorizontalVerticalBalance = 0;
+   const TargetMachine &tm = (*IS->MF).getTarget();
+   ResourcesModel = tm.getInstrInfo()->CreateTargetScheduleState(&tm,NULL);
+   // This hard requirement could be relaxed, but for now
+   // do not let it procede.
+   assert (ResourcesModel && "Unimplemented CreateTargetScheduleState.");
+
+   unsigned NumRC = TRI->getNumRegClasses();
+   RegLimit.resize(NumRC);
+   RegPressure.resize(NumRC);
+   std::fill(RegLimit.begin(), RegLimit.end(), 0);
+   std::fill(RegPressure.begin(), RegPressure.end(), 0);
+   for (TargetRegisterInfo::regclass_iterator I = TRI->regclass_begin(),
+        E = TRI->regclass_end(); I != E; ++I)
+     RegLimit[(*I)->getID()] = TRI->getRegPressureLimit(*I, *IS->MF);
+
+   ParallelLiveRanges = 0;
+   HorizontalVerticalBalance = 0;
 }
 
 unsigned
@@ -93,9 +94,9 @@ ResourcePriorityQueue::numberRCValPredInSU(SUnit *SU, unsigned RCId) {
       continue;
 
     for (unsigned i = 0, e = ScegN->getNumValues(); i != e; ++i) {
-      MVT VT = ScegN->getSimpleValueType(i);
+      EVT VT = ScegN->getValueType(i);
       if (TLI->isTypeLegal(VT)
-          && (TLI->getRegClassFor(VT)->getID() == RCId)) {
+         && (TLI->getRegClassFor(VT)->getID() == RCId)) {
         NumberDeps++;
         break;
       }
@@ -131,9 +132,9 @@ unsigned ResourcePriorityQueue::numberRCValSuccInSU(SUnit *SU,
 
     for (unsigned i = 0, e = ScegN->getNumOperands(); i != e; ++i) {
       const SDValue &Op = ScegN->getOperand(i);
-      MVT VT = Op.getNode()->getSimpleValueType(Op.getResNo());
+      EVT VT = Op.getNode()->getValueType(Op.getResNo());
       if (TLI->isTypeLegal(VT)
-          && (TLI->getRegClassFor(VT)->getID() == RCId)) {
+         && (TLI->getRegClassFor(VT)->getID() == RCId)) {
         NumberDeps++;
         break;
       }
@@ -213,7 +214,7 @@ bool resource_sort::operator()(const SUnit *LHS, const SUnit *RHS) const {
 /// getSingleUnscheduledPred - If there is exactly one unscheduled predecessor
 /// of SU, return it, otherwise return null.
 SUnit *ResourcePriorityQueue::getSingleUnscheduledPred(SUnit *SU) {
-  SUnit *OnlyAvailablePred = nullptr;
+  SUnit *OnlyAvailablePred = 0;
   for (SUnit::const_pred_iterator I = SU->Preds.begin(), E = SU->Preds.end();
        I != E; ++I) {
     SUnit &Pred = *I->getSUnit();
@@ -221,7 +222,7 @@ SUnit *ResourcePriorityQueue::getSingleUnscheduledPred(SUnit *SU) {
       // We found an available, but not scheduled, predecessor.  If it's the
       // only one we have found, keep track of it... otherwise give up.
       if (OnlyAvailablePred && OnlyAvailablePred != &Pred)
-        return nullptr;
+        return 0;
       OnlyAvailablePred = &Pred;
     }
   }
@@ -317,7 +318,7 @@ void ResourcePriorityQueue::reserveResources(SUnit *SU) {
 
   // If packet is now full, reset the state so in the next cycle
   // we start fresh.
-  if (Packet.size() >= InstrItins->SchedModel.IssueWidth) {
+  if (Packet.size() >= InstrItins->SchedModel->IssueWidth) {
     ResourcesModel->clearResources();
     Packet.clear();
   }
@@ -331,7 +332,7 @@ signed ResourcePriorityQueue::rawRegPressureDelta(SUnit *SU, unsigned RCId) {
 
   // Gen estimate.
   for (unsigned i = 0, e = SU->getNode()->getNumValues(); i != e; ++i) {
-      MVT VT = SU->getNode()->getSimpleValueType(i);
+      EVT VT = SU->getNode()->getValueType(i);
       if (TLI->isTypeLegal(VT)
           && TLI->getRegClassFor(VT)
           && TLI->getRegClassFor(VT)->getID() == RCId)
@@ -340,7 +341,7 @@ signed ResourcePriorityQueue::rawRegPressureDelta(SUnit *SU, unsigned RCId) {
   // Kill estimate.
   for (unsigned i = 0, e = SU->getNode()->getNumOperands(); i != e; ++i) {
       const SDValue &Op = SU->getNode()->getOperand(i);
-      MVT VT = Op.getNode()->getSimpleValueType(Op.getResNo());
+      EVT VT = Op.getNode()->getValueType(Op.getResNo());
       if (isa<ConstantSDNode>(Op.getNode()))
         continue;
 
@@ -388,9 +389,10 @@ signed ResourcePriorityQueue::regPressureDelta(SUnit *SU, bool RawPressure) {
 // Constants used to denote relative importance of
 // heuristic components for cost computation.
 static const unsigned PriorityOne = 200;
-static const unsigned PriorityTwo = 50;
-static const unsigned PriorityThree = 15;
-static const unsigned PriorityFour = 5;
+static const unsigned PriorityTwo = 100;
+static const unsigned PriorityThree = 50;
+static const unsigned PriorityFour = 15;
+static const unsigned PriorityFive = 5;
 static const unsigned ScaleOne = 20;
 static const unsigned ScaleTwo = 10;
 static const unsigned ScaleThree = 5;
@@ -440,14 +442,14 @@ signed ResourcePriorityQueue::SUSchedulingCost(SUnit *SU) {
     ResCount -= (regPressureDelta(SU) * ScaleTwo);
   }
 
-  // These are platform-specific things.
+  // These are platform specific things.
   // Will need to go into the back end
   // and accessed from here via a hook.
   for (SDNode *N = SU->getNode(); N; N = N->getGluedNode()) {
     if (N->isMachineOpcode()) {
       const MCInstrDesc &TID = TII->get(N->getMachineOpcode());
       if (TID.isCall())
-        ResCount += (PriorityTwo + (ScaleThree*N->getNumValues()));
+        ResCount += (PriorityThree + (ScaleThree*N->getNumValues()));
     }
     else
       switch (N->getOpcode()) {
@@ -455,11 +457,11 @@ signed ResourcePriorityQueue::SUSchedulingCost(SUnit *SU) {
       case ISD::TokenFactor:
       case ISD::CopyFromReg:
       case ISD::CopyToReg:
-        ResCount += PriorityFour;
+        ResCount += PriorityFive;
         break;
 
       case ISD::INLINEASM:
-        ResCount += PriorityThree;
+        ResCount += PriorityFour;
         break;
       }
   }
@@ -483,7 +485,7 @@ void ResourcePriorityQueue::scheduledNode(SUnit *SU) {
   if (ScegN->isMachineOpcode()) {
     // Estimate generated regs.
     for (unsigned i = 0, e = ScegN->getNumValues(); i != e; ++i) {
-      MVT VT = ScegN->getSimpleValueType(i);
+      EVT VT = ScegN->getValueType(i);
 
       if (TLI->isTypeLegal(VT)) {
         const TargetRegisterClass *RC = TLI->getRegClassFor(VT);
@@ -494,7 +496,7 @@ void ResourcePriorityQueue::scheduledNode(SUnit *SU) {
     // Estimate killed regs.
     for (unsigned i = 0, e = ScegN->getNumOperands(); i != e; ++i) {
       const SDValue &Op = ScegN->getOperand(i);
-      MVT VT = Op.getNode()->getSimpleValueType(Op.getResNo());
+      EVT VT = Op.getNode()->getValueType(Op.getResNo());
 
       if (TLI->isTypeLegal(VT)) {
         const TargetRegisterClass *RC = TLI->getRegClassFor(VT);
@@ -580,7 +582,7 @@ void ResourcePriorityQueue::adjustPriorityOfUnscheduledPreds(SUnit *SU) {
   if (SU->isAvailable) return;  // All preds scheduled.
 
   SUnit *OnlyAvailablePred = getSingleUnscheduledPred(SU);
-  if (!OnlyAvailablePred || !OnlyAvailablePred->isAvailable)
+  if (OnlyAvailablePred == 0 || !OnlyAvailablePred->isAvailable)
     return;
 
   // Okay, we found a single predecessor that is available, but not scheduled.
@@ -597,13 +599,15 @@ void ResourcePriorityQueue::adjustPriorityOfUnscheduledPreds(SUnit *SU) {
 /// to be placed in scheduling sequence.
 SUnit *ResourcePriorityQueue::pop() {
   if (empty())
-    return nullptr;
+    return 0;
 
   std::vector<SUnit *>::iterator Best = Queue.begin();
   if (!DisableDFASched) {
     signed BestCost = SUSchedulingCost(*Best);
-    for (std::vector<SUnit *>::iterator I = std::next(Queue.begin()),
+    for (std::vector<SUnit *>::iterator I = Queue.begin(),
            E = Queue.end(); I != E; ++I) {
+      if (*I == *Best)
+        continue;
 
       if (SUSchedulingCost(*I) > BestCost) {
         BestCost = SUSchedulingCost(*I);
@@ -613,14 +617,14 @@ SUnit *ResourcePriorityQueue::pop() {
   }
   // Use default TD scheduling mechanism.
   else {
-    for (std::vector<SUnit *>::iterator I = std::next(Queue.begin()),
+    for (std::vector<SUnit *>::iterator I = llvm::next(Queue.begin()),
        E = Queue.end(); I != E; ++I)
       if (Picker(*Best, *I))
         Best = I;
   }
 
   SUnit *V = *Best;
-  if (Best != std::prev(Queue.end()))
+  if (Best != prior(Queue.end()))
     std::swap(*Best, Queue.back());
 
   Queue.pop_back();
@@ -632,7 +636,7 @@ SUnit *ResourcePriorityQueue::pop() {
 void ResourcePriorityQueue::remove(SUnit *SU) {
   assert(!Queue.empty() && "Queue is empty!");
   std::vector<SUnit *>::iterator I = std::find(Queue.begin(), Queue.end(), SU);
-  if (I != std::prev(Queue.end()))
+  if (I != prior(Queue.end()))
     std::swap(*I, Queue.back());
 
   Queue.pop_back();

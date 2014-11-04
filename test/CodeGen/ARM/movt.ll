@@ -1,8 +1,8 @@
-; RUN: llc -mtriple=arm-eabi -mcpu=arm1156t2-s -mattr=+thumb2 %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm -mattr=+thumb2 | FileCheck %s
 ; rdar://7317664
 
 define i32 @t(i32 %X) nounwind {
-; CHECK-LABEL: t:
+; CHECK: t:
 ; CHECK: movt r0, #65535
 entry:
 	%0 = or i32 %X, -65536
@@ -10,7 +10,7 @@ entry:
 }
 
 define i32 @t2(i32 %X) nounwind {
-; CHECK-LABEL: t2:
+; CHECK: t2:
 ; CHECK: movt r0, #65534
 entry:
 	%0 = or i32 %X, -131072

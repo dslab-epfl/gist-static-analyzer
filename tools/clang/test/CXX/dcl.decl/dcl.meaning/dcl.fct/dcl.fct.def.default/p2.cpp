@@ -38,8 +38,8 @@ namespace copy {
   };
 
   struct NonConst {
-    NonConst(NonConst&) = default;
-    NonConst& operator=(NonConst&) = default;
+    NonConst(NonConst&) = default; // expected-error {{must be defaulted outside the class}}
+    NonConst& operator=(NonConst&) = default; // expected-error {{must be defaulted outside the class}}
   };
 
   struct NonConst2 {

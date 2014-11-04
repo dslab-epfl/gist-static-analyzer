@@ -12,16 +12,16 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/IntrinsicLowering.h"
+#include "llvm/Constants.h"
+#include "llvm/DerivedTypes.h"
+#include "llvm/IRBuilder.h"
+#include "llvm/Module.h"
+#include "llvm/Type.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/IR/CallSite.h"
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/DataLayout.h"
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IR/Type.h"
+#include "llvm/Support/CallSite.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/DataLayout.h"
 using namespace llvm;
 
 template <class ArgIt>
@@ -115,21 +115,21 @@ void IntrinsicLowering::AddPrototypes(Module &M) {
           Type::getInt8PtrTy(Context),
                               Type::getInt8PtrTy(Context), 
                               Type::getInt8PtrTy(Context), 
-                              DL.getIntPtrType(Context), nullptr);
+                              TD.getIntPtrType(Context), (Type *)0);
         break;
       case Intrinsic::memmove:
         M.getOrInsertFunction("memmove",
           Type::getInt8PtrTy(Context),
                               Type::getInt8PtrTy(Context), 
                               Type::getInt8PtrTy(Context), 
-                              DL.getIntPtrType(Context), nullptr);
+                              TD.getIntPtrType(Context), (Type *)0);
         break;
       case Intrinsic::memset:
         M.getOrInsertFunction("memset",
           Type::getInt8PtrTy(Context),
                               Type::getInt8PtrTy(Context), 
                               Type::getInt32Ty(M.getContext()), 
-                              DL.getIntPtrType(Context), nullptr);
+                              TD.getIntPtrType(Context), (Type *)0);
         break;
       case Intrinsic::sqrt:
         EnsureFPIntrinsicsExist(M, I, "sqrtf", "sqrt", "sqrtl");
@@ -453,18 +453,11 @@ void IntrinsicLowering::LowerIntrinsicCall(CallInst *CI) {
     CI->replaceAllUsesWith(ConstantInt::get(CI->getType(), 1));
     break;
 
-  case Intrinsic::annotation:
-  case Intrinsic::ptr_annotation:
-    // Just drop the annotation, but forward the value
-    CI->replaceAllUsesWith(CI->getOperand(0));
-    break;
-
-  case Intrinsic::assume:
   case Intrinsic::var_annotation:
-    break;   // Strip out these intrinsics
- 
+    break;   // Strip out annotate intrinsic
+    
   case Intrinsic::memcpy: {
-    Type *IntPtr = DL.getIntPtrType(Context);
+    Type *IntPtr = TD.getIntPtrType(Context);
     Value *Size = Builder.CreateIntCast(CI->getArgOperand(2), IntPtr,
                                         /* isSigned */ false);
     Value *Ops[3];
@@ -475,7 +468,7 @@ void IntrinsicLowering::LowerIntrinsicCall(CallInst *CI) {
     break;
   }
   case Intrinsic::memmove: {
-    Type *IntPtr = DL.getIntPtrType(Context);
+    Type *IntPtr = TD.getIntPtrType(Context);
     Value *Size = Builder.CreateIntCast(CI->getArgOperand(2), IntPtr,
                                         /* isSigned */ false);
     Value *Ops[3];
@@ -486,12 +479,11 @@ void IntrinsicLowering::LowerIntrinsicCall(CallInst *CI) {
     break;
   }
   case Intrinsic::memset: {
-    Value *Op0 = CI->getArgOperand(0);
-    Type *IntPtr = DL.getIntPtrType(Op0->getType());
+    Type *IntPtr = TD.getIntPtrType(Context);
     Value *Size = Builder.CreateIntCast(CI->getArgOperand(2), IntPtr,
                                         /* isSigned */ false);
     Value *Ops[3];
-    Ops[0] = Op0;
+    Ops[0] = CI->getArgOperand(0);
     // Extend the amount to i32.
     Ops[1] = Builder.CreateIntCast(CI->getArgOperand(1),
                                    Type::getInt32Ty(Context),
@@ -526,34 +518,6 @@ void IntrinsicLowering::LowerIntrinsicCall(CallInst *CI) {
   }
   case Intrinsic::pow: {
     ReplaceFPIntrinsicWithCall(CI, "powf", "pow", "powl");
-    break;
-  }
-  case Intrinsic::sin: {
-    ReplaceFPIntrinsicWithCall(CI, "sinf", "sin", "sinl");
-    break;
-  }
-  case Intrinsic::cos: {
-    ReplaceFPIntrinsicWithCall(CI, "cosf", "cos", "cosl");
-    break;
-  }
-  case Intrinsic::floor: {
-    ReplaceFPIntrinsicWithCall(CI, "floorf", "floor", "floorl");
-    break;
-  }
-  case Intrinsic::ceil: {
-    ReplaceFPIntrinsicWithCall(CI, "ceilf", "ceil", "ceill");
-    break;
-  }
-  case Intrinsic::trunc: {
-    ReplaceFPIntrinsicWithCall(CI, "truncf", "trunc", "truncl");
-    break;
-  }
-  case Intrinsic::round: {
-    ReplaceFPIntrinsicWithCall(CI, "roundf", "round", "roundl");
-    break;
-  }
-  case Intrinsic::copysign: {
-    ReplaceFPIntrinsicWithCall(CI, "copysignf", "copysign", "copysignl");
     break;
   }
   case Intrinsic::flt_rounds:

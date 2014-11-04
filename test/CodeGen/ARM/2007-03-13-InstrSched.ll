@@ -1,4 +1,3 @@
-; REQUIRES: asserts
 ; RUN: llc < %s -mtriple=arm-apple-darwin -relocation-model=pic \
 ; RUN:   -mattr=+v6 | grep r9
 ; RUN: llc < %s -mtriple=arm-apple-darwin -relocation-model=pic \

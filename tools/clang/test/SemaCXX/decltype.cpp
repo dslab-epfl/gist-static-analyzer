@@ -16,27 +16,6 @@ void test_f2() {
   float &fr = f2(AC().a);
 }
 
-template <class T>
-struct Future {
-  explicit Future(T v);
-
-  template <class F>
-  auto call(F&& fn) -> decltype(fn(T())) {
-    return fn(T());
-  }
-
-  template <class B, class F>
-  auto then(F&& fn) -> decltype(call(fn))
-  {
-    return fn(T());
-  }
-};
-
-void rdar16527205() {
-  Future<int> f1(42);
-  f1.call([](int){ return Future<float>(0); });
-}
-
 namespace pr10154 {
   class A{
       A(decltype(nullptr) param);
@@ -57,24 +36,6 @@ struct C {
   C(decltype(undeclared; // expected-error {{undeclared identifier}} \
                          // expected-error {{expected ')'}} expected-note {{to match this '('}}
 };
-
-namespace PR16529 {
-  struct U {};
-  template <typename T> struct S {
-    static decltype(T{}, U{}) &f();
-  };
-  U &r = S<int>::f();
-}
-
-namespace PR18876 {
-  struct A { ~A() = delete; }; // expected-note +{{here}}
-  A f();
-  decltype(f()) *a; // ok, function call
-  decltype(A()) *b; // expected-error {{attempt to use a deleted function}}
-  decltype(0, f()) *c; // ok, function call on RHS of comma
-  decltype(0, A()) *d; // expected-error {{attempt to use a deleted function}}
-  decltype(f(), 0) *e; // expected-error {{attempt to use a deleted function}}
-}
 
 template<typename>
 class conditional {

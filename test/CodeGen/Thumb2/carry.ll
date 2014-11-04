@@ -1,8 +1,8 @@
-; RUN: llc -mtriple=thumb-eabi -mcpu=arm1156t2-s -mattr=+thumb2 %s -o - | FileCheck %s
+; RUN: llc < %s -march=thumb -mattr=+thumb2 | FileCheck %s
 
 define i64 @f1(i64 %a, i64 %b) {
 entry:
-; CHECK-LABEL: f1:
+; CHECK: f1:
 ; CHECK: subs r0, r0, r2
 ; CHECK: sbcs r1, r3
 	%tmp = sub i64 %a, %b
@@ -11,7 +11,7 @@ entry:
 
 define i64 @f2(i64 %a, i64 %b) {
 entry:
-; CHECK-LABEL: f2:
+; CHECK: f2:
 ; CHECK: adds r0, r0, r0
 ; CHECK: adcs r1, r1
 ; CHECK: subs r0, r0, r2
@@ -24,7 +24,7 @@ entry:
 ; rdar://12559385
 define i64 @f3(i32 %vi) {
 entry:
-; CHECK-LABEL: f3:
+; CHECK: f3:
 ; CHECK: movw [[REG:r[0-9]+]], #36102
 ; CHECK: sbcs r{{[0-9]+}}, [[REG]]
     %v0 = zext i32 %vi to i64

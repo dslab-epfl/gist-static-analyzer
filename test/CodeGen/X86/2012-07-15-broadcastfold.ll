@@ -1,10 +1,9 @@
 ; RUN: llc < %s -march=x86 -mcpu=corei7 -mattr=+avx2 | FileCheck %s
-; RUN: llc < %s -march=x86 -mcpu=corei7 -mattr=+avx2 -x86-experimental-vector-shuffle-lowering | FileCheck %s
 
 declare x86_fastcallcc i64 @barrier()
 
-;CHECK-LABEL: bcast_fold:
-;CHECK: vmov{{[au]}}ps %xmm{{[0-9]+}}, [[SPILLED:[^\)]+\)]]
+;CHECK: bcast_fold
+;CHECK: vmovaps %xmm{{[0-9]+}}, [[SPILLED:[^\)]+\)]]
 ;CHECK: barrier
 ;CHECK: vbroadcastss [[SPILLED]], %ymm0
 ;CHECK: ret

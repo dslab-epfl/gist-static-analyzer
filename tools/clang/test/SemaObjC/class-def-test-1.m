@@ -1,6 +1,6 @@
-// RUN: %clang_cc1 -fsyntax-only -verify -Wno-objc-root-class %s
+// RUN: %clang_cc1 -fsyntax-only -verify %s
 
-@protocol SUPER; // expected-note {{protocol 'SUPER' has no definition}}
+@protocol SUPER;
 
 @interface SUPER <SUPER> @end // expected-warning {{cannot find protocol definition for 'SUPER'}}
 
@@ -16,10 +16,9 @@ typedef int INTF; //  expected-note {{previous definition is here}}
 
 typedef int OBJECT; // expected-error {{redefinition of 'OBJECT' as different kind of symbol}}
 
-typedef int OBJECT2; // expected-note 2 {{previous definition is here}}
+typedef int OBJECT2; // expected-note {{previous definition is here}}
 @interface INTF2 : OBJECT2 @end // expected-error {{redefinition of 'OBJECT2' as different kind of symbol}}
 
-@implementation INTF2 : OBJECT2 @end // expected-error {{redefinition of 'OBJECT2' as different kind of symbol}}
 
 @protocol PROTO;
 

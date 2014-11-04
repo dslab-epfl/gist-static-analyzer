@@ -12,27 +12,16 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_BASIC_LANGOPTIONS_H
-#define LLVM_CLANG_BASIC_LANGOPTIONS_H
+#ifndef LLVM_CLANG_LANGOPTIONS_H
+#define LLVM_CLANG_LANGOPTIONS_H
 
-#include "clang/Basic/CommentOptions.h"
+#include <string>
 #include "clang/Basic/LLVM.h"
 #include "clang/Basic/ObjCRuntime.h"
 #include "clang/Basic/Visibility.h"
-#include <string>
+#include "llvm/ADT/IntrusiveRefCntPtr.h"
 
 namespace clang {
-
-struct SanitizerOptions {
-#define SANITIZER(NAME, ID) unsigned ID : 1;
-#include "clang/Basic/Sanitizers.def"
-  /// \brief Controls how agressive is asan field padding (0: none, 1: least
-  /// aggressive, 2: more aggressive).
-  unsigned SanitizeAddressFieldPadding : 2;
-
-  /// \brief Cached set of sanitizer options with all sanitizers disabled.
-  static const SanitizerOptions Disabled;
-};
 
 /// Bitfields of LangOptions, split out from LangOptions in order to ensure that
 /// this large collection of bitfields is a trivial class type.
@@ -43,7 +32,6 @@ public:
 #define ENUM_LANGOPT(Name, Type, Bits, Default, Description)
 #include "clang/Basic/LangOptions.def"
 
-  SanitizerOptions Sanitize;
 protected:
   // Define language options of enumeration type. These are private, and will
   // have accessors (below).
@@ -55,12 +43,12 @@ protected:
 
 /// \brief Keeps track of the various options that can be
 /// enabled, which controls the dialect of C or C++ that is accepted.
-class LangOptions : public LangOptionsBase {
+class LangOptions : public RefCountedBase<LangOptions>, public LangOptionsBase {
 public:
   typedef clang::Visibility Visibility;
   
   enum GCMode { NonGC, GCOnly, HybridGC };
-  enum StackProtectorMode { SSPOff, SSPOn, SSPStrong, SSPReq };
+  enum StackProtectorMode { SSPOff, SSPOn, SSPReq };
   
   enum SignedOverflowBehaviorTy {
     SOB_Undefined,  // Default C standard behavior.
@@ -68,14 +56,11 @@ public:
     SOB_Trapping    // -ftrapv
   };
 
-  enum PragmaMSPointersToMembersKind {
-    PPTMK_BestCase,
-    PPTMK_FullGeneralitySingleInheritance,
-    PPTMK_FullGeneralityMultipleInheritance,
-    PPTMK_FullGeneralityVirtualInheritance
+  enum FPContractModeKind {
+    FPC_Off,        // Form fused FP ops only where result will not be affected.
+    FPC_On,         // Form fused FP ops according to FP_CONTRACT rules.
+    FPC_Fast        // Aggressively fuse FP ops (E.g. FMA).
   };
-
-  enum AddrSpaceMapMangling { ASMM_Target, ASMM_On, ASMM_Off };
 
 public:
   clang::ObjCRuntime ObjCRuntime;
@@ -90,14 +75,6 @@ public:
 
   /// \brief The name of the current module.
   std::string CurrentModule;
-
-  /// \brief The name of the module that the translation unit is an
-  /// implementation of. Prevents semantic imports, but does not otherwise
-  /// treat this as the CurrentModule.
-  std::string ImplementationOfModule;
-
-  /// \brief Options for parsing comments.
-  CommentOptions CommentOpts;
   
   LangOptions();
 
@@ -110,11 +87,6 @@ public:
   
   bool isSignedOverflowDefined() const {
     return getSignedOverflowBehavior() == SOB_Defined;
-  }
-  
-  bool isSubscriptPointerArithmetic() const {
-    return ObjCRuntime.isSubscriptPointerArithmetic() &&
-           !ObjCSubscriptingLegacyRuntime;
   }
 
   /// \brief Reset all of the options that are not considered when building a

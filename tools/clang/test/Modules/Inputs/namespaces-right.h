@@ -1,11 +1,4 @@
-@import namespaces_top;
-
-double &global(double);
-double &global2(double);
-
-namespace LookupBeforeImport {
-  double &f(double);
-}
+@__experimental_modules_import namespaces_top;
 
 namespace N2 { }
 

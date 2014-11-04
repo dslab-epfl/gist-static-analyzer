@@ -17,18 +17,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Analysis/Passes.h"
-#include "llvm/ADT/SetVector.h"
-#include "llvm/Analysis/AliasAnalysis.h"
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/InstIterator.h"
-#include "llvm/IR/Instructions.h"
+#include "llvm/Constants.h"
+#include "llvm/DerivedTypes.h"
+#include "llvm/Function.h"
+#include "llvm/Instructions.h"
 #include "llvm/Pass.h"
-#include "llvm/Support/CommandLine.h"
+#include "llvm/Analysis/Passes.h"
+#include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Assembly/Writer.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/InstIterator.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/ADT/SetVector.h"
 using namespace llvm;
 
 static cl::opt<bool> PrintAll("print-all-alias-modref-info", cl::ReallyHidden);
@@ -43,8 +44,6 @@ static cl::opt<bool> PrintMod("print-mod", cl::ReallyHidden);
 static cl::opt<bool> PrintRef("print-ref", cl::ReallyHidden);
 static cl::opt<bool> PrintModRef("print-modref", cl::ReallyHidden);
 
-static cl::opt<bool> EvalAAMD("evaluate-aa-metadata", cl::ReallyHidden);
-
 namespace {
   class AAEval : public FunctionPass {
     unsigned NoAlias, MayAlias, PartialAlias, MustAlias;
@@ -56,12 +55,12 @@ namespace {
       initializeAAEvalPass(*PassRegistry::getPassRegistry());
     }
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.addRequired<AliasAnalysis>();
       AU.setPreservesAll();
     }
 
-    bool doInitialization(Module &M) override {
+    bool doInitialization(Module &M) {
       NoAlias = MayAlias = PartialAlias = MustAlias = 0;
       NoModRef = Mod = Ref = ModRef = 0;
 
@@ -73,8 +72,8 @@ namespace {
       return false;
     }
 
-    bool runOnFunction(Function &F) override;
-    bool doFinalization(Module &M) override;
+    bool runOnFunction(Function &F);
+    bool doFinalization(Module &M);
   };
 }
 
@@ -93,8 +92,8 @@ static void PrintResults(const char *Msg, bool P, const Value *V1,
     std::string o1, o2;
     {
       raw_string_ostream os1(o1), os2(o2);
-      V1->printAsOperand(os1, true, M);
-      V2->printAsOperand(os2, true, M);
+      WriteAsOperand(os1, V1, true, M);
+      WriteAsOperand(os2, V2, true, M);
     }
     
     if (o2 < o1)
@@ -110,7 +109,7 @@ PrintModRefResults(const char *Msg, bool P, Instruction *I, Value *Ptr,
                    Module *M) {
   if (P) {
     errs() << "  " << Msg << ":  Ptr: ";
-    Ptr->printAsOperand(errs(), true, M);
+    WriteAsOperand(errs(), Ptr, true, M);
     errs() << "\t<->" << *I << '\n';
   }
 }
@@ -124,15 +123,6 @@ PrintModRefResults(const char *Msg, bool P, CallSite CSA, CallSite CSB,
   }
 }
 
-static inline void
-PrintLoadStoreResults(const char *Msg, bool P, const Value *V1,
-                      const Value *V2, const Module *M) {
-  if (P) {
-    errs() << "  " << Msg << ": " << *V1
-           << " <-> " << *V2 << '\n';
-  }
-}
-
 static inline bool isInterestingPointer(Value *V) {
   return V->getType()->isPointerTy()
       && !isa<ConstantPointerNull>(V);
@@ -143,8 +133,6 @@ bool AAEval::runOnFunction(Function &F) {
 
   SetVector<Value *> Pointers;
   SetVector<CallSite> CallSites;
-  SetVector<Value *> Loads;
-  SetVector<Value *> Stores;
 
   for (Function::arg_iterator I = F.arg_begin(), E = F.arg_end(); I != E; ++I)
     if (I->getType()->isPointerTy())    // Add all pointer arguments.
@@ -153,10 +141,6 @@ bool AAEval::runOnFunction(Function &F) {
   for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I) {
     if (I->getType()->isPointerTy()) // Add all pointer instructions.
       Pointers.insert(&*I);
-    if (EvalAAMD && isa<LoadInst>(&*I))
-      Loads.insert(&*I);
-    if (EvalAAMD && isa<StoreInst>(&*I))
-      Stores.insert(&*I);
     Instruction &Inst = *I;
     if (CallSite CS = cast<Value>(&Inst)) {
       Value *Callee = CS.getCalledValue();
@@ -209,61 +193,6 @@ bool AAEval::runOnFunction(Function &F) {
       case AliasAnalysis::MustAlias:
         PrintResults("MustAlias", PrintMustAlias, *I1, *I2, F.getParent());
         ++MustAlias; break;
-      }
-    }
-  }
-
-  if (EvalAAMD) {
-    // iterate over all pairs of load, store
-    for (SetVector<Value *>::iterator I1 = Loads.begin(), E = Loads.end();
-         I1 != E; ++I1) {
-      for (SetVector<Value *>::iterator I2 = Stores.begin(), E2 = Stores.end();
-           I2 != E2; ++I2) {
-        switch (AA.alias(AA.getLocation(cast<LoadInst>(*I1)),
-                         AA.getLocation(cast<StoreInst>(*I2)))) {
-        case AliasAnalysis::NoAlias:
-          PrintLoadStoreResults("NoAlias", PrintNoAlias, *I1, *I2,
-                                F.getParent());
-          ++NoAlias; break;
-        case AliasAnalysis::MayAlias:
-          PrintLoadStoreResults("MayAlias", PrintMayAlias, *I1, *I2,
-                                F.getParent());
-          ++MayAlias; break;
-        case AliasAnalysis::PartialAlias:
-          PrintLoadStoreResults("PartialAlias", PrintPartialAlias, *I1, *I2,
-                                F.getParent());
-          ++PartialAlias; break;
-        case AliasAnalysis::MustAlias:
-          PrintLoadStoreResults("MustAlias", PrintMustAlias, *I1, *I2,
-                                F.getParent());
-          ++MustAlias; break;
-        }
-      }
-    }
-
-    // iterate over all pairs of store, store
-    for (SetVector<Value *>::iterator I1 = Stores.begin(), E = Stores.end();
-         I1 != E; ++I1) {
-      for (SetVector<Value *>::iterator I2 = Stores.begin(); I2 != I1; ++I2) {
-        switch (AA.alias(AA.getLocation(cast<StoreInst>(*I1)),
-                         AA.getLocation(cast<StoreInst>(*I2)))) {
-        case AliasAnalysis::NoAlias:
-          PrintLoadStoreResults("NoAlias", PrintNoAlias, *I1, *I2,
-                                F.getParent());
-          ++NoAlias; break;
-        case AliasAnalysis::MayAlias:
-          PrintLoadStoreResults("MayAlias", PrintMayAlias, *I1, *I2,
-                                F.getParent());
-          ++MayAlias; break;
-        case AliasAnalysis::PartialAlias:
-          PrintLoadStoreResults("PartialAlias", PrintPartialAlias, *I1, *I2,
-                                F.getParent());
-          ++PartialAlias; break;
-        case AliasAnalysis::MustAlias:
-          PrintLoadStoreResults("MustAlias", PrintMustAlias, *I1, *I2,
-                                F.getParent());
-          ++MustAlias; break;
-        }
       }
     }
   }

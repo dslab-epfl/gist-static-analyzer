@@ -6,13 +6,13 @@
 void test0(Test0 *val) {
   Test0 *x = [val self];
 
-// CHECK-LABEL:    define void @test0(
+// CHECK:    define void @test0(
 // CHECK:      [[VAL:%.*]] = alloca [[TEST0:%.*]]*
 // CHECK-NEXT: [[X:%.*]] = alloca [[TEST0]]*
-// CHECK-NEXT: store [[TEST0]]* null
 // CHECK-NEXT: bitcast
+// CHECK-NEXT: call i8* @objc_retain(
 // CHECK-NEXT: bitcast
-// CHECK-NEXT: call void @objc_storeStrong(
+// CHECK-NEXT: store
 // CHECK-NEXT: load [[TEST0]]** [[VAL]],
 // CHECK-NEXT: load
 // CHECK-NEXT: bitcast

@@ -1,4 +1,4 @@
-@import redecl_merge_top;
+@__experimental_modules_import redecl_merge_top;
 
 @class A;
 
@@ -82,12 +82,3 @@ extern double var3;
 // top level.
 typedef void funcptr_with_id(int id);
 
-// A class that is declared in the 'bottom' module, then loaded from
-// one of the modules it depends on.
-@interface DeclaredThenLoaded
-- declaredThenLoadedMethod;
-@end
-
-@class DeclaredThenLoaded;
-
-void eventually_noreturn2(void);

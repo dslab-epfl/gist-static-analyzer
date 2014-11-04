@@ -1,5 +1,8 @@
 set(LLVM_LINK_COMPONENTS
-  Support
+  ${LLVM_TARGETS_TO_BUILD}
+  asmparser
+  support
+  mc
   )
 
 add_clang_library(clangSema
@@ -21,7 +24,6 @@ add_clang_library(clangSema
   SemaChecking.cpp
   SemaCodeComplete.cpp
   SemaConsumer.cpp
-  SemaCUDA.cpp
   SemaDecl.cpp
   SemaDeclAttr.cpp
   SemaDeclCXX.cpp
@@ -36,7 +38,6 @@ add_clang_library(clangSema
   SemaLambda.cpp
   SemaLookup.cpp
   SemaObjCProperty.cpp
-  SemaOpenMP.cpp
   SemaOverload.cpp
   SemaPseudoObject.cpp
   SemaStmt.cpp
@@ -48,9 +49,27 @@ add_clang_library(clangSema
   SemaTemplateInstantiateDecl.cpp
   SemaTemplateVariadic.cpp
   SemaType.cpp
-  TypeLocBuilder.cpp
+  TargetAttributesSema.cpp
+  )
 
-  LINK_LIBS
+add_dependencies(clangSema
+  ClangARMNeon
+  ClangAttrClasses
+  ClangAttrList
+  ClangAttrParsedAttrList
+  ClangAttrParsedAttrKinds
+  ClangAttrTemplateInstantiate
+  ClangCommentNodes
+  ClangDeclNodes
+  ClangDiagnosticAST
+  ClangDiagnosticComment
+  ClangDiagnosticCommon
+  ClangDiagnosticParse
+  ClangDiagnosticSema
+  ClangStmtNodes
+  )
+
+target_link_libraries(clangSema
   clangAST
   clangAnalysis
   clangBasic

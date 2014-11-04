@@ -11,35 +11,31 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_CPPBACKEND_CPPTARGETMACHINE_H
-#define LLVM_LIB_TARGET_CPPBACKEND_CPPTARGETMACHINE_H
+#ifndef CPPTARGETMACHINE_H
+#define CPPTARGETMACHINE_H
 
-#include "llvm/IR/DataLayout.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetSubtargetInfo.h"
+#include "llvm/DataLayout.h"
 
 namespace llvm {
 
 class formatted_raw_ostream;
-
-class CPPSubtarget : public TargetSubtargetInfo {
-};
 
 struct CPPTargetMachine : public TargetMachine {
   CPPTargetMachine(const Target &T, StringRef TT,
                    StringRef CPU, StringRef FS, const TargetOptions &Options,
                    Reloc::Model RM, CodeModel::Model CM,
                    CodeGenOpt::Level OL)
-    : TargetMachine(T, TT, CPU, FS, Options), Subtarget() {}
-private:
-  CPPSubtarget Subtarget;
+    : TargetMachine(T, TT, CPU, FS, Options) {}
 
-public:
-  const CPPSubtarget *getSubtargetImpl() const override { return &Subtarget; }
-  bool addPassesToEmitFile(PassManagerBase &PM, formatted_raw_ostream &Out,
-                           CodeGenFileType FileType, bool DisableVerify,
-                           AnalysisID StartAfter,
-                           AnalysisID StopAfter) override;
+  virtual bool addPassesToEmitFile(PassManagerBase &PM,
+                                   formatted_raw_ostream &Out,
+                                   CodeGenFileType FileType,
+                                   bool DisableVerify,
+                                   AnalysisID StartAfter,
+                                   AnalysisID StopAfter);
+
+  virtual const DataLayout *getDataLayout() const { return 0; }
 };
 
 extern Target TheCppBackendTarget;

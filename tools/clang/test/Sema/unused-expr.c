@@ -7,11 +7,11 @@ double sqrt(double X);  // implicitly const because of no -fmath-errno!
 void bar(volatile int *VP, int *P, int A,
          _Complex double C, volatile _Complex double VC) {
   
-  VP < P;              // expected-warning {{relational comparison result unused}}
+  VP < P;              // expected-warning {{expression result unused}}
   (void)A;
   (void)foo(1,2);      // no warning.
   
-  A < foo(1, 2);       // expected-warning {{relational comparison result unused}}
+  A < foo(1, 2);       // expected-warning {{expression result unused}}
 
   foo(1,2)+foo(4,3);   // expected-warning {{expression result unused}}
 
@@ -54,23 +54,23 @@ void t4(int a) {
   int b = 0;
 
   if (a)
-    b < 1; // expected-warning{{relational comparison result unused}}
+    b < 1; // expected-warning{{expression result unused}}
   else
-    b < 2; // expected-warning{{relational comparison result unused}}
+    b < 2; // expected-warning{{expression result unused}}
     
   while (1)
-    b < 3; // expected-warning{{relational comparison result unused}}
+    b < 3; // expected-warning{{expression result unused}}
 
   do
-    b < 4; // expected-warning{{relational comparison result unused}}
+    b < 4; // expected-warning{{expression result unused}}
   while (1);
   
   for (;;)
-    b < 5; // expected-warning{{relational comparison result unused}}
+    b < 5; // expected-warning{{expression result unused}}
     
-  for (b < 1;;) {} // expected-warning{{relational comparison result unused}}
+  for (b < 1;;) {} // expected-warning{{expression result unused}}
   for (;b < 1;) {}
-  for (;;b < 1) {} // expected-warning{{relational comparison result unused}}
+  for (;;b < 1) {} // expected-warning{{expression result unused}}
 }
 
 // rdar://7186119
@@ -91,7 +91,7 @@ int t6() {
   fn1();  // expected-warning {{ignoring return value of function declared with warn_unused_result attribute}}
   fn2(92, 21);  // expected-warning {{ignoring return value of function declared with pure attribute}}
   fn3(42);  // expected-warning {{ignoring return value of function declared with const attribute}}
-  __builtin_abs(0); // expected-warning {{ignoring return value of function declared with const attribute}}
+  __builtin_fabsf(0); // expected-warning {{ignoring return value of function declared with const attribute}}
   (void)0, fn1();  // expected-warning {{ignoring return value of function declared with warn_unused_result attribute}}
   return 0;
 }
@@ -123,36 +123,13 @@ void f(int i, ...) {
 // PR8371
 int fn5() __attribute__ ((__const));
 
-// Don't warn for unused expressions in macro bodies; however, do warn for
-// unused expressions in macro arguments. Macros below are reduced from code
-// found in the wild.
-#define NOP(a) (a)
+// OpenSSL has some macros like this; we shouldn't warn on the cast.
 #define M1(a, b) (long)foo((a), (b))
+// But, we should still warn on other subexpressions of casts in macros.
 #define M2 (long)0;
-#define M3(a) (t3(a), fn2())
-#define M4(a, b) (foo((a), (b)) ? 0 : t3(a), 1)
-#define M5(a, b) (foo((a), (b)), 1)
-#define M6() fn1()
-#define M7() fn2()
 void t11(int i, int j) {
   M1(i, j);  // no warning
-  NOP((long)foo(i, j)); // expected-warning {{expression result unused}}
-  M2;  // no warning
-  NOP((long)0); // expected-warning {{expression result unused}}
-  M3(i); // no warning
-  NOP((t3(i), fn2())); // expected-warning {{ignoring return value}}
-  M4(i, j); // no warning
-  NOP((foo(i, j) ? 0 : t3(i), 1)); // expected-warning {{expression result unused}}
-  M5(i, j); // no warning
-  NOP((foo(i, j), 1)); // expected-warning {{expression result unused}}
-  M6(); // expected-warning {{ignoring return value}}
-  M7(); // no warning
+  M2;  // expected-warning {{expression result unused}}
 }
-#undef NOP
 #undef M1
 #undef M2
-#undef M3
-#undef M4
-#undef M5
-#undef M6
-#undef M7

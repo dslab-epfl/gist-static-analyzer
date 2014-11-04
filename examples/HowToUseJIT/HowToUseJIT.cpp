@@ -34,16 +34,17 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/ExecutionEngine/GenericValue.h"
+#include "llvm/Constants.h"
+#include "llvm/DerivedTypes.h"
+#include "llvm/IRBuilder.h"
+#include "llvm/Instructions.h"
+#include "llvm/LLVMContext.h"
+#include "llvm/Module.h"
+#include "llvm/ExecutionEngine/JIT.h"
 #include "llvm/ExecutionEngine/Interpreter.h"
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
-#include "llvm/Support/ManagedStatic.h"
+#include "llvm/ExecutionEngine/GenericValue.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
@@ -55,8 +56,7 @@ int main() {
   LLVMContext Context;
   
   // Create some module to put our function into it.
-  std::unique_ptr<Module> Owner = make_unique<Module>("test", Context);
-  Module *M = Owner.get();
+  Module *M = new Module("test", Context);
 
   // Create the add1 function entry and insert this entry into module M.  The
   // function will have a return type of "int" and take an argument of "int".
@@ -114,7 +114,7 @@ int main() {
   builder.CreateRet(Add1CallRes);
 
   // Now we create the JIT.
-  ExecutionEngine* EE = EngineBuilder(std::move(Owner)).create();
+  ExecutionEngine* EE = EngineBuilder(M).create();
 
   outs() << "We just constructed this LLVM module:\n\n" << *M;
   outs() << "\n\nRunning foo: ";
@@ -126,6 +126,7 @@ int main() {
 
   // Import result of execution:
   outs() << "Result: " << gv.IntVal << "\n";
+  EE->freeMachineCodeForFunction(FooF);
   delete EE;
   llvm_shutdown();
   return 0;

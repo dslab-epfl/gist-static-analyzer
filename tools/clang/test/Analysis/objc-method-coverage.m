@@ -1,5 +1,6 @@
-// REQUIRES: asserts
 // RUN: %clang_cc1 -analyze -analyzer-checker=core -analyzer-stats -fblocks %s 2>&1 | FileCheck %s
+// RUN: %clang_cc1 -analyze -analyzer-checker=core -analyzer-ipa=none -analyzer-stats -fblocks %s 2>&1 | FileCheck %s
+
 @interface I
 int f() {
   return 0;
@@ -13,5 +14,4 @@ int f() {
 @end
 
 // CHECK: ... Statistics Collected ...
-// CHECK: 2 AnalysisConsumer - The # of functions and blocks analyzed (as top level with inlining turned on).
-// CHECK: 100 AnalysisConsumer - The % of reachable basic blocks.
+// CHECK: 2 AnalysisConsumer - The # of functions analysed (as top level).

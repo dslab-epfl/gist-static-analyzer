@@ -1,11 +1,9 @@
 ; RUN: opt -S -objc-arc-contract < %s | FileCheck %s
 
-; CHECK: define void @foo() {
 ; CHECK:      %call = tail call i32* @qux()
 ; CHECK-NEXT: %tcall = bitcast i32* %call to i8*
 ; CHECK-NEXT: call void asm sideeffect "mov\09r7, r7\09\09@ marker for objc_retainAutoreleaseReturnValue", ""()
-; CHECK-NEXT: %0 = tail call i8* @objc_retainAutoreleasedReturnValue(i8* %tcall) [[NUW:#[0-9]+]]
-; CHECK: }
+; CHECK-NEXT: %0 = tail call i8* @objc_retainAutoreleasedReturnValue(i8* %tcall) nounwind
 
 define void @foo() {
 entry:
@@ -23,5 +21,3 @@ declare void @bar(i8*)
 !clang.arc.retainAutoreleasedReturnValueMarker = !{!0}
 
 !0 = metadata !{metadata !"mov\09r7, r7\09\09@ marker for objc_retainAutoreleaseReturnValue"}
-
-; CHECK: attributes [[NUW]] = { nounwind }

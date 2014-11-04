@@ -1,5 +1,8 @@
 // RUN: %clang_cc1 -triple i386-unknown-unknown -emit-llvm -o - %s | FileCheck %s
 
+// PR13820
+// REQUIRES: LP64
+
 // TODO: actually test most of this instead of just emitting it
 
 int printf(const char *, ...);
@@ -54,7 +57,7 @@ int printf(const char *, ...);
 @end
 
 // Test that compound operations only compute the base once.
-// CHECK-LABEL: define void @test2
+// CHECK: define void @test2
 A *test2_helper(void);
 void test2() {
   // CHECK:      [[BASE:%.*]] = call [[A:%.*]]* @test2_helper()
@@ -94,7 +97,7 @@ void test3(test3_object *p) {
 @interface Test4  {}
 @property float f;
 @end
-// CHECK-LABEL: define void @test4
+// CHECK: define void @test4
 void test4(Test4 *t) {
   extern int test4_printf(const char *, ...);
   // CHECK: [[TMP:%.*]] = call float {{.*}} @objc_msgSend

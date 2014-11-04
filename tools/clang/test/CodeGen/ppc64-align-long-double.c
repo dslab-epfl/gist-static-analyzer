@@ -1,5 +1,7 @@
-// REQUIRES: powerpc-registered-target
+// REQUIRES: ppc64-registered-target
 // RUN: %clang_cc1 -triple powerpc64-unknown-linux-gnu -emit-llvm -o - %s | FileCheck %s
+
+// CHECK: -f128:128:128-
 
 struct S {
   double a;

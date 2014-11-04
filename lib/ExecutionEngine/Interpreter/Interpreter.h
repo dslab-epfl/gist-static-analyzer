@@ -11,17 +11,17 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_EXECUTIONENGINE_INTERPRETER_INTERPRETER_H
-#define LLVM_LIB_EXECUTIONENGINE_INTERPRETER_INTERPRETER_H
+#ifndef LLI_INTERPRETER_H
+#define LLI_INTERPRETER_H
 
+#include "llvm/Function.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/ExecutionEngine/GenericValue.h"
-#include "llvm/IR/CallSite.h"
-#include "llvm/IR/DataLayout.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/InstVisitor.h"
+#include "llvm/DataLayout.h"
+#include "llvm/Support/CallSite.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/InstVisitor.h"
 #include "llvm/Support/raw_ostream.h"
 namespace llvm {
 
@@ -37,24 +37,29 @@ typedef generic_gep_type_iterator<User::const_op_iterator> gep_type_iterator;
 // stack, which causes the dtor to be run, which frees all the alloca'd memory.
 //
 class AllocaHolder {
-  std::vector<void *> Allocations;
-
+  friend class AllocaHolderHandle;
+  std::vector<void*> Allocations;
+  unsigned RefCnt;
 public:
-  AllocaHolder() {}
-
-  // Make this type move-only. Define explicit move special members for MSVC.
-  AllocaHolder(AllocaHolder &&RHS) : Allocations(std::move(RHS.Allocations)) {}
-  AllocaHolder &operator=(AllocaHolder &&RHS) {
-    Allocations = std::move(RHS.Allocations);
-    return *this;
-  }
-
+  AllocaHolder() : RefCnt(0) {}
+  void add(void *mem) { Allocations.push_back(mem); }
   ~AllocaHolder() {
-    for (void *Allocation : Allocations)
-      free(Allocation);
+    for (unsigned i = 0; i < Allocations.size(); ++i)
+      free(Allocations[i]);
   }
+};
 
-  void add(void *Mem) { Allocations.push_back(Mem); }
+// AllocaHolderHandle gives AllocaHolder value semantics so we can stick it into
+// a vector...
+//
+class AllocaHolderHandle {
+  AllocaHolder *H;
+public:
+  AllocaHolderHandle() : H(new AllocaHolder()) { H->RefCnt++; }
+  AllocaHolderHandle(const AllocaHolderHandle &AH) : H(AH.H) { H->RefCnt++; }
+  ~AllocaHolderHandle() { if (--H->RefCnt == 0) delete H; }
+
+  void add(void *mem) { H->add(mem); }
 };
 
 typedef std::vector<GenericValue> ValuePlaneTy;
@@ -66,29 +71,11 @@ struct ExecutionContext {
   Function             *CurFunction;// The currently executing function
   BasicBlock           *CurBB;      // The currently executing BB
   BasicBlock::iterator  CurInst;    // The next instruction to execute
-  CallSite             Caller;     // Holds the call that called subframes.
-                                   // NULL if main func or debugger invoked fn
   std::map<Value *, GenericValue> Values; // LLVM values used in this invocation
   std::vector<GenericValue>  VarArgs; // Values passed through an ellipsis
-  AllocaHolder Allocas;            // Track memory allocated by alloca
-
-  ExecutionContext() : CurFunction(nullptr), CurBB(nullptr), CurInst(nullptr) {}
-
-  ExecutionContext(ExecutionContext &&O)
-      : CurFunction(O.CurFunction), CurBB(O.CurBB), CurInst(O.CurInst),
-        Caller(O.Caller), Values(std::move(O.Values)),
-        VarArgs(std::move(O.VarArgs)), Allocas(std::move(O.Allocas)) {}
-
-  ExecutionContext &operator=(ExecutionContext &&O) {
-    CurFunction = O.CurFunction;
-    CurBB = O.CurBB;
-    CurInst = O.CurInst;
-    Caller = O.Caller;
-    Values = std::move(O.Values);
-    VarArgs = std::move(O.VarArgs);
-    Allocas = std::move(O.Allocas);
-    return *this;
-  }
+  CallSite             Caller;     // Holds the call that called subframes.
+                                   // NULL if main func or debugger invoked fn
+  AllocaHolderHandle    Allocas;    // Track memory allocated by alloca
 };
 
 // Interpreter - This class represents the entirety of the interpreter.
@@ -107,7 +94,7 @@ class Interpreter : public ExecutionEngine, public InstVisitor<Interpreter> {
   std::vector<Function*> AtExitHandlers;
 
 public:
-  explicit Interpreter(std::unique_ptr<Module> M);
+  explicit Interpreter(Module *M);
   ~Interpreter();
 
   /// runAtExitHandlers - Run any functions registered by the program's calls to
@@ -118,22 +105,32 @@ public:
   static void Register() {
     InterpCtor = create;
   }
-
-  /// Create an interpreter ExecutionEngine.
+  
+  /// create - Create an interpreter ExecutionEngine. This can never fail.
   ///
-  static ExecutionEngine *create(std::unique_ptr<Module> M,
-                                 std::string *ErrorStr = nullptr);
+  static ExecutionEngine *create(Module *M, std::string *ErrorStr = 0);
 
   /// run - Start execution with the specified function and arguments.
   ///
-  GenericValue runFunction(Function *F,
-                           const std::vector<GenericValue> &ArgValues) override;
+  virtual GenericValue runFunction(Function *F,
+                                   const std::vector<GenericValue> &ArgValues);
 
-  void *getPointerToNamedFunction(StringRef Name,
-                                  bool AbortOnFailure = true) override {
+  virtual void *getPointerToNamedFunction(const std::string &Name,
+                                          bool AbortOnFailure = true) {
     // FIXME: not implemented.
-    return nullptr;
+    return 0;
   }
+
+  /// recompileAndRelinkFunction - For the interpreter, functions are always
+  /// up-to-date.
+  ///
+  virtual void *recompileAndRelinkFunction(Function *F) {
+    return getPointerToFunction(F);
+  }
+
+  /// freeMachineCodeForFunction - The interpreter does not generate any code.
+  ///
+  void freeMachineCodeForFunction(Function *F) { }
 
   // Methods used to execute code:
   // Place a call on the stack
@@ -181,13 +178,6 @@ public:
   void visitAShr(BinaryOperator &I);
 
   void visitVAArgInst(VAArgInst &I);
-  void visitExtractElementInst(ExtractElementInst &I);
-  void visitInsertElementInst(InsertElementInst &I);
-  void visitShuffleVectorInst(ShuffleVectorInst &I);
-
-  void visitExtractValueInst(ExtractValueInst &I);
-  void visitInsertValueInst(InsertValueInst &I);
-
   void visitInstruction(Instruction &I) {
     errs() << I << "\n";
     llvm_unreachable("Instruction not interpretable yet!");
@@ -215,7 +205,8 @@ private:  // Helper functions
   //
   void SwitchToNewBasicBlock(BasicBlock *Dest, ExecutionContext &SF);
 
-  void *getPointerToFunction(Function *F) override { return (void*)F; }
+  void *getPointerToFunction(Function *F) { return (void*)F; }
+  void *getPointerToBasicBlock(BasicBlock *BB) { return (void*)BB; }
 
   void initializeExecutionEngine() { }
   void initializeExternalFunctions();

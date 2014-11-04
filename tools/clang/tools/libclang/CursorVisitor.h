@@ -7,12 +7,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_TOOLS_LIBCLANG_CURSORVISITOR_H
-#define LLVM_CLANG_TOOLS_LIBCLANG_CURSORVISITOR_H
+#ifndef LLVM_CLANG_LIBCLANG_CURSORVISITOR_H
+#define LLVM_CLANG_LIBCLANG_CURSORVISITOR_H
 
+#include "Index_Internal.h"
 #include "CXCursor.h"
 #include "CXTranslationUnit.h"
-#include "Index_Internal.h"
+
 #include "clang/AST/DeclVisitor.h"
 #include "clang/AST/TypeLocVisitor.h"
 
@@ -33,11 +34,10 @@ public:
               MemberRefVisitKind, SizeOfPackExprPartsKind,
               LambdaExprPartsKind, PostChildrenVisitKind };
 protected:
-  const void *data[3];
+  void *data[3];
   CXCursor parent;
   Kind K;
-  VisitorJob(CXCursor C, Kind k, const void *d1, const void *d2 = nullptr,
-             const void *d3 = nullptr)
+  VisitorJob(CXCursor C, Kind k, void *d1, void *d2 = 0, void *d3 = 0)
     : parent(C), K(k) {
     data[0] = d1;
     data[1] = d2;
@@ -70,7 +70,7 @@ private:
 
   /// \brief The declaration that serves at the parent of any statement or
   /// expression nodes.
-  const Decl *StmtParent;
+  Decl *StmtParent;
 
   /// \brief The visitor function.
   CXCursorVisitor Visitor;
@@ -116,16 +116,15 @@ private:
   /// \param R a half-open source range retrieved from the abstract syntax tree.
   RangeComparisonResult CompareRegionOfInterest(SourceRange R);
 
-  bool visitDeclsFromFileRegion(FileID File, unsigned Offset, unsigned Length);
+  void visitDeclsFromFileRegion(FileID File, unsigned Offset, unsigned Length);
 
   class SetParentRAII {
     CXCursor &Parent;
-    const Decl *&StmtParent;
+    Decl *&StmtParent;
     CXCursor OldParent;
 
   public:
-    SetParentRAII(CXCursor &Parent, const Decl *&StmtParent,
-                  CXCursor NewParent)
+    SetParentRAII(CXCursor &Parent, Decl *&StmtParent, CXCursor NewParent)
       : Parent(Parent), StmtParent(StmtParent), OldParent(Parent)
     {
       Parent = NewParent;
@@ -147,21 +146,21 @@ public:
                 bool VisitIncludedPreprocessingEntries = false,
                 SourceRange RegionOfInterest = SourceRange(),
                 bool VisitDeclsOnly = false,
-                PostChildrenVisitorTy PostChildrenVisitor = nullptr)
-    : TU(TU), AU(cxtu::getASTUnit(TU)),
+                PostChildrenVisitorTy PostChildrenVisitor = 0)
+    : TU(TU), AU(static_cast<ASTUnit*>(TU->TUData)),
       Visitor(Visitor), PostChildrenVisitor(PostChildrenVisitor),
       ClientData(ClientData),
       VisitPreprocessorLast(VisitPreprocessorLast),
       VisitIncludedEntities(VisitIncludedPreprocessingEntries),
       RegionOfInterest(RegionOfInterest),
       VisitDeclsOnly(VisitDeclsOnly),
-      DI_current(nullptr), FileDI_current(nullptr)
+      DI_current(0), FileDI_current(0)
   {
     Parent.kind = CXCursor_NoDeclFound;
-    Parent.data[0] = nullptr;
-    Parent.data[1] = nullptr;
-    Parent.data[2] = nullptr;
-    StmtParent = nullptr;
+    Parent.data[0] = 0;
+    Parent.data[1] = 0;
+    Parent.data[2] = 0;
+    StmtParent = 0;
   }
 
   ~CursorVisitor() {
@@ -172,14 +171,14 @@ public:
     }
   }
 
-  ASTUnit *getASTUnit() const { return AU; }
+  ASTUnit *getASTUnit() const { return static_cast<ASTUnit*>(TU->TUData); }
   CXTranslationUnit getTU() const { return TU; }
 
   bool Visit(CXCursor Cursor, bool CheckedRegionOfInterest = false);
 
   /// \brief Visit declarations and preprocessed entities for the file region
   /// designated by \see RegionOfInterest.
-  bool visitFileRegion();
+  void visitFileRegion();
   
   bool visitPreprocessedEntitiesInRegion();
 
@@ -199,7 +198,7 @@ public:
   bool VisitAttributes(Decl *D);
   bool VisitBlockDecl(BlockDecl *B);
   bool VisitCXXRecordDecl(CXXRecordDecl *D);
-  Optional<bool> shouldVisitCursor(CXCursor C);
+  llvm::Optional<bool> shouldVisitCursor(CXCursor C);
   bool VisitDeclContext(DeclContext *DC);
   bool VisitTranslationUnitDecl(TranslationUnitDecl *D);
   bool VisitTypedefDecl(TypedefDecl *D);
@@ -259,8 +258,8 @@ public:
   // Data-recursive visitor functions.
   bool IsInRegionOfInterest(CXCursor C);
   bool RunVisitorWorkList(VisitorWorkList &WL);
-  void EnqueueWorkList(VisitorWorkList &WL, const Stmt *S);
-  LLVM_ATTRIBUTE_NOINLINE bool Visit(const Stmt *S);
+  void EnqueueWorkList(VisitorWorkList &WL, Stmt *S);
+  LLVM_ATTRIBUTE_NOINLINE bool Visit(Stmt *S);
 };
 
 }

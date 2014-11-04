@@ -5,7 +5,7 @@ target triple = "msp430---elf"
 
 define void @fp() nounwind {
 entry:
-; CHECK-LABEL: fp:
+; CHECK: fp:
 ; CHECK: push.w r4
 ; CHECK: mov.w r1, r4
 ; CHECK: sub.w #2, r1
@@ -13,17 +13,5 @@ entry:
 ; CHECK: mov.w #0, -2(r4)
   store i16 0, i16* %i, align 2
 ; CHECK: pop.w r4
-  ret void
-}
-
-; Due to FPB not being marked as reserved, the register allocator used to select
-; r4 as the register for the "r" constraint below. This test verifies that this
-; does not happen anymore. Note that the only reason an ISR is used here is that
-; the register allocator selects r4 first instead of fifth in a normal function.
-define msp430_intrcc void @fpb_alloced() #0 {
-; CHECK-LABEL: fpb_alloced:
-; CHECK-NOT: mov.b #0, r4
-; CHECK: nop
-  call void asm sideeffect "nop", "r"(i8 0)
   ret void
 }

@@ -1,3 +1,5 @@
+.. _lto:
+
 ======================================================
 LLVM Link Time Optimization: Design and Implementation
 ======================================================
@@ -83,10 +85,9 @@ invokes system linker.
     return foo1();
   }
 
-To compile, run:
+.. code-block:: bash
 
-.. code-block:: console
-
+  --- command lines ---
   % clang -emit-llvm -c a.c -o a.o   # <-- a.o is LLVM bitcode file
   % clang -c main.c -o main.o        # <-- main.o is native object file
   % clang a.o main.o -o main         # <-- standard link command without modifications
@@ -95,7 +96,7 @@ To compile, run:
   visible symbol defined in LLVM bitcode file. The linker completes its usual
   symbol resolution pass and finds that ``foo2()`` is not used
   anywhere. This information is used by the LLVM optimizer and it
-  removes ``foo2()``.
+  removes ``foo2()``.</li>
 
 * As soon as ``foo2()`` is removed, the optimizer recognizes that condition ``i
   < 0`` is always false, which means ``foo3()`` is never used. Hence, the

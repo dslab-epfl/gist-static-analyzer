@@ -8,7 +8,7 @@ target triple = "x86_64-apple-darwin"
 
 ; Verify that -loop-reduce runs without "hanging" and reuses post-inc
 ; expansions.
-; CHECK-LABEL: @test(
+; CHECK: @test
 ; CHECK: icmp
 ; CHECK: icmp
 ; CHECK: icmp

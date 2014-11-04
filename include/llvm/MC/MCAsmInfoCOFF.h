@@ -7,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_MC_MCASMINFOCOFF_H
-#define LLVM_MC_MCASMINFOCOFF_H
+#ifndef LLVM_COFF_TARGET_ASM_INFO_H
+#define LLVM_COFF_TARGET_ASM_INFO_H
 
 #include "llvm/MC/MCAsmInfo.h"
 
@@ -20,17 +20,17 @@ namespace llvm {
   };
 
   class MCAsmInfoMicrosoft : public MCAsmInfoCOFF {
-    void anchor() override;
+    virtual void anchor();
   protected:
     explicit MCAsmInfoMicrosoft();
   };
 
   class MCAsmInfoGNUCOFF : public MCAsmInfoCOFF {
-    void anchor() override;
+    virtual void anchor();
   protected:
     explicit MCAsmInfoGNUCOFF();
   };
 }
 
 
-#endif // LLVM_MC_MCASMINFOCOFF_H
+#endif // LLVM_COFF_TARGET_ASM_INFO_H

@@ -7,44 +7,27 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_DRIVER_OPTIONS_H
-#define LLVM_CLANG_DRIVER_OPTIONS_H
-
-namespace llvm {
-namespace opt {
-class OptTable;
-}
-}
+#ifndef CLANG_DRIVER_OPTIONS_H
+#define CLANG_DRIVER_OPTIONS_H
 
 namespace clang {
 namespace driver {
+  class OptTable;
 
 namespace options {
-/// Flags specifically for clang options.  Must not overlap with
-/// llvm::opt::DriverFlag.
-enum ClangFlags {
-  DriverOption = (1 << 4),
-  LinkerInput = (1 << 5),
-  NoArgumentUnused = (1 << 6),
-  Unsupported = (1 << 7),
-  CoreOption = (1 << 8),
-  CLOption = (1 << 9),
-  CC1Option = (1 << 10),
-  CC1AsOption = (1 << 11),
-  NoDriverOption = (1 << 12)
-};
-
-enum ID {
+  enum ID {
     OPT_INVALID = 0, // This is not an option ID.
-#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM, \
+#define PREFIX(NAME, VALUE)
+#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, FLAGS, PARAM, \
                HELPTEXT, METAVAR) OPT_##ID,
 #include "clang/Driver/Options.inc"
     LastOption
 #undef OPTION
+#undef PREFIX
   };
 }
 
-llvm::opt::OptTable *createDriverOptTable();
+  OptTable *createDriverOptTable();
 }
 }
 

@@ -14,13 +14,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_UTILS_TABLEGEN_CODEGENTARGET_H
-#define LLVM_UTILS_TABLEGEN_CODEGENTARGET_H
+#ifndef CODEGEN_TARGET_H
+#define CODEGEN_TARGET_H
 
-#include "CodeGenInstruction.h"
 #include "CodeGenRegisters.h"
-#include "llvm/Support/raw_ostream.h"
+#include "CodeGenInstruction.h"
 #include "llvm/TableGen/Record.h"
+#include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 
 namespace llvm {
@@ -68,7 +68,7 @@ class CodeGenTarget {
   mutable DenseMap<const Record*, CodeGenInstruction*> Instructions;
   mutable CodeGenRegBank *RegBank;
   mutable std::vector<Record*> RegAltNameIndices;
-  mutable SmallVector<MVT::SimpleValueType, 8> LegalValueTypes;
+  mutable std::vector<MVT::SimpleValueType> LegalValueTypes;
   void ReadRegAltNameIndices() const;
   void ReadInstructions() const;
   void ReadLegalValueTypes() const;
@@ -129,7 +129,7 @@ public:
   /// specified physical register.
   std::vector<MVT::SimpleValueType> getRegisterVTs(Record *R) const;
 
-  ArrayRef<MVT::SimpleValueType> getLegalValueTypes() const {
+  const std::vector<MVT::SimpleValueType> &getLegalValueTypes() const {
     if (LegalValueTypes.empty()) ReadLegalValueTypes();
     return LegalValueTypes;
   }
@@ -137,7 +137,7 @@ public:
   /// isLegalValueType - Return true if the specified value type is natively
   /// supported by the target (i.e. there are registers that directly hold it).
   bool isLegalValueType(MVT::SimpleValueType VT) const {
-    ArrayRef<MVT::SimpleValueType> LegalVTs = getLegalValueTypes();
+    const std::vector<MVT::SimpleValueType> &LegalVTs = getLegalValueTypes();
     for (unsigned i = 0, e = LegalVTs.size(); i != e; ++i)
       if (LegalVTs[i] == VT) return true;
     return false;
@@ -171,18 +171,11 @@ public:
   typedef std::vector<const CodeGenInstruction*>::const_iterator inst_iterator;
   inst_iterator inst_begin() const{return getInstructionsByEnumValue().begin();}
   inst_iterator inst_end() const { return getInstructionsByEnumValue().end(); }
-  iterator_range<inst_iterator> instructions() const {
-    return iterator_range<inst_iterator>(inst_begin(), inst_end());
-  }
 
 
   /// isLittleEndianEncoding - are instruction bit patterns defined as  [0..n]?
   ///
   bool isLittleEndianEncoding() const;
-
-  /// reverseBitsForLittleEndianEncoding - For little-endian instruction bit
-  /// encodings, reverse the bit order of all instructions.
-  void reverseBitsForLittleEndianEncoding();
 
   /// guessInstructionProperties - should we just guess unset instruction
   /// properties?

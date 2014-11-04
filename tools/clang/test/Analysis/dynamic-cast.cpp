@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-checker=core,debug.ExprInspection -analyzer-config ipa=none -verify %s
+// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-checker=core,debug.ExprInspection -analyzer-ipa=none -verify %s
 
 void clang_analyzer_eval(bool);
 
@@ -169,7 +169,7 @@ int testCastToVoidStar() {
   return *res; // no warning
 }
 
-int testReferenceSuccessfulCast() {
+int testReferenceSuccesfulCast() {
   B rb;
   B &b = dynamic_cast<B&>(rb);
   int *x = 0;

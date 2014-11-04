@@ -85,11 +85,11 @@ static int g_val;
 - (void)setFoo:(int)value;
 @end
 
-void g(int);
+void g(int); // expected-note {{passing argument to parameter here}}
 
 void f(C *c) {
     c.Foo = 17; // OK 
-    g(c.Foo); // expected-error {{no getter method for read from property}}
+    g(c.Foo); // expected-error {{expected getter method not found on object of type 'C *'}}
 }
 
 
@@ -124,16 +124,15 @@ int main (void) {
 @synthesize t, T;
 @synthesize Pxyz, pxyz;
 - (id) Meth {
-  self.P = 0; // expected-warning {{property 'P' not found on object of type 'rdar11363363 *'; did you mean to access property p?}}
-  self.q = 0; // expected-warning {{property 'q' not found on object of type 'rdar11363363 *'; did you mean to access property Q?}}
+  self.P = 0;
+  self.q = 0;
 // rdar://11528439
   self.t = 0; // expected-error {{synthesized properties 't' and 'T' both claim setter 'setT:'}}
   self.T = 0; // expected-error {{synthesized properties 'T' and 't' both claim setter 'setT:'}}
   self.Pxyz = 0; // expected-error {{synthesized properties 'Pxyz' and 'pxyz' both claim setter 'setPxyz:'}}
   self.pxyz = 0; // expected-error {{synthesized properties 'pxyz' and 'Pxyz' both claim setter 'setPxyz:'}}
-  self.r = 0;
-  return self.R; // expected-error {{no getter method for read from property}} \
-                 // expected-warning {{property 'R' not found on object of type 'rdar11363363 *'; did you mean to access property r?}}
+  self.R = 0;
+  return self.R; // expected-error {{expected getter method not found on object of type 'rdar11363363 *'}}
 }
 @end
 

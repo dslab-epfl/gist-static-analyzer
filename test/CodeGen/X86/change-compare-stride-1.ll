@@ -8,7 +8,7 @@
 ; XFAIL: *
 
 define void @borf(i8* nocapture %in, i8* nocapture %out) nounwind {
-; CHECK-LABEL: borf:
+; CHECK: borf:
 ; CHECK-NOT: inc
 ; CHECK-NOT: leal 1(
 ; CHECK-NOT: leal -1(

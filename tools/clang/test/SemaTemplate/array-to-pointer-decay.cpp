@@ -24,15 +24,3 @@ template <typename Type> static bool sanitize() {
   return !c->start;
 }
 bool closure = sanitize<int>();
-
-// PR16206
-typedef struct {
-	char x[4];
-} chars;
-
-chars getChars();
-void use(char *);
-
-void test() {
-	use(getChars().x);
-}

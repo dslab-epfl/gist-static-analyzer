@@ -29,38 +29,41 @@
 //
 // Note: The peephole pass makes the instrucstions like
 // %vreg170<def> = SXTW %vreg166 or %vreg16<def> = NOT_p %vreg15<kill>
-// redundant and relies on some form of dead removal instructions, like
+// redundant and relies on some form of dead removal instrucions, like
 // DCE or DIE to actually eliminate them.
 
 
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "hexagon-peephole"
 #include "Hexagon.h"
 #include "HexagonTargetMachine.h"
+#include "llvm/Constants.h"
+#include "llvm/PassSupport.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
-#include "llvm/CodeGen/Passes.h"
-#include "llvm/IR/Constants.h"
-#include "llvm/PassSupport.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetRegisterInfo.h"
+#include "llvm/Target/TargetInstrInfo.h"
 #include <algorithm>
 
 using namespace llvm;
 
-#define DEBUG_TYPE "hexagon-peephole"
-
 static cl::opt<bool> DisableHexagonPeephole("disable-hexagon-peephole",
     cl::Hidden, cl::ZeroOrMore, cl::init(false),
     cl::desc("Disable Peephole Optimization"));
+
+static cl::opt<int>
+DbgPNPCount("pnp-count", cl::init(-1), cl::Hidden,
+  cl::desc("Maximum number of P=NOT(P) to be optimized"));
 
 static cl::opt<bool> DisablePNotP("disable-hexagon-pnotp",
     cl::Hidden, cl::ZeroOrMore, cl::init(false),
@@ -70,14 +73,6 @@ static cl::opt<bool> DisableOptSZExt("disable-hexagon-optszext",
     cl::Hidden, cl::ZeroOrMore, cl::init(false),
     cl::desc("Disable Optimization of Sign/Zero Extends"));
 
-static cl::opt<bool> DisableOptExtTo64("disable-hexagon-opt-ext-to-64",
-    cl::Hidden, cl::ZeroOrMore, cl::init(false),
-    cl::desc("Disable Optimization of extensions to i64."));
-
-namespace llvm {
-  void initializeHexagonPeepholePass(PassRegistry&);
-}
-
 namespace {
   struct HexagonPeephole : public MachineFunctionPass {
     const HexagonInstrInfo    *QII;
@@ -86,17 +81,15 @@ namespace {
 
   public:
     static char ID;
-    HexagonPeephole() : MachineFunctionPass(ID) {
-      initializeHexagonPeepholePass(*PassRegistry::getPassRegistry());
-    }
+    HexagonPeephole() : MachineFunctionPass(ID) { }
 
-    bool runOnMachineFunction(MachineFunction &MF) override;
+    bool runOnMachineFunction(MachineFunction &MF);
 
-    const char *getPassName() const override {
+    const char *getPassName() const {
       return "Hexagon optimize redundant zero and size extends";
     }
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
+    void getAnalysisUsage(AnalysisUsage &AU) const {
       MachineFunctionPass::getAnalysisUsage(AU);
     }
 
@@ -107,12 +100,12 @@ namespace {
 
 char HexagonPeephole::ID = 0;
 
-INITIALIZE_PASS(HexagonPeephole, "hexagon-peephole", "Hexagon Peephole",
-                false, false)
-
 bool HexagonPeephole::runOnMachineFunction(MachineFunction &MF) {
-  QII = static_cast<const HexagonInstrInfo *>(MF.getSubtarget().getInstrInfo());
-  QRI = MF.getTarget().getSubtarget<HexagonSubtarget>().getRegisterInfo();
+
+  QII = static_cast<const HexagonInstrInfo *>(MF.getTarget().
+                                        getInstrInfo());
+  QRI = static_cast<const HexagonRegisterInfo *>(MF.getTarget().
+                                       getRegisterInfo());
   MRI = &MF.getRegInfo();
 
   DenseMap<unsigned, unsigned> PeepholeMap;
@@ -147,21 +140,6 @@ bool HexagonPeephole::runOnMachineFunction(MachineFunction &MF) {
           // PeepholeMap[170] = vreg166
           PeepholeMap[DstReg] = SrcReg;
         }
-      }
-
-      // Look for  %vreg170<def> = COMBINE_ir_V4 (0, %vreg169)
-      // %vreg170:DoublRegs, %vreg169:IntRegs
-      if (!DisableOptExtTo64 &&
-          MI->getOpcode () == Hexagon::COMBINE_Ir_V4) {
-        assert (MI->getNumOperands() == 3);
-        MachineOperand &Dst = MI->getOperand(0);
-        MachineOperand &Src1 = MI->getOperand(1);
-        MachineOperand &Src2 = MI->getOperand(2);
-        if (Src1.getImm() != 0)
-          continue;
-        unsigned DstReg = Dst.getReg();
-        unsigned SrcReg = Src2.getReg();
-        PeepholeMap[DstReg] = SrcReg;
       }
 
       // Look for this sequence below

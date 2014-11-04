@@ -5,7 +5,7 @@ target triple = "x86_64-apple-darwin9"
 ; The comparison happens before the relevant use, but it can still be rewritten
 ; to compare with zero.
 
-; CHECK-LABEL: foo:
+; CHECK: foo:
 ; CHECK: align
 ; CHECK: incl  %eax
 ; CHECK-NEXT: decl  %ecx

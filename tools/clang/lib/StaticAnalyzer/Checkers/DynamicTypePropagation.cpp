@@ -1,4 +1,4 @@
-//== DynamicTypePropagation.cpp -------------------------------- -*- C++ -*--=//
+//== DynamicTypePropagation.cpp ----------------------------------- -*- C++ -*--=//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -12,13 +12,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "ClangSACheckers.h"
-#include "clang/Basic/Builtins.h"
-#include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramStateTrait.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
+#include "clang/Basic/Builtins.h"
 
 using namespace clang;
 using namespace ento;
@@ -27,8 +27,7 @@ namespace {
 class DynamicTypePropagation:
     public Checker< check::PreCall,
                     check::PostCall,
-                    check::PostStmt<ImplicitCastExpr>,
-                    check::PostStmt<CXXNewExpr> > {
+                    check::PostStmt<ImplicitCastExpr> > {
   const ObjCObjectType *getObjectTypeForAllocAndNew(const ObjCMessageExpr *MsgE,
                                                     CheckerContext &C) const;
 
@@ -39,7 +38,6 @@ public:
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const;
   void checkPostCall(const CallEvent &Call, CheckerContext &C) const;
   void checkPostStmt(const ImplicitCastExpr *CastE, CheckerContext &C) const;
-  void checkPostStmt(const CXXNewExpr *NewE, CheckerContext &C) const;
 };
 }
 
@@ -62,7 +60,7 @@ void DynamicTypePropagation::checkPreCall(const CallEvent &Call,
   if (const CXXConstructorCall *Ctor = dyn_cast<CXXConstructorCall>(&Call)) {
     // C++11 [class.cdtor]p4: When a virtual function is called directly or
     //   indirectly from a constructor or from a destructor, including during
-    //   the construction or destruction of the class's non-static data members,
+    //   the construction or destruction of the class’s non-static data members,
     //   and the object to which the call applies is the object under
     //   construction or destruction, the function called is the final overrider
     //   in the constructor's or destructor's class and not one overriding it in
@@ -112,40 +110,38 @@ void DynamicTypePropagation::checkPostCall(const CallEvent &Call,
       return;
 
     ProgramStateRef State = C.getState();
-    const ObjCMethodDecl *D = Msg->getDecl();
-    
-    if (D && D->hasRelatedResultType()) {
-      switch (Msg->getMethodFamily()) {
-      default:
-        break;
 
-      // We assume that the type of the object returned by alloc and new are the
-      // pointer to the object of the class specified in the receiver of the
-      // message.
-      case OMF_alloc:
-      case OMF_new: {
-        // Get the type of object that will get created.
-        const ObjCMessageExpr *MsgE = Msg->getOriginExpr();
-        const ObjCObjectType *ObjTy = getObjectTypeForAllocAndNew(MsgE, C);
-        if (!ObjTy)
-          return;
-        QualType DynResTy =
+    switch (Msg->getMethodFamily()) {
+    default:
+      break;
+
+    // We assume that the type of the object returned by alloc and new are the
+    // pointer to the object of the class specified in the receiver of the
+    // message.
+    case OMF_alloc:
+    case OMF_new: {
+      // Get the type of object that will get created.
+      const ObjCMessageExpr *MsgE = Msg->getOriginExpr();
+      const ObjCObjectType *ObjTy = getObjectTypeForAllocAndNew(MsgE, C);
+      if (!ObjTy)
+        return;
+      QualType DynResTy =
                  C.getASTContext().getObjCObjectPointerType(QualType(ObjTy, 0));
-        C.addTransition(State->setDynamicTypeInfo(RetReg, DynResTy, false));
-        break;
-      }
-      case OMF_init: {
-        // Assume, the result of the init method has the same dynamic type as
-        // the receiver and propagate the dynamic type info.
-        const MemRegion *RecReg = Msg->getReceiverSVal().getAsRegion();
-        if (!RecReg)
-          return;
-        DynamicTypeInfo RecDynType = State->getDynamicTypeInfo(RecReg);
-        C.addTransition(State->setDynamicTypeInfo(RetReg, RecDynType));
-        break;
-      }
-      }
+      C.addTransition(State->setDynamicTypeInfo(RetReg, DynResTy, false));
+      break;
     }
+    case OMF_init: {
+      // Assume, the result of the init method has the same dynamic type as
+      // the receiver and propagate the dynamic type info.
+      const MemRegion *RecReg = Msg->getReceiverSVal().getAsRegion();
+      if (!RecReg)
+        return;
+      DynamicTypeInfo RecDynType = State->getDynamicTypeInfo(RecReg);
+      C.addTransition(State->setDynamicTypeInfo(RetReg, RecDynType));
+      break;
+    }
+    }
+
     return;
   }
 
@@ -192,20 +188,6 @@ void DynamicTypePropagation::checkPostStmt(const ImplicitCastExpr *CastE,
   return;
 }
 
-void DynamicTypePropagation::checkPostStmt(const CXXNewExpr *NewE,
-                                           CheckerContext &C) const {
-  if (NewE->isArray())
-    return;
-
-  // We only track dynamic type info for regions.
-  const MemRegion *MR = C.getSVal(NewE).getAsRegion();
-  if (!MR)
-    return;
-  
-  C.addTransition(C.getState()->setDynamicTypeInfo(MR, NewE->getType(),
-                                                   /*CanBeSubclass=*/false));
-}
-
 const ObjCObjectType *
 DynamicTypePropagation::getObjectTypeForAllocAndNew(const ObjCMessageExpr *MsgE,
                                                     CheckerContext &C) const {
@@ -223,7 +205,7 @@ DynamicTypePropagation::getObjectTypeForAllocAndNew(const ObjCMessageExpr *MsgE,
 
   const Expr *RecE = MsgE->getInstanceReceiver();
   if (!RecE)
-    return nullptr;
+    return 0;
 
   RecE= RecE->IgnoreParenImpCasts();
   if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(RecE)) {
@@ -237,7 +219,7 @@ DynamicTypePropagation::getObjectTypeForAllocAndNew(const ObjCMessageExpr *MsgE,
           return ObjTy;
     }
   }
-  return nullptr;
+  return 0;
 }
 
 // Return a better dynamic type if one can be derived from the cast.
@@ -253,7 +235,7 @@ DynamicTypePropagation::getBetterObjCType(const Expr *CastE,
   const ObjCObjectPointerType *NewTy =
       CastE->getType()->getAs<ObjCObjectPointerType>();
   if (!NewTy)
-    return nullptr;
+    return 0;
   QualType OldDTy = C.getState()->getDynamicTypeInfo(ToR).getType();
   if (OldDTy.isNull()) {
     return NewTy;
@@ -261,7 +243,7 @@ DynamicTypePropagation::getBetterObjCType(const Expr *CastE,
   const ObjCObjectPointerType *OldTy =
     OldDTy->getAs<ObjCObjectPointerType>();
   if (!OldTy)
-    return nullptr;
+    return 0;
 
   // Id the old type is 'id', the new one is more precise.
   if (OldTy->isObjCIdType() && !NewTy->isObjCIdType())
@@ -273,7 +255,7 @@ DynamicTypePropagation::getBetterObjCType(const Expr *CastE,
   if (ToI && FromI && FromI->isSuperClassOf(ToI))
     return NewTy;
 
-  return nullptr;
+  return 0;
 }
 
 void ento::registerDynamicTypePropagation(CheckerManager &mgr) {

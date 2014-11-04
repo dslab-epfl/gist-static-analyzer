@@ -7,7 +7,8 @@
 int objc_lookUpClass(const char*);
 
 void __raiseExc1() {
- [objc_lookUpClass("NSString") retain]; // expected-warning {{receiver type 'int' is not 'id'}}
+ [objc_lookUpClass("NSString") retain]; // expected-warning {{receiver type 'int' is not 'id'}} \
+    expected-warning {{method '-retain' not found}}
 }
 
 typedef const struct __CFString * CFStringRef;

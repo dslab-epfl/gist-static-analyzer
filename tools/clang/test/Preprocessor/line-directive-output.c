@@ -2,10 +2,6 @@
 // PR6101
 int a;
 // CHECK: # 1 "{{.*}}line-directive-output.c"
-
-// Check that we do not emit an enter marker for the main file.
-// CHECK-NOT: # 1 "{{.*}}line-directive-output.c" 1
-
 // CHECK: int a;
 
 // CHECK-NEXT: # 50 "{{.*}}line-directive-output.c"
@@ -73,6 +69,3 @@ extern int z;
 # 42 "A.c"
 # 44 "A.c"
 # 49 "A.c"
-
-// CHECK: # 50 "a\n.c"
-# 50 "a\012.c"

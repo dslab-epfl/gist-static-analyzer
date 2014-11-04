@@ -1,7 +1,5 @@
-// RUN: %clang_cc1 -analyze -analyzer-checker=core,unix.Malloc,debug.ExprInspection %s -verify
-
-extern void clang_analyzer_eval(bool);
-extern "C" char *strdup(const char *s);
+// RUN: %clang_cc1 -analyze -analyzer-checker=core %s -verify
+// expected-no-diagnostics
 
 namespace PR14054_reduced {
   struct Definition;
@@ -49,60 +47,5 @@ namespace PR14054_original {
   void CloneParseTree(ParseNode *opn, ParseNode *pn,  ParseNode *x) {
     pn->pn_u = opn->pn_u;
     x = pn->pn_u.name.lexdef->pn_u.name.lexdef;
-  }
-}
-
-namespace PR17596 {
-  union IntOrString {
-    int i;
-    char *s;
-  };
-
-  extern void process(IntOrString);
-
-  void test() {
-    IntOrString uu;
-    uu.s = strdup("");
-    process(uu);
-  }
-
-  void testPositive() {
-    IntOrString uu;
-    uu.s = strdup("");
-  } // expected-warning{{leak}}
-
-  void testCopy() {
-    IntOrString uu;
-    uu.i = 4;
-    clang_analyzer_eval(uu.i == 4); // expected-warning{{TRUE}}
-
-    IntOrString vv;
-    vv.i = 5;
-    uu = vv;
-    // FIXME: Should be true.
-    clang_analyzer_eval(uu.i == 5); // expected-warning{{UNKNOWN}}
-  }
-
-  void testInvalidation() {
-    IntOrString uu;
-    uu.s = strdup("");
-
-    IntOrString vv;
-    char str[] = "abc";
-    vv.s = str;
-
-    // FIXME: This is a leak of uu.s.
-    uu = vv;
-  }
-
-  void testIndirectInvalidation() {
-    IntOrString uu;
-    char str[] = "abc";
-    uu.s = str;
-
-    clang_analyzer_eval(uu.s[0] == 'a'); // expected-warning{{TRUE}}
-
-    process(uu);
-    clang_analyzer_eval(uu.s[0] == 'a'); // expected-warning{{UNKNOWN}}
   }
 }

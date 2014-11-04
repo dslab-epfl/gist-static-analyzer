@@ -12,8 +12,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "SparcTargetMachine.h"
+#include "llvm/Intrinsics.h"
 #include "llvm/CodeGen/SelectionDAGISel.h"
-#include "llvm/IR/Intrinsics.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -33,7 +33,7 @@ class SparcDAGToDAGISel : public SelectionDAGISel {
   /// Subtarget - Keep a pointer to the Sparc Subtarget around so that we can
   /// make the right decision when generating code for different targets.
   const SparcSubtarget &Subtarget;
-  SparcTargetMachine &TM;
+  SparcTargetMachine& TM;
 public:
   explicit SparcDAGToDAGISel(SparcTargetMachine &tm)
     : SelectionDAGISel(tm),
@@ -41,7 +41,7 @@ public:
       TM(tm) {
   }
 
-  SDNode *Select(SDNode *N) override;
+  SDNode *Select(SDNode *N);
 
   // Complex Pattern Selectors.
   bool SelectADDRrr(SDValue N, SDValue &R1, SDValue &R2);
@@ -49,11 +49,11 @@ public:
 
   /// SelectInlineAsmMemoryOperand - Implement addressing mode selection for
   /// inline asm expressions.
-  bool SelectInlineAsmMemoryOperand(const SDValue &Op,
-                                    char ConstraintCode,
-                                    std::vector<SDValue> &OutOps) override;
+  virtual bool SelectInlineAsmMemoryOperand(const SDValue &Op,
+                                            char ConstraintCode,
+                                            std::vector<SDValue> &OutOps);
 
-  const char *getPassName() const override {
+  virtual const char *getPassName() const {
     return "SPARC DAG->DAG Pattern Instruction Selection";
   }
 
@@ -66,21 +66,19 @@ private:
 }  // end anonymous namespace
 
 SDNode* SparcDAGToDAGISel::getGlobalBaseReg() {
-  unsigned GlobalBaseReg =
-      TM.getSubtargetImpl()->getInstrInfo()->getGlobalBaseReg(MF);
-  return CurDAG->getRegister(GlobalBaseReg, TLI->getPointerTy()).getNode();
+  unsigned GlobalBaseReg = TM.getInstrInfo()->getGlobalBaseReg(MF);
+  return CurDAG->getRegister(GlobalBaseReg, TLI.getPointerTy()).getNode();
 }
 
 bool SparcDAGToDAGISel::SelectADDRri(SDValue Addr,
                                      SDValue &Base, SDValue &Offset) {
   if (FrameIndexSDNode *FIN = dyn_cast<FrameIndexSDNode>(Addr)) {
-    Base = CurDAG->getTargetFrameIndex(FIN->getIndex(), TLI->getPointerTy());
+    Base = CurDAG->getTargetFrameIndex(FIN->getIndex(), MVT::i32);
     Offset = CurDAG->getTargetConstant(0, MVT::i32);
     return true;
   }
   if (Addr.getOpcode() == ISD::TargetExternalSymbol ||
-      Addr.getOpcode() == ISD::TargetGlobalAddress ||
-      Addr.getOpcode() == ISD::TargetGlobalTLSAddress)
+      Addr.getOpcode() == ISD::TargetGlobalAddress)
     return false;  // direct calls.
 
   if (Addr.getOpcode() == ISD::ADD) {
@@ -89,8 +87,7 @@ bool SparcDAGToDAGISel::SelectADDRri(SDValue Addr,
         if (FrameIndexSDNode *FIN =
                 dyn_cast<FrameIndexSDNode>(Addr.getOperand(0))) {
           // Constant offset from frame ref.
-          Base =
-              CurDAG->getTargetFrameIndex(FIN->getIndex(), TLI->getPointerTy());
+          Base = CurDAG->getTargetFrameIndex(FIN->getIndex(), MVT::i32);
         } else {
           Base = Addr.getOperand(0);
         }
@@ -117,8 +114,7 @@ bool SparcDAGToDAGISel::SelectADDRri(SDValue Addr,
 bool SparcDAGToDAGISel::SelectADDRrr(SDValue Addr, SDValue &R1, SDValue &R2) {
   if (Addr.getOpcode() == ISD::FrameIndex) return false;
   if (Addr.getOpcode() == ISD::TargetExternalSymbol ||
-      Addr.getOpcode() == ISD::TargetGlobalAddress ||
-      Addr.getOpcode() == ISD::TargetGlobalTLSAddress)
+      Addr.getOpcode() == ISD::TargetGlobalAddress)
     return false;  // direct calls.
 
   if (Addr.getOpcode() == ISD::ADD) {
@@ -134,16 +130,14 @@ bool SparcDAGToDAGISel::SelectADDRrr(SDValue Addr, SDValue &R1, SDValue &R2) {
   }
 
   R1 = Addr;
-  R2 = CurDAG->getRegister(SP::G0, TLI->getPointerTy());
+  R2 = CurDAG->getRegister(SP::G0, MVT::i32);
   return true;
 }
 
 SDNode *SparcDAGToDAGISel::Select(SDNode *N) {
-  SDLoc dl(N);
-  if (N->isMachineOpcode()) {
-    N->setNodeId(-1);
-    return nullptr;   // Already selected.
-  }
+  DebugLoc dl = N->getDebugLoc();
+  if (N->isMachineOpcode())
+    return NULL;   // Already selected.
 
   switch (N->getOpcode()) {
   default: break;
@@ -152,9 +146,6 @@ SDNode *SparcDAGToDAGISel::Select(SDNode *N) {
 
   case ISD::SDIV:
   case ISD::UDIV: {
-    // sdivx / udivx handle 64-bit divides.
-    if (N->getValueType(0) == MVT::i64)
-      break;
     // FIXME: should use a custom expander to expose the SRA to the dag.
     SDValue DivLHS = N->getOperand(0);
     SDValue DivRHS = N->getOperand(1);

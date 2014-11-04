@@ -19,8 +19,8 @@ entry:
 
 define void @test() nounwind {
 entry:
-; 16: 	.frame	$sp,8,$ra
-; 16: 	save 	8 # 16 bit inst
+; 16: 	.frame	$16,24,$ra
+; 16: 	save 	$ra, $s0, $s1, 24
 ; 16: 	move	$16, $sp
 ; 16:	move	${{[0-9]+}}, $sp
 ; 16:	subu	$[[REGISTER:[0-9]+]], ${{[0-9]+}}, ${{[0-9]+}}
@@ -68,8 +68,8 @@ entry:
   %21 = load i32** %ip, align 4
   %arrayidx6 = getelementptr inbounds i32* %21, i32 %20
   %22 = load i32* %arrayidx6, align 4
-; 16: 	addiu $sp, -16
+; 16: 	save	16
   call void @temp(i32 %22)
-; 16: 	addiu $sp, 16
+; 16: 	restore	16
   ret void
 }

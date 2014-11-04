@@ -12,16 +12,16 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_BASIC_SOURCELOCATION_H
-#define LLVM_CLANG_BASIC_SOURCELOCATION_H
+#ifndef LLVM_CLANG_SOURCELOCATION_H
+#define LLVM_CLANG_SOURCELOCATION_H
 
 #include "clang/Basic/LLVM.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/PointerLikeTypeTraits.h"
-#include <cassert>
-#include <functional>
-#include <string>
+#include "llvm/Support/Compiler.h"
 #include <utility>
+#include <functional>
+#include <cassert>
+#include <string>
 
 namespace llvm {
   class MemoryBuffer;
@@ -89,7 +89,7 @@ class SourceLocation {
   friend class SourceManager;
   friend class ASTReader;
   friend class ASTWriter;
-  enum : unsigned {
+  enum {
     MacroIDBit = 1U << 31
   };
 public:
@@ -165,14 +165,14 @@ public:
     return (void*)(uintptr_t)getRawEncoding();
   }
 
-  /// \brief Turn a pointer encoding of a SourceLocation object back
+  /// getFromPtrEncoding - Turn a pointer encoding of a SourceLocation object
   /// into a real SourceLocation.
   static SourceLocation getFromPtrEncoding(const void *Encoding) {
     return getFromRawEncoding((unsigned)(uintptr_t)Encoding);
   }
 
   void print(raw_ostream &OS, const SourceManager &SM) const;
-  std::string printToString(const SourceManager &SM) const;
+  LLVM_ATTRIBUTE_USED std::string printToString(const SourceManager &SM) const;
   void dump(const SourceManager &SM) const;
 };
 
@@ -188,7 +188,7 @@ inline bool operator<(const SourceLocation &LHS, const SourceLocation &RHS) {
   return LHS.getRawEncoding() < RHS.getRawEncoding();
 }
 
-/// \brief A trivial tuple used to represent a source range.
+/// \brief A trival tuple used to represent a source range.
 class SourceRange {
   SourceLocation B;
   SourceLocation E;
@@ -218,7 +218,7 @@ public:
 /// \brief Represents a character-granular source range.
 ///
 /// The underlying SourceRange can either specify the starting/ending character
-/// of the range, or it can specify the start of the range and the start of the
+/// of the range, or it can specify the start or the range and the start of the
 /// last token of the range (a "token range").  In the token range case, the
 /// size of the last token must be measured to determine the actual end of the
 /// range.
@@ -227,14 +227,20 @@ class CharSourceRange {
   bool IsTokenRange;
 public:
   CharSourceRange() : IsTokenRange(false) {}
-  CharSourceRange(SourceRange R, bool ITR) : Range(R), IsTokenRange(ITR) {}
+  CharSourceRange(SourceRange R, bool ITR) : Range(R),IsTokenRange(ITR){}
 
   static CharSourceRange getTokenRange(SourceRange R) {
-    return CharSourceRange(R, true);
+    CharSourceRange Result;
+    Result.Range = R;
+    Result.IsTokenRange = true;
+    return Result;
   }
 
   static CharSourceRange getCharRange(SourceRange R) {
-    return CharSourceRange(R, false);
+    CharSourceRange Result;
+    Result.Range = R;
+    Result.IsTokenRange = false;
+    return Result;
   }
     
   static CharSourceRange getTokenRange(SourceLocation B, SourceLocation E) {
@@ -268,7 +274,7 @@ class FullSourceLoc : public SourceLocation {
   const SourceManager *SrcMgr;
 public:
   /// \brief Creates a FullSourceLoc where isValid() returns \c false.
-  explicit FullSourceLoc() : SrcMgr(nullptr) {}
+  explicit FullSourceLoc() : SrcMgr(0) {}
 
   explicit FullSourceLoc(SourceLocation Loc, const SourceManager &SM)
     : SourceLocation(Loc), SrcMgr(&SM) {}
@@ -284,18 +290,19 @@ public:
   FullSourceLoc getExpansionLoc() const;
   FullSourceLoc getSpellingLoc() const;
 
-  unsigned getExpansionLineNumber(bool *Invalid = nullptr) const;
-  unsigned getExpansionColumnNumber(bool *Invalid = nullptr) const;
+  unsigned getExpansionLineNumber(bool *Invalid = 0) const;
+  unsigned getExpansionColumnNumber(bool *Invalid = 0) const;
 
-  unsigned getSpellingLineNumber(bool *Invalid = nullptr) const;
-  unsigned getSpellingColumnNumber(bool *Invalid = nullptr) const;
+  unsigned getSpellingLineNumber(bool *Invalid = 0) const;
+  unsigned getSpellingColumnNumber(bool *Invalid = 0) const;
 
-  const char *getCharacterData(bool *Invalid = nullptr) const;
+  const char *getCharacterData(bool *Invalid = 0) const;
 
+  const llvm::MemoryBuffer* getBuffer(bool *Invalid = 0) const;
 
   /// \brief Return a StringRef to the source buffer data for the
   /// specified FileID.
-  StringRef getBufferData(bool *Invalid = nullptr) const;
+  StringRef getBufferData(bool *Invalid = 0) const;
 
   /// \brief Decompose the specified location into a raw FileID + Offset pair.
   ///
@@ -330,7 +337,7 @@ public:
   /// \brief Prints information about this FullSourceLoc to stderr.
   ///
   /// This is useful for debugging.
-  void dump() const;
+  LLVM_ATTRIBUTE_USED void dump() const;
 
   friend inline bool
   operator==(const FullSourceLoc &LHS, const FullSourceLoc &RHS) {
@@ -357,7 +364,7 @@ class PresumedLoc {
   unsigned Line, Col;
   SourceLocation IncludeLoc;
 public:
-  PresumedLoc() : Filename(nullptr) {}
+  PresumedLoc() : Filename(0) {}
   PresumedLoc(const char *FN, unsigned Ln, unsigned Co, SourceLocation IL)
     : Filename(FN), Line(Ln), Col(Co), IncludeLoc(IL) {
   }
@@ -366,8 +373,8 @@ public:
   ///
   /// This occurs when created with invalid source locations or when walking
   /// off the top of a \#include stack.
-  bool isInvalid() const { return Filename == nullptr; }
-  bool isValid() const { return Filename != nullptr; }
+  bool isInvalid() const { return Filename == 0; }
+  bool isValid() const { return Filename != 0; }
 
   /// \brief Return the presumed filename of this location.
   ///

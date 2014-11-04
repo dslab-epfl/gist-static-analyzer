@@ -87,8 +87,7 @@ class Pass {
   Pass(const Pass &) LLVM_DELETED_FUNCTION;
 
 public:
-  explicit Pass(PassKind K, char &pid)
-    : Resolver(nullptr), PassID(&pid), Kind(K) { }
+  explicit Pass(PassKind K, char &pid) : Resolver(0), PassID(&pid), Kind(K) { }
   virtual ~Pass();
 
 
@@ -104,16 +103,6 @@ public:
   AnalysisID getPassID() const {
     return PassID;
   }
-
-  /// doInitialization - Virtual method overridden by subclasses to do
-  /// any necessary initialization before any pass is run.
-  ///
-  virtual bool doInitialization(Module &)  { return false; }
-
-  /// doFinalization - Virtual method overriden by subclasses to do any
-  /// necessary clean up after all passes have run.
-  ///
-  virtual bool doFinalization(Module &) { return false; }
 
   /// print - Print out the internal state of the pass.  This is called by
   /// Analyze to print out the contents of an analysis.  Otherwise it is not
@@ -236,17 +225,17 @@ public:
 class ModulePass : public Pass {
 public:
   /// createPrinterPass - Get a module printer pass.
-  Pass *createPrinterPass(raw_ostream &O,
-                          const std::string &Banner) const override;
+  Pass *createPrinterPass(raw_ostream &O, const std::string &Banner) const;
 
   /// runOnModule - Virtual method overriden by subclasses to process the module
   /// being operated on.
   virtual bool runOnModule(Module &M) = 0;
 
-  void assignPassManager(PMStack &PMS, PassManagerType T) override;
+  virtual void assignPassManager(PMStack &PMS,
+                                 PassManagerType T);
 
   ///  Return what kind of Pass Manager can manage this pass.
-  PassManagerType getPotentialPassManagerType() const override;
+  virtual PassManagerType getPotentialPassManagerType() const;
 
   explicit ModulePass(char &pid) : Pass(PT_Module, pid) {}
   // Force out-of-line virtual method.
@@ -269,11 +258,11 @@ public:
   ///
   virtual void initializePass();
 
-  ImmutablePass *getAsImmutablePass() override { return this; }
+  virtual ImmutablePass *getAsImmutablePass() { return this; }
 
   /// ImmutablePasses are never run.
   ///
-  bool runOnModule(Module &) override { return false; }
+  bool runOnModule(Module &) { return false; }
 
   explicit ImmutablePass(char &pid)
   : ModulePass(pid) {}
@@ -296,23 +285,28 @@ public:
   explicit FunctionPass(char &pid) : Pass(PT_Function, pid) {}
 
   /// createPrinterPass - Get a function printer pass.
-  Pass *createPrinterPass(raw_ostream &O,
-                          const std::string &Banner) const override;
+  Pass *createPrinterPass(raw_ostream &O, const std::string &Banner) const;
+
+  /// doInitialization - Virtual method overridden by subclasses to do
+  /// any necessary per-module initialization.
+  ///
+  virtual bool doInitialization(Module &);
 
   /// runOnFunction - Virtual method overriden by subclasses to do the
   /// per-function processing of the pass.
   ///
   virtual bool runOnFunction(Function &F) = 0;
 
-  void assignPassManager(PMStack &PMS, PassManagerType T) override;
+  /// doFinalization - Virtual method overriden by subclasses to do any post
+  /// processing needed after all passes have run.
+  ///
+  virtual bool doFinalization(Module &);
+
+  virtual void assignPassManager(PMStack &PMS,
+                                 PassManagerType T);
 
   ///  Return what kind of Pass Manager can manage this pass.
-  PassManagerType getPotentialPassManagerType() const override;
-
-protected:
-  /// skipOptnoneFunction - This function has Attribute::OptimizeNone
-  /// and most transformation passes should skip it.
-  bool skipOptnoneFunction(const Function &F) const;
+  virtual PassManagerType getPotentialPassManagerType() const;
 };
 
 
@@ -332,11 +326,12 @@ public:
   explicit BasicBlockPass(char &pid) : Pass(PT_BasicBlock, pid) {}
 
   /// createPrinterPass - Get a basic block printer pass.
-  Pass *createPrinterPass(raw_ostream &O,
-                          const std::string &Banner) const override;
+  Pass *createPrinterPass(raw_ostream &O, const std::string &Banner) const;
 
-  using llvm::Pass::doInitialization;
-  using llvm::Pass::doFinalization;
+  /// doInitialization - Virtual method overridden by subclasses to do
+  /// any necessary per-module initialization.
+  ///
+  virtual bool doInitialization(Module &);
 
   /// doInitialization - Virtual method overridden by BasicBlockPass subclasses
   /// to do any necessary per-function initialization.
@@ -353,15 +348,16 @@ public:
   ///
   virtual bool doFinalization(Function &);
 
-  void assignPassManager(PMStack &PMS, PassManagerType T) override;
+  /// doFinalization - Virtual method overriden by subclasses to do any post
+  /// processing needed after all passes have run.
+  ///
+  virtual bool doFinalization(Module &);
+
+  virtual void assignPassManager(PMStack &PMS,
+                                 PassManagerType T);
 
   ///  Return what kind of Pass Manager can manage this pass.
-  PassManagerType getPotentialPassManagerType() const override;
-
-protected:
-  /// skipOptnoneFunction - Containing function has Attribute::OptimizeNone
-  /// and most transformation passes should skip it.
-  bool skipOptnoneFunction(const BasicBlock &BB) const;
+  virtual PassManagerType getPotentialPassManagerType() const;
 };
 
 /// If the user specifies the -time-passes argument on an LLVM tool command line

@@ -1,7 +1,7 @@
 // RUN: %clang_cc1 -fsyntax-only -verify %s
 // expected-no-diagnostics
 
-@protocol fproto @end
+@protocol fproto;
 
 @protocol p1 
 @end

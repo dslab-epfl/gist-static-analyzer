@@ -171,7 +171,7 @@ public:
   void clear() { Operands.clear(); }
   size_t size() { return Operands.size(); }
 
-  typedef SmallVectorImpl<MCOperand>::iterator iterator;
+  typedef SmallVector<MCOperand, 8>::iterator iterator;
   iterator begin() { return Operands.begin(); }
   iterator end()   { return Operands.end();   }
   iterator insert(iterator I, const MCOperand &Op) {
@@ -184,18 +184,18 @@ public:
   /// \brief Dump the MCInst as prettily as possible using the additional MC
   /// structures, if given. Operators are separated by the \p Separator
   /// string.
-  void dump_pretty(raw_ostream &OS, const MCAsmInfo *MAI = nullptr,
-                   const MCInstPrinter *Printer = nullptr,
+  void dump_pretty(raw_ostream &OS, const MCAsmInfo *MAI = 0,
+                   const MCInstPrinter *Printer = 0,
                    StringRef Separator = " ") const;
 };
 
 inline raw_ostream& operator<<(raw_ostream &OS, const MCOperand &MO) {
-  MO.print(OS, nullptr);
+  MO.print(OS, 0);
   return OS;
 }
 
 inline raw_ostream& operator<<(raw_ostream &OS, const MCInst &MI) {
-  MI.print(OS, nullptr);
+  MI.print(OS, 0);
   return OS;
 }
 

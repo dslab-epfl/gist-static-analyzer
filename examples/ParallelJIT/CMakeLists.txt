@@ -1,10 +1,4 @@
-set(LLVM_LINK_COMPONENTS
-  Core
-  ExecutionEngine
-  Interpreter
-  Support
-  nativecodegen
-  )
+set(LLVM_LINK_COMPONENTS jit interpreter nativecodegen)
 
 add_llvm_example(ParallelJIT
   ParallelJIT.cpp

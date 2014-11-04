@@ -232,23 +232,16 @@ namespace PR10660 {
 }
 
 namespace rdar11147355 {
-  template <class T>
+  template <class T> 
   struct A {
     template <class U> class B;
-    template <class S> template <class U> friend class A<S>::B; // expected-warning {{dependent nested name specifier 'A<S>::' for friend template declaration is not supported; ignoring this friend declaration}}
-  private:
-    int n; // expected-note {{here}}
+    template <class S> template <class U> friend class A<S>::B; 
   };
-
+  
   template <class S> template <class U> class A<S>::B {
-  public:
-    // FIXME: This should be permitted.
-    int f(A<S*> a) { return a.n; } // expected-error {{private}}
-  };
-
+  }; 
+  
   A<double>::B<double>  ab;
-  A<double*> a;
-  int k = ab.f(a); // expected-note {{instantiation of}}
 }
 
 namespace RedeclUnrelated {
@@ -308,24 +301,4 @@ namespace PR12585 {
   };
   H<int> h1; // ok
   H<char> h2; // expected-note {{instantiation}}
-}
-
-// Ensure that we can still instantiate a friend function template
-// after the friend declaration is instantiated during the delayed
-// parsing of a member function, but before the friend function has
-// been parsed.
-namespace rdar12350696 {
-  template <class T> struct A {
-    void foo() {
-      A<int> a;
-    }
-    template <class U> friend void foo(const A<U> & a) {
-      int array[sizeof(T) == sizeof(U) ? -1 : 1]; // expected-error {{negative size}}
-    }
-  };
-
-  void test() {
-    A<int> b;
-    foo(b); // expected-note {{in instantiation}}
-  }
 }

@@ -1,6 +1,5 @@
-; RUN: llc -no-integrated-as < %s
+; RUN: llc < %s
 ; PR1133
-; XFAIL: hexagon
 define void @test(i32* %X) nounwind  {
 entry:
 	%tmp1 = getelementptr i32* %X, i32 10		; <i32*> [#uses=2]
