@@ -1,3 +1,3 @@
-add_llvm_loadable_module( LLVMHello
-  Hello.cpp
+add_llvm_loadable_module( LLVMGiri
+  Giri.cpp
   )
