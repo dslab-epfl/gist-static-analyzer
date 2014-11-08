@@ -11,6 +11,8 @@ namespace llvm{
 
     void trackUseDefChain(Value& value);
     virtual bool runOnModule(Module& m);
+    Instruction* targetInstruction;
+    Function* targetFunction;
 
     static char ID;
   };
