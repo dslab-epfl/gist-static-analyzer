@@ -25,6 +25,7 @@
 #include "llvm/Type.h"
 
 #include "/home/res/projects/res/projects/poolalloc/include/poolalloc/PoolAllocate.h"
+#include "../DebugInfoManager/DebugInfoManager.h"
 
 #include <map>
 #include <set>
@@ -52,7 +53,7 @@ using namespace llvm;
 //
 static void inline
 removeIncompatibleTargets (const CallInst * CI,
-                            std::vector<const Function *> & Targets) {
+                           std::vector<const Function *> & Targets) {
   //
   // If the call is a direct call, do not look for incompatibility.
   //
@@ -106,7 +107,7 @@ struct FindFlows : public ModulePass {
     virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       // We need DSA information for finding indirect function call targets
       AU.addRequired<EQTDDataStructures>();
-
+      AU.addRequired<DebugInfoManager>();
       // This pass is an analysis pass, so it does not modify anything
       AU.setPreservesAll();
     };
@@ -175,7 +176,7 @@ struct FindFlows : public ModulePass {
 
     // Passes used by this pass
     EQTDDataStructures * dsaPass;
+    DebugInfoManager* debugInfoManager;
 };
 
 #endif
-
