@@ -15,8 +15,8 @@
 #ifndef LLVM_ANALYSIS_DSGRAPH_H
 #define LLVM_ANALYSIS_DSGRAPH_H
 
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/DSNode.h"
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/DSCallGraph.h"
+#include "DSNode.h"
+#include "DSCallGraph.h"
 #include "llvm/ADT/EquivalenceClasses.h"
 #include "llvm/Function.h"
 

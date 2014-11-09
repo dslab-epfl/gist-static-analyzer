@@ -15,8 +15,8 @@
 #ifndef POOLALLOC_HEURISTIC_H
 #define POOLALLOC_HEURISTIC_H
 
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/DataStructure.h"
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/DSGraph.h"
+#include "../dsa/DataStructure.h"
+#include "../dsa/DSGraph.h"
 
 #include "llvm/Pass.h"
 

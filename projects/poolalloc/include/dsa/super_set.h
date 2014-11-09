@@ -8,7 +8,7 @@
 #ifndef _SUPER_SET_H
 #define	_SUPER_SET_H
 
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/svset.h"
+#include "svset.h"
 #include <set>
 
 // Contains stable references to a set

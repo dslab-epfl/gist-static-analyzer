@@ -24,7 +24,7 @@
 #include "llvm/Pass.h"
 #include "llvm/Type.h"
 
-#include "/home/res/projects/res/projects/poolalloc/include/poolalloc/PoolAllocate.h"
+#include "../../../projects/poolalloc/include/poolalloc/PoolAllocate.h"
 #include "../DebugInfoManager/DebugInfoManager.h"
 
 #include <map>
