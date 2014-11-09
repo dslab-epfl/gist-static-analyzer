@@ -84,7 +84,7 @@ isASource (const Value * V) {
 ///  V - A source that needs to be recorded.
 ///
 void
-FindFlows::addSource(const Value * V, const Function * F) {
+StaticSlice::addSource(const Value * V, const Function * F) {
   //
   // Record the source in the set of sources.
   //
@@ -107,7 +107,7 @@ FindFlows::addSource(const Value * V, const Function * F) {
 ///  value.
 ///
 void
-FindFlows::findFlow (Value * Initial, const Function & Fu) {
+StaticSlice::findFlow (Value * Initial, const Function & Fu) {
   // Already processed values
   Processed_t Processed;
 
@@ -172,7 +172,7 @@ FindFlows::findFlow (Value * Initial, const Function & Fu) {
 ///  F - The function to analyze.
 ///
 void
-FindFlows::findSources (Function & F) {
+StaticSlice::findSources (Function & F) {
   // Retrieve the target instruction from the debug info manager
   // and process those the information flow of its inputs.
   assert (debugInfoManager->targetInstruction && "Target instruction cannot be NULL");
@@ -203,7 +203,7 @@ FindFlows::findSources (Function & F) {
 ///  Targets - A list of functions that can be called by the call instruction.
 ///
 void
-FindFlows::findCallTargets (CallInst * callInst,
+StaticSlice::findCallTargets (CallInst * callInst,
                             std::vector<const Function *> & Targets) {
   // We do not consider the intrinsics as sources
   if (isa<IntrinsicInst>(callInst))
@@ -239,7 +239,7 @@ FindFlows::findCallTargets (CallInst * callInst,
 }
 
 /// This only works for direct function calls
-bool FindFlows::isFilteredCall (CallInst* callInst) {
+bool StaticSlice::isFilteredCall (CallInst* callInst) {
   assert (callInst->getCalledFunction() && 
           "Filtering only works for direct function calls");
       
@@ -251,7 +251,7 @@ bool FindFlows::isFilteredCall (CallInst* callInst) {
 }
 
 /// This only works for direct function calls
-bool FindFlows::isSpecialCall(CallInst* callInst) {
+bool StaticSlice::isSpecialCall(CallInst* callInst) {
   assert (callInst->getCalledFunction() && 
           "Special handling only works for direct function calls");
       
@@ -283,7 +283,7 @@ bool FindFlows::isSpecialCall(CallInst* callInst) {
 ///              information flow purposes.
 ///
 void
-FindFlows::findCallSources (CallInst * CI,
+StaticSlice::findCallSources (CallInst * CI,
                             Worklist_t & Worklist,
                             Processed_t & Processed) {
   //
@@ -357,7 +357,7 @@ FindFlows::findCallSources (CallInst * CI,
 ///              times.
 ///
 void
-FindFlows::findArgSources (Argument * Arg,
+StaticSlice::findArgSources (Argument * Arg,
                            Worklist_t & Worklist,
                            Processed_t & Processed) {
   //
@@ -463,7 +463,7 @@ FindFlows::findArgSources (Argument * Arg,
 ///  false - The module was not modified.
 ///
 bool
-FindFlows::runOnModule (Module & M) {
+StaticSlice::runOnModule (Module & M) {
   std::ofstream logFile;
   logFile.open ("slice.log");
 
@@ -494,9 +494,9 @@ FindFlows::runOnModule (Module & M) {
 }
 
 /// ID Variable to identify the pass
-char FindFlows::ID = 0;
+char StaticSlice::ID = 0;
 
 ///
 /// Pass registration
 ///
-static RegisterPass<FindFlows> X ("flows", "Find Information Flows");
+static RegisterPass<StaticSlice> X ("slice", "Find Information Flows");

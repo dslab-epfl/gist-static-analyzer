@@ -90,14 +90,14 @@ removeIncompatibleTargets (const CallInst * CI,
 //  This pass analyzes a function and determines the sources of information
 //  that may need checks or label propagation through the heap.
 //
-struct FindFlows : public ModulePass {
+struct StaticSlice : public ModulePass {
   public:
     //////////////////////////////////////////////////////////////////////////
     // LLVM Pass Variables and Methods 
     //////////////////////////////////////////////////////////////////////////
 
     static char ID;
-    FindFlows () : ModulePass (ID), dsaPass(NULL), debugInfoManager(NULL) {
+    StaticSlice () : ModulePass (ID), dsaPass(NULL), debugInfoManager(NULL) {
       // Filter the below set of functions from potential  
       // call sites for the arguments we are tracking
       filteredFunctions.insert("fwrite");
