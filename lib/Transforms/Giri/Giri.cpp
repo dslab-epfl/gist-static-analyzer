@@ -34,7 +34,7 @@ using namespace llvm;
 /// Description:
 ///  This function determines whether the specified value is a source of
 ///  information (something that has a label independent of its input SSA
-///  values).
+///  values)
 ///
 /// Inputs:
 ///  V - The value to analyze.
@@ -46,9 +46,7 @@ using namespace llvm;
 ///
 static inline bool
 isASource (const Value * V) {
-  //
   // Call instructions are sources *unless* they are inline assembly.
-  //
   if (const CallInst * CI = dyn_cast<CallInst>(V)) {
     if (isa<InlineAsm>(CI->getOperand(0)))
       return false;
@@ -57,23 +55,18 @@ isASource (const Value * V) {
   }
 
   if (isa<LoadInst>(V)){
-    //std::cerr << "load\n";
     return true;
   }
   if (isa<Argument>(V)){
-    //std::cerr << "argument\n";
     return true;
   }
   if (isa<AllocaInst>(V)){
-    //std::cerr << "alloca inst\n";
     return true;
   }
   if (isa<Constant>(V)){
-    //std::cerr << "constant\n";
     return true;
   }
   if (isa<GlobalValue>(V)){
-    //std::cerr << "global value\n";
     return true;
   }
 
@@ -91,14 +84,14 @@ isASource (const Value * V) {
 ///  V - A source that needs to be recorded.
 ///
 void
-FindFlows::addSource (const Value * V, const Function * F) {
+FindFlows::addSource(const Value * V, const Function * F) {
   //
   // Record the source in the set of sources.
   //
   Sources[F].insert (V);
 
   // If the source is an argument, record it specially.
-  // BK: Not used for the moment
+  // [BK] Not used for the moment
   if (const Argument * Arg = dyn_cast<Argument>(V))
     Args.insert (Arg);
   return;
@@ -135,7 +128,6 @@ FindFlows::findFlow (Value * Initial, const Function & Fu) {
     // its operands to the worklist if they have not yet been processed.
     //
     if (isASource (V)) {
-      //std::cerr << "adding to sources\n";
       addSource (V, F);
 
       //
@@ -144,12 +136,9 @@ FindFlows::findFlow (Value * Initial, const Function & Fu) {
       // means that we need to know the sources for the called function's
       // return value.  Requiring the label of a function argument means that
       // we'll need the labels of any value passed into the function.
-      //
       if (CallInst * CI = dyn_cast<CallInst>(V)) {
-       //std::cerr << "call\n";
         findCallSources (CI, Worklist, Processed);
       } else if (Argument * Arg = dyn_cast<Argument>(V)) {
-        //std::cerr << "arg\n";
         findArgSources (Arg, Worklist, Processed);
       }
     } else if (User * U = dyn_cast<User>(V)) {
@@ -214,21 +203,30 @@ FindFlows::findSources (Function & F) {
 ///  Targets - A list of functions that can be called by the call instruction.
 ///
 void
-FindFlows::findCallTargets (CallInst * CI,
+FindFlows::findCallTargets (CallInst * callInst,
                             std::vector<const Function *> & Targets) {
-  //
+  // We do not consider the intrinsics as sources
+  if (isa<IntrinsicInst>(callInst))
+    return;
+      
   // Check to see if the call instruction is a direct call.  If so, then add
   // the target to the set of known targets and return.
-  //
-  Function * CalledFunc = CI->getCalledFunction();
-  if (CalledFunc) {
-    Targets.push_back (CalledFunc);
+  Function * calledFunction = callInst->getCalledFunction();
+  if (calledFunction) {
+    // We also filter out some function which we do not consider as sources
+    // for the time being
+    if (isFilteredCall(callInst))
+      return;
+    Targets.push_back (calledFunction);
+    // Some functions such as pthread_create require sepcial handling 
+    if(isSpecialCall(callInst))
+      ;//handleSpecialCall(callInst);
     return;
   }
 
   // This is an indirect function call.  Get the DSNode for the function
   // pointer and then use that to find the set of call targets.
-  CallSite CS(CI);
+  CallSite CS(callInst);
   const DSCallGraph & CallGraph = dsaPass->getCallGraph();
   Targets.insert (Targets.end(),
                   CallGraph.callee_begin(CS),
@@ -236,11 +234,33 @@ FindFlows::findCallTargets (CallInst * CI,
 
   //
   // Remove targets that do not match the call instruction's argument list.
-  //
-  removeIncompatibleTargets  (CI, Targets);
+  removeIncompatibleTargets  (callInst, Targets);
   return;
 }
 
+/// This only works for direct function calls
+bool FindFlows::isFilteredCall (CallInst* callInst) {
+  assert (callInst->getCalledFunction() && 
+          "Filtering only works for direct function calls");
+      
+  std::string funcName = callInst->getCalledFunction()->getName().str();
+  if (filteredFunctions.find(funcName) != filteredFunctions.end()){
+    return true;
+  }
+  return false;
+}
+
+/// This only works for direct function calls
+bool FindFlows::isSpecialCall(CallInst* callInst) {
+  assert (callInst->getCalledFunction() && 
+          "Special handling only works for direct function calls");
+      
+  std::string funcName = callInst->getCalledFunction()->getName().str();
+  if (specialFunctions.find(funcName) != specialFunctions.end()){
+    return true;
+  }
+  return false;
+}
 
 ///
 /// Method: findCallSources()
@@ -360,7 +380,8 @@ FindFlows::findArgSources (Argument * Arg,
           //
           // Ignore inline assembly code.
           //
-          if (isa<InlineAsm>(CI->getOperand(0))) continue;
+          if (isa<InlineAsm>(CI->getOperand(0)))
+            continue;
 
           //
           // Find the set of functions called by this call instruction.
@@ -368,27 +389,31 @@ FindFlows::findArgSources (Argument * Arg,
           std::vector <const Function *> Targets;
           findCallTargets (CI, Targets);
 
-          //
           // Skip this call site if it does not call the function to which the
           // specified argument belongs.
-          //
           Function * CalledFunc = Arg->getParent();
           std::set<const Function *> TargetSet;
           TargetSet.insert (Targets.begin(), Targets.end());
-          if ((TargetSet.find (CalledFunc)) == (TargetSet.end())) continue;
+          
+          /*
+          std::set<const Function *>::iterator it;
+          for (it = TargetSet.begin(); it != TargetSet.end(); ++it) {
+            Function* f = const_cast<Function*>(*it);
+            std::cerr << f->getName().str() << std::endl;
+          }
+          */
+          
+          if ((TargetSet.find (CalledFunc)) == (TargetSet.end()))
+            continue;
 
-          //
           // Assert that the call and the called function have the same number
           // of arguments.
-          //
           assert ((CalledFunc->getFunctionType()->getNumParams()) ==
                   (CI->getNumOperands() - 1) &&
                   "Number of arguments doesn't match function signature!\n");
 
-          //
           // Walk the argument list of the call instruction and look for actual
           // arguments needing labels.  Add them to our local worklist.
-          //
           Function::arg_iterator FormalArg = CalledFunc->arg_begin();
           for (unsigned index = 1;
                index < CI->getNumOperands();
@@ -405,7 +430,6 @@ FindFlows::findArgSources (Argument * Arg,
 
     //
     // Finally, find the sources for all the actual arguments needing labels.
-    //
     std::vector<Value *>::iterator i;
     for (i = ActualArgs.begin(); i != ActualArgs.end(); ++i) {
       Value * V = *i;
@@ -414,7 +438,6 @@ FindFlows::findArgSources (Argument * Arg,
 
     //
     // Add the new items to process to the processed list.
-    //
     for (unsigned index = 0; index < ActualArgs.size(); ++index) {
       if (!(isa<Constant>(ActualArgs[index])))
         Processed.insert (ActualArgs[index]);
@@ -449,7 +472,7 @@ FindFlows::runOnModule (Module & M) {
   debugInfoManager = &getAnalysis<DebugInfoManager>();
 
   // Finding the sources of all labels of the target instruction we get from the coredump.
-  assert(debugInfoManager->targetFunction && "Target function cannot be NULL");
+  //assert(debugInfoManager->targetFunction && "Target function cannot be NULL");
   findSources (*(debugInfoManager->targetFunction));
 
   for (Module::iterator F = M.begin(); F != M.end(); ++F) {
@@ -460,7 +483,6 @@ FindFlows::runOnModule (Module & M) {
       raw_string_ostream oss2(Str);
       v->print(oss2);
       logFile << oss2.str() << "\n";
-      oss2.flush();
     }
   }
 

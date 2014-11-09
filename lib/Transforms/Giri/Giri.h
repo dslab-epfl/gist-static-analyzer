@@ -56,18 +56,18 @@ removeIncompatibleTargets (const CallInst * CI,
                            std::vector<const Function *> & Targets) {
   //
   // If the call is a direct call, do not look for incompatibility.
-  //
+  // [BK] We shouldn't be getting here with a direct function call
   if (CI->getCalledFunction()) return;
 
   //
   // Remove any function from the set of targets that has the wrong number of
   // arguments.  Find all the functions to remove first and record them in a
   // container so that we don't invalidate any iterators.
-  //
   std::vector<const Function *>::iterator FI = Targets.begin();
   std::vector<const Function *>::iterator FE = Targets.begin();
   while (FI != FE) {
     const Function * F = *FI;
+    // CI->getNumOperands() - 1, because one parameter of the actual function itself
     if ((F->getFunctionType()->getNumParams()) != (CI->getNumOperands() - 1)) {
       if (FI == Targets.begin()) {
         Targets.erase (Targets.begin());
@@ -97,7 +97,43 @@ struct FindFlows : public ModulePass {
     //////////////////////////////////////////////////////////////////////////
 
     static char ID;
-    FindFlows () : ModulePass (ID) { }
+    FindFlows () : ModulePass (ID), dsaPass(NULL), debugInfoManager(NULL) {
+      // Filter the below set of functions from potential  
+      // call sites for the arguments we are tracking
+      filteredFunctions.insert("fwrite");
+      filteredFunctions.insert("remove");
+      filteredFunctions.insert("fprintf");
+      filteredFunctions.insert("chown");
+      filteredFunctions.insert("chmod");
+      filteredFunctions.insert("open64");
+      filteredFunctions.insert("__fxstat64");
+      filteredFunctions.insert("sleep");
+      filteredFunctions.insert("strncpy");
+      filteredFunctions.insert("strtol");   
+      filteredFunctions.insert("strlen");      
+      filteredFunctions.insert("signal");
+      filteredFunctions.insert("fclose");
+      filteredFunctions.insert("strncasecmp");
+      filteredFunctions.insert("exit");
+      filteredFunctions.insert("fgetc");
+      filteredFunctions.insert("ungetc");
+      filteredFunctions.insert("ferror");
+      filteredFunctions.insert("utime");
+      filteredFunctions.insert("gettimeofday");
+      filteredFunctions.insert("read");
+      filteredFunctions.insert("close");
+      filteredFunctions.insert("fopen64");
+      filteredFunctions.insert("sysconf");
+      filteredFunctions.insert("__xstat64");
+      filteredFunctions.insert("lseek64");
+      filteredFunctions.insert("usleep");
+      filteredFunctions.insert("write");
+      
+      // Some functions like pthread_create require special 
+      // care when tracing call chains, as they are not explicitly
+      // called, but the runtime calls them
+      specialFunctions.insert("pthread_create");
+    }
     virtual bool runOnModule (Module & M);
 
     const char *getPassName() const {
@@ -159,6 +195,9 @@ struct FindFlows : public ModulePass {
     void addSource (const Value * V, const Function * F);
     void findCallTargets (CallInst * CI, std::vector<const Function *> & Tgts);
 
+    bool isFilteredCall (CallInst* callInst);
+    bool isSpecialCall (CallInst* callInst);
+    
     // Map from values needing labels to sources from which those labels derive
     SourceMap Sources;
 
@@ -177,6 +216,9 @@ struct FindFlows : public ModulePass {
     // Passes used by this pass
     EQTDDataStructures * dsaPass;
     DebugInfoManager* debugInfoManager;
+    
+    std::set<std::string> filteredFunctions;
+    std::set<std::string> specialFunctions;
 };
 
 #endif
