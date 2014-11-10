@@ -35,11 +35,11 @@ using namespace std;
 static int pid_to_watch = 0;
 
 // Number of seconds to wait before checking up on the child process
-static const unsigned check_interval = 10;
+// static const unsigned check_interval = 10;
 
 // Maximum amount for the resident set size in kilobytes (i.e., how much
 // physical memory is in use).
-static const int rss_max_allowable = 4 * 1024 * 1024;
+// static const int rss_max_allowable = 4 * 1024 * 1024;
 
 //
 // Function: create_process()
