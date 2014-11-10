@@ -193,10 +193,12 @@ struct StaticSlice : public ModulePass {
     void findArgSources (Argument * Arg, Worklist_t & Wl, Processed_t & P);
     void findFlow (Value * V, const Function & F);
     void addSource (const Value * V, const Function * F);
-    void findCallTargets (CallInst * CI, std::vector<const Function *> & Tgts);
+    void findCallTargets (CallInst * callInst, std::vector<const Function *> & Targets);
 
     bool isFilteredCall (CallInst* callInst);
     bool isSpecialCall (CallInst* callInst);
+    
+    void handleSpecialCall(CallInst* callInst, std::vector<const Function *> & Targets);
     
     // Map from values needing labels to sources from which those labels derive
     SourceMap Sources;

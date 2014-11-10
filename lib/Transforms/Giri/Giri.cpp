@@ -204,7 +204,7 @@ StaticSlice::findSources (Function & F) {
 ///
 void
 StaticSlice::findCallTargets (CallInst * callInst,
-                            std::vector<const Function *> & Targets) {
+                              std::vector<const Function *> & Targets) {
   // We do not consider the intrinsics as sources
   if (isa<IntrinsicInst>(callInst))
     return;
@@ -213,14 +213,11 @@ StaticSlice::findCallTargets (CallInst * callInst,
   // the target to the set of known targets and return.
   Function * calledFunction = callInst->getCalledFunction();
   if (calledFunction) {
-    // We also filter out some function which we do not consider as sources
-    // for the time being
+    // Filter out some functions which we do not consider as sources
     if (isFilteredCall(callInst))
       return;
+    
     Targets.push_back (calledFunction);
-    // Some functions such as pthread_create require sepcial handling 
-    if(isSpecialCall(callInst))
-      ;//handleSpecialCall(callInst);
     return;
   }
 
@@ -243,8 +240,8 @@ bool StaticSlice::isFilteredCall (CallInst* callInst) {
   assert (callInst->getCalledFunction() && 
           "Filtering only works for direct function calls");
       
-  std::string funcName = callInst->getCalledFunction()->getName().str();
-  if (filteredFunctions.find(funcName) != filteredFunctions.end()){
+  std::string calleeName = callInst->getCalledFunction()->getName().str();
+  if (filteredFunctions.find(calleeName) != filteredFunctions.end()){
     return true;
   }
   return false;
@@ -260,6 +257,23 @@ bool StaticSlice::isSpecialCall(CallInst* callInst) {
     return true;
   }
   return false;
+}
+
+/// 
+void StaticSlice::handleSpecialCall(CallInst* callInst, 
+                                    std::vector<const Function *> & Targets) {
+  assert (callInst->getCalledFunction() && 
+          "Special handling only works for direct function calls");
+  
+  std::string calleeName = callInst->getCalledFunction()->getName().str();
+  if (calleeName == "pthread_create") {
+    // pthread_create's third argument is the start routine, and the third 
+    // argument is the argument through which a value is passed
+    Value* arg3 = callInst->getOperand(2);
+    if (isa<Function>(arg3)) {
+      std::cerr << "Found" << std::endl;
+    }
+  }
 }
 
 ///
@@ -298,16 +312,13 @@ StaticSlice::findCallSources (CallInst * CI,
     // Set of return instructions needing labels discovered
     std::vector<ReturnInst *> NewReturns;
 
-    //
     // Process one of the functions from the list of potential call targets
     Function * F = const_cast<Function *>((Targets.back()));
     Targets.pop_back ();
 
-    //
     // Ensure that the function's return value is not void
     assert ((F->getReturnType() != VoidType) && "Want void function label!\n");
 
-    //
     // Add any return values in the called function to the list of return
     // instructions to process.  Note that we may add them multiple times, but
     // this is okay since Returns is a set that does not allow duplicate
@@ -360,40 +371,39 @@ void
 StaticSlice::findArgSources (Argument * Arg,
                            Worklist_t & Worklist,
                            Processed_t & Processed) {
-  //
   // Iterate over all functions in the program looking for call instructions.
   // When we find a call instruction, we will check to see if the function
   // has arguments that need labels.  If it does, we'll find the labels of
   // all the actual parameters.
-  //
   Module * M = Arg->getParent()->getParent();
   for (Module::iterator F = M->begin(); F != M->end(); ++F) {
     // Set of actual arguments needing labels
     std::vector<Value *> ActualArgs;
 
-    //
     // Scan the function looking for call instructions.
-    //
     for (Function::iterator BB = F->begin(); BB != F->end(); ++BB) {
       for (BasicBlock::iterator II = BB->begin(); II != BB->end(); ++II) {
-        if (CallInst * CI = dyn_cast<CallInst>(II)) {
-          //
+        if (CallInst * callInst = dyn_cast<CallInst>(II)) {
           // Ignore inline assembly code.
-          //
-          if (isa<InlineAsm>(CI->getOperand(0)))
+          if (isa<InlineAsm>(callInst->getOperand(0)))
             continue;
 
-          //
           // Find the set of functions called by this call instruction.
-          //
           std::vector <const Function *> Targets;
-          findCallTargets (CI, Targets);
-
+          
+          // Some functions such as pthread_create require sepcial handling 
+          if(isSpecialCall(callInst))
+            handleSpecialCall(callInst, Targets);
+          else
+            findCallTargets (callInst, Targets);
+          
           // Skip this call site if it does not call the function to which the
           // specified argument belongs.
           Function * CalledFunc = Arg->getParent();
           std::set<const Function *> TargetSet;
           TargetSet.insert (Targets.begin(), Targets.end());
+          if ((TargetSet.find (CalledFunc)) == (TargetSet.end()))
+            continue;
           
           /*
           std::set<const Function *>::iterator it;
@@ -401,26 +411,23 @@ StaticSlice::findArgSources (Argument * Arg,
             Function* f = const_cast<Function*>(*it);
             std::cerr << f->getName().str() << std::endl;
           }
-          */
-          
-          if ((TargetSet.find (CalledFunc)) == (TargetSet.end()))
-            continue;
+          */         
 
           // Assert that the call and the called function have the same number
           // of arguments.
           assert ((CalledFunc->getFunctionType()->getNumParams()) ==
-                  (CI->getNumOperands() - 1) &&
+                  (callInst->getNumOperands() - 1) &&
                   "Number of arguments doesn't match function signature!\n");
 
           // Walk the argument list of the call instruction and look for actual
           // arguments needing labels.  Add them to our local worklist.
           Function::arg_iterator FormalArg = CalledFunc->arg_begin();
           for (unsigned index = 1;
-               index < CI->getNumOperands();
+               index < callInst->getNumOperands();
                ++index, ++FormalArg) {
             if (((Argument *)(FormalArg)) == Arg) {
-              if (Processed.find (CI->getOperand(index)) == Processed.end()) {
-                ActualArgs.push_back (CI->getOperand(index));
+              if (Processed.find (callInst->getOperand(index)) == Processed.end()) {
+                ActualArgs.push_back (callInst->getOperand(index));
               }
             }
           }
@@ -496,7 +503,5 @@ StaticSlice::runOnModule (Module & M) {
 /// ID Variable to identify the pass
 char StaticSlice::ID = 0;
 
-///
 /// Pass registration
-///
 static RegisterPass<StaticSlice> X ("slice", "Find Information Flows");
