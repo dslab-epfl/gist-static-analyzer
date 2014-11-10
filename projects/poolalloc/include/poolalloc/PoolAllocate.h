@@ -29,10 +29,10 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/CommandLine.h"
 
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/DataStructure.h"
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/DSGraph.h"
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/CallTargets.h"
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/poolalloc/Heuristic.h"
+#include "../dsa/DataStructure.h"
+#include "../dsa/DSGraph.h"
+#include "../dsa/CallTargets.h"
+#include "Heuristic.h"
 
 #include <utility>
 

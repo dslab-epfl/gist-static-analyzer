@@ -14,8 +14,8 @@
 #ifndef LLVM_DSCALLGRAPH_H
 #define	LLVM_DSCALLGRAPH_H
 
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/svset.h"
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/keyiterator.h"
+#include "svset.h"
+#include "keyiterator.h"
 
 #include <cstddef>
 #include "llvm/ADT/EquivalenceClasses.h"

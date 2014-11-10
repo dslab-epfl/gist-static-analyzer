@@ -18,11 +18,11 @@
 #include "llvm/ADT/ilist_node.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/svset.h"
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/super_set.h"
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/keyiterator.h"
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/DSGraph.h"
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/DSSupport.h"
+#include "svset.h"
+#include "super_set.h"
+#include "keyiterator.h"
+#include "DSGraph.h"
+#include "DSSupport.h"
 
 #include <map>
 #include <set>

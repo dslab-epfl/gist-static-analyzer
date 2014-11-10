@@ -14,11 +14,11 @@
 #ifndef LLVM_ANALYSIS_DATA_STRUCTURE_H
 #define LLVM_ANALYSIS_DATA_STRUCTURE_H
 
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/DSCallGraph.h"
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/svset.h"
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/super_set.h"
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/AddressTakenAnalysis.h"
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/AllocatorIdentification.h"
+#include "DSCallGraph.h"
+#include "svset.h"
+#include "super_set.h"
+#include "AddressTakenAnalysis.h"
+#include "AllocatorIdentification.h"
 
 #include "llvm/Pass.h"
 #include "llvm/DataLayout.h"

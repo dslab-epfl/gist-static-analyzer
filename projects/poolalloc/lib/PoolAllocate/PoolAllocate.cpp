@@ -581,7 +581,7 @@ void PoolAllocate::MicroOptimizePoolCalls() {
   // TODO: poolfree accepts a null pointer, so remove any check above it, like
   // 'if (P) poolfree(P)'
 }
-
+/*
 //
 // Function: GetNodesReachableFromGlobals()
 //
@@ -650,7 +650,7 @@ GetNodesReachableFromGlobals (DSGraph* G,
     }
   }
 }
-
+*/
 //
 // Method: FindPoolArgs()
 //

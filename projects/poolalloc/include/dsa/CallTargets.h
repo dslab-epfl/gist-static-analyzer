@@ -17,7 +17,7 @@
 
 #include "llvm/Pass.h"
 #include "llvm/Support/CallSite.h"
-#include "/home/kasikci/projects/llvm/projects/poolalloc/include/dsa/DataStructure.h"
+#include "DataStructure.h"
 
 #include <set>
 #include <list>
