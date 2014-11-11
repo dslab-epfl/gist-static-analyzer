@@ -18,15 +18,17 @@
 
 #include <iostream>
 #include <fstream>
+#include <sstream>
 
 #include "llvm/ADT/Statistic.h"
 #include "llvm/IntrinsicInst.h"
 #include "llvm/LLVMContext.h"
+#include "llvm/DebugInfo.h"
 
 #include "Giri.h"
 
 using namespace llvm;
-
+using namespace std;
 
 ///
 /// Function: isASource()
@@ -55,18 +57,27 @@ isASource (const Value * V) {
   }
 
   if (isa<LoadInst>(V)){
+    cerr << "1:load\n";
     return true;
   }
   if (isa<Argument>(V)){
+    cerr << "1:argument\n";
     return true;
   }
   if (isa<AllocaInst>(V)){
+    cerr << "1:alloca\n";
     return true;
   }
   if (isa<Constant>(V)){
+    cerr << "1:constant\n";
+    string valueStr;
+    raw_string_ostream valueOss(valueStr);
+    V->print(valueOss);
+    cerr << " " << valueOss.str() << endl;
     return true;
   }
   if (isa<GlobalValue>(V)){
+    cerr << "1:global\n";
     return true;
   }
 
@@ -85,9 +96,8 @@ isASource (const Value * V) {
 ///
 void
 StaticSlice::addSource(const Value * V, const Function * F) {
-  //
+
   // Record the source in the set of sources.
-  //
   Sources[F].insert (V);
 
   // If the source is an argument, record it specially.
@@ -123,14 +133,11 @@ StaticSlice::findFlow (Value * Initial, const Function & Fu) {
     const Function * F = Worklist.back().second;
     Worklist.pop_back();
 
-    //
     // If the value is a source, add it to the set of sources.  Otherwise, add
-    // its operands to the worklist if they have not yet been processed.
-    //
+    // its operands to the worklist if they have not yet been processed. 
     if (isASource (V)) {
       addSource (V, F);
 
-      //
       // Some sources imply that information flow must be traced inside another
       // function.  Needing the label of a call instruction's return value
       // means that we need to know the sources for the called function's
@@ -171,8 +178,7 @@ StaticSlice::findFlow (Value * Initial, const Function & Fu) {
 /// Inputs:
 ///  F - The function to analyze.
 ///
-void
-StaticSlice::findSources (Function & F) {
+void StaticSlice::findSources (Function & F) {
   // Retrieve the target instruction from the debug info manager
   // and process those the information flow of its inputs.
   assert (debugInfoManager->targetInstruction && "Target instruction cannot be NULL");
@@ -182,56 +188,11 @@ StaticSlice::findSources (Function & F) {
     instr->getOperand(0)->print(oss);
     errs() << "target operand: " << oss.str() << "\n";
     findFlow (instr->getOperand(0), F);
+    valueToDbgMetadata[instr->getOperand(0)] = instr->getMetadata("dbg");
   }
   else
     assert(false && "Target instruction is not a load! Handle this case");
 
-  return;
-}
-
-
-///
-/// Method: findCallTargets()
-///
-/// Description:
-///  Find the set of functions that can be called by the given call instruction.
-///
-/// Inputs:
-///  CI      - The call instruction to analyze.
-///
-/// Outputs:
-///  Targets - A list of functions that can be called by the call instruction.
-///
-void
-StaticSlice::findCallTargets (CallInst * callInst,
-                              std::vector<const Function *> & Targets) {
-  // We do not consider the intrinsics as sources
-  if (isa<IntrinsicInst>(callInst))
-    return;
-      
-  // Check to see if the call instruction is a direct call.  If so, then add
-  // the target to the set of known targets and return.
-  Function * calledFunction = callInst->getCalledFunction();
-  if (calledFunction) {
-    // Filter out some functions which we do not consider as sources
-    if (isFilteredCall(callInst))
-      return;
-    
-    Targets.push_back (calledFunction);
-    return;
-  }
-
-  // This is an indirect function call.  Get the DSNode for the function
-  // pointer and then use that to find the set of call targets.
-  CallSite CS(callInst);
-  const DSCallGraph & CallGraph = dsaPass->getCallGraph();
-  Targets.insert (Targets.end(),
-                  CallGraph.callee_begin(CS),
-                  CallGraph.callee_end(CS));
-
-  //
-  // Remove targets that do not match the call instruction's argument list.
-  removeIncompatibleTargets  (callInst, Targets);
   return;
 }
 
@@ -259,21 +220,201 @@ bool StaticSlice::isSpecialCall(CallInst* callInst) {
   return false;
 }
 
+/// Method: findCallTargets()
+///
+/// Description:
+///  Find the set of functions that can be called by the given call instruction.
+///
+/// Inputs:
+///  CI      - The call instruction to analyze.
+///
+/// Outputs:
+///  Targets - A list of functions that can be called by the call instruction.
+///
+void StaticSlice::findCallTargets (CallInst * callInst,
+                                   vector<const Function *> & Targets,
+                                   vector<Value*>& operands) {
+  // We do not consider the intrinsics as sources
+  if (isa<IntrinsicInst>(callInst))
+    return;
+      
+  // Check to see if the call instruction is a direct call.  If so, then add
+  // the target to the set of known targets and return.
+  Function * calledFunction = callInst->getCalledFunction();
+  if (calledFunction) {
+    // Filter out some functions which we do not consider as sources
+    if (isFilteredCall(callInst))
+      return;
+    cerr << "f: " << calledFunction->getName().str() << endl;
+    Targets.push_back (calledFunction);
+  } else {
+    // This is an indirect function call.  Get the DSNode for the function
+    // pointer and then use that to find the set of call targets.
+    CallSite CS(callInst);
+    const DSCallGraph & CallGraph = dsaPass->getCallGraph();
+    Targets.insert (Targets.end(),
+                    CallGraph.callee_begin(CS),
+                    CallGraph.callee_end(CS));
+  
+    //
+    // Remove targets that do not match the call instruction's argument list.
+    removeIncompatibleTargets  (callInst, Targets);
+  }
+  
+  // we have a +1, because the first operand is the function call itself
+  for (User::op_iterator it = callInst->op_begin() + 1, 
+       end = callInst->op_end(); it != end; ++it) {
+    operands.push_back((Value*)&*it);
+  }
+  return;
+}
+
 /// 
 void StaticSlice::handleSpecialCall(CallInst* callInst, 
-                                    std::vector<const Function *> & Targets) {
+                                    std::vector<const Function*>& Targets,
+                                    vector<Value*>& operands) {
   assert (callInst->getCalledFunction() && 
           "Special handling only works for direct function calls");
   
-  std::string calleeName = callInst->getCalledFunction()->getName().str();
+  string calleeName = callInst->getCalledFunction()->getName().str();
   if (calleeName == "pthread_create") {
-    // pthread_create's third argument is the start routine, and the third 
-    // argument is the argument through which a value is passed
-    Value* arg3 = callInst->getOperand(2);
-    if (isa<Function>(arg3)) {
-      std::cerr << "Found" << std::endl;
+    //cerr << "Found pthread_create!" << callInst->getNumOperands()<< std::endl;
+    // pthread_create's third operand is the start routine, and the fourth 
+    // operand is the argument (instruction) through which a value is passed. 
+
+    Value* v = callInst->getOperand(2);
+    assert(isa<Function>(v) && 
+           "The third operand of the pthread_create call must be a function");
+    const Function* f = dyn_cast<Function>(v);
+    string str1;
+    raw_string_ostream oss1(str1);
+    //cerr << " function: "<< f->getName().str() << "\n";
+   
+    Targets.push_back(f);
+    
+    v = callInst->getOperand(3);
+    assert(isa<Instruction>(v) && 
+           "The fourth operand of the pthread_create call must be a ");
+    string str2;
+    raw_string_ostream oss2(str2);
+    v->print(oss2);
+    //cerr << "  instruction: " << oss2.str() << "\n";
+    operands.push_back(callInst->getOperand(3));
+  }
+}
+
+void StaticSlice::extractArgs (Argument * Arg, 
+                               vector<const Function *>& Targets,
+                               Processed_t& Processed,
+                               vector<Value*>& operands,
+                               vector<Value*>& actualArgs) {
+  // Skip this call site if it does not call the function to which the
+  // specified argument belongs.
+  Function* calledFunc = Arg->getParent();
+  std::set<const Function *> TargetSet;
+  TargetSet.insert (Targets.begin(), Targets.end());
+  if ((TargetSet.find (calledFunc)) == (TargetSet.end()))
+    return;
+  
+  // Assert that the call and the called function have the same # of arguments.
+  assert ((calledFunc->getFunctionType()->getNumParams()) == operands.size()
+           && "Number of arguments doesn't match function signature!\n");
+
+  // Walk the argument list of the call instruction and look for actual
+  // arguments needing labels.  Add them to our local worklist.
+  Function::arg_iterator FormalArg = calledFunc->arg_begin();
+  for (unsigned index = 0;
+       index < operands.size();
+       ++index, ++FormalArg) {
+    
+    string str1;
+    raw_string_ostream oss1(str1);
+    FormalArg->print(oss1);
+    cerr << "FormalArg: " << oss1.str() << endl;
+
+    string str2;
+    raw_string_ostream oss2(str2);
+    Arg->print(oss2);
+    cerr << "Arg: " << oss2.str() << endl;
+    if (((Argument *)(FormalArg)) == Arg) {
+      if (Processed.find (operands[index]) == Processed.end()) {
+        cerr << "adding to actual args" << endl;
+        actualArgs.push_back (operands[index]);
+      }
     }
   }
+}
+
+
+/// Method: findArgSources()
+///
+/// Description:
+///  Find the label sources for every actual parameter in the worklist of formal
+///  parameters (i.e., arguments) that need labels.
+///
+/// Inputs:
+///  Arg       - The argument for which the actual parameters must be labeled.
+///  Processed - The set of LLVM values which have already been discovered as
+///              part of an information flow requiring labels.
+///
+/// Outputs:
+///  Worklist  - This set is modified to contain the actual parameters that need
+///              to be processed when back-tracking an information flow.
+///  Processed - This set is updated to hold any new values that were added to
+///              the worklist.  This will prevent them from being added multiple
+///              times.
+///
+void
+StaticSlice::findArgSources (Argument* Arg,
+                             Worklist_t& Worklist,
+                             Processed_t& Processed) {
+  // Iterate over all functions in the program looking for call instructions.
+  // When we find a call instruction, we will check to see if the function
+  // has arguments that need labels.  If it does, we'll find the labels of
+  // all the actual parameters.
+  Module * M = Arg->getParent()->getParent();
+  for (Module::iterator F = M->begin(); F != M->end(); ++F) {
+    // Set of actual arguments needing labels
+    vector<Value*> actualArgs;
+
+    // Scan the function looking for call instructions.
+    for (Function::iterator BB = F->begin(); BB != F->end(); ++BB) {
+      for (BasicBlock::iterator II = BB->begin(); II != BB->end(); ++II) {
+        if (CallInst * callInst = dyn_cast<CallInst>(II)) {
+          // Ignore inline assembly code.
+          if (isa<InlineAsm>(callInst->getOperand(0)))
+            continue;
+
+          // Find the set of functions called by this call instruction.
+          vector <const Function*> Targets;
+          vector<Value*> operands;
+          // Some functions such as pthread_create require sepcial handling 
+          if (isSpecialCall(callInst)) { 
+            handleSpecialCall(callInst, Targets, operands);
+          } else {       
+            findCallTargets (callInst, Targets, operands);  
+          }
+          if (!operands.empty())
+            extractArgs(Arg, Targets, Processed, operands, actualArgs);
+        }
+      }
+    }
+
+    // Finally, find the sources for all the actual arguments needing labels.
+    vector<Value *>::iterator i;
+    for (i = actualArgs.begin(); i != actualArgs.end(); ++i) {
+      Value * V = *i;
+      Worklist.push_back (make_pair (V, F));
+    }
+
+    // Add the new items to process to the processed list.
+    for (unsigned index = 0; index < actualArgs.size(); ++index) {
+      if (!(isa<Constant>(actualArgs[index])))
+        Processed.insert (actualArgs[index]);
+    }
+  }
+
+  return;
 }
 
 ///
@@ -297,20 +438,20 @@ void StaticSlice::handleSpecialCall(CallInst* callInst,
 ///              information flow purposes.
 ///
 void
-StaticSlice::findCallSources (CallInst * CI,
-                            Worklist_t & Worklist,
-                            Processed_t & Processed) {
-  //
+StaticSlice::findCallSources (CallInst* CI,
+                              Worklist_t& Worklist,
+                              Processed_t& Processed) {
+  cerr << "Finding call sources: " << CI->getCalledFunction()->getName().str() << endl ; 
   // Find the function called by this call instruction
-  std::vector<const Function *> Targets;
-  findCallTargets (CI, Targets);
+  vector<const Function *> Targets;
+  vector<Value*> operands;
+  findCallTargets (CI, Targets, operands);
 
-  //
   // Process each potential function call target
-  const Type * VoidType = Type::getVoidTy(getGlobalContext());
+  const Type* VoidType = Type::getVoidTy(getGlobalContext());
   while (Targets.size()) {
     // Set of return instructions needing labels discovered
-    std::vector<ReturnInst *> NewReturns;
+    vector<ReturnInst*> NewReturns;
 
     // Process one of the functions from the list of potential call targets
     Function * F = const_cast<Function *>((Targets.back()));
@@ -324,19 +465,18 @@ StaticSlice::findCallSources (CallInst * CI,
     // this is okay since Returns is a set that does not allow duplicate
     // entries.
     for (Function::iterator BB = F->begin(); BB != F->end(); ++BB)
-      if (ReturnInst * RI = dyn_cast<ReturnInst>(BB->getTerminator()))
+      if (ReturnInst* RI = dyn_cast<ReturnInst>(BB->getTerminator()))
         NewReturns.push_back (RI);
 
-    //
     // Record the returns that require labels.
+    // [BK] this may not be needed for our purposes
     Returns.insert (NewReturns.begin(), NewReturns.end());
 
-    //
     // Finally, add any return instructions that have not already been
     // processed to the worklist
-    std::vector<ReturnInst *>::iterator ri;
+    std::vector<ReturnInst*>::iterator ri;
     for (ri = NewReturns.begin(); ri != NewReturns.end(); ++ri) {
-      ReturnInst * RI = *ri;
+      ReturnInst* RI = *ri;
       if (Processed.find (RI) == Processed.end()) {
         Worklist.push_back (std::make_pair(RI, F));
         Processed.insert (RI);
@@ -347,116 +487,8 @@ StaticSlice::findCallSources (CallInst * CI,
   return;
 }
 
-
 ///
-/// Method: findArgSources()
-///
-/// Description:
-///  Find the label sources for every actual parameter in the worklist of formal
-///  parameters (i.e., arguments) that need labels.
-///
-/// Inputs:
-///  Arg       - The argument for which the actual parameters must be labeled.
-///  Processed - The set of LLVM values which have already been discovered as
-///              part of an information flow requiring labels.
-///
-/// Outputs:
-///  Worklist  - This set is modified to contain the actual parameters that need
-///              to be processed when back-tracking an information flow.
-///  Processed - This set is updated to hold any new values that were added to
-///              the worklist.  This will prevent them from being added multiple
-///              times.
-///
-void
-StaticSlice::findArgSources (Argument * Arg,
-                           Worklist_t & Worklist,
-                           Processed_t & Processed) {
-  // Iterate over all functions in the program looking for call instructions.
-  // When we find a call instruction, we will check to see if the function
-  // has arguments that need labels.  If it does, we'll find the labels of
-  // all the actual parameters.
-  Module * M = Arg->getParent()->getParent();
-  for (Module::iterator F = M->begin(); F != M->end(); ++F) {
-    // Set of actual arguments needing labels
-    std::vector<Value *> ActualArgs;
-
-    // Scan the function looking for call instructions.
-    for (Function::iterator BB = F->begin(); BB != F->end(); ++BB) {
-      for (BasicBlock::iterator II = BB->begin(); II != BB->end(); ++II) {
-        if (CallInst * callInst = dyn_cast<CallInst>(II)) {
-          // Ignore inline assembly code.
-          if (isa<InlineAsm>(callInst->getOperand(0)))
-            continue;
-
-          // Find the set of functions called by this call instruction.
-          std::vector <const Function *> Targets;
-          
-          // Some functions such as pthread_create require sepcial handling 
-          if(isSpecialCall(callInst))
-            handleSpecialCall(callInst, Targets);
-          else
-            findCallTargets (callInst, Targets);
-          
-          // Skip this call site if it does not call the function to which the
-          // specified argument belongs.
-          Function * CalledFunc = Arg->getParent();
-          std::set<const Function *> TargetSet;
-          TargetSet.insert (Targets.begin(), Targets.end());
-          if ((TargetSet.find (CalledFunc)) == (TargetSet.end()))
-            continue;
-          
-          /*
-          std::set<const Function *>::iterator it;
-          for (it = TargetSet.begin(); it != TargetSet.end(); ++it) {
-            Function* f = const_cast<Function*>(*it);
-            std::cerr << f->getName().str() << std::endl;
-          }
-          */         
-
-          // Assert that the call and the called function have the same number
-          // of arguments.
-          assert ((CalledFunc->getFunctionType()->getNumParams()) ==
-                  (callInst->getNumOperands() - 1) &&
-                  "Number of arguments doesn't match function signature!\n");
-
-          // Walk the argument list of the call instruction and look for actual
-          // arguments needing labels.  Add them to our local worklist.
-          Function::arg_iterator FormalArg = CalledFunc->arg_begin();
-          for (unsigned index = 1;
-               index < callInst->getNumOperands();
-               ++index, ++FormalArg) {
-            if (((Argument *)(FormalArg)) == Arg) {
-              if (Processed.find (callInst->getOperand(index)) == Processed.end()) {
-                ActualArgs.push_back (callInst->getOperand(index));
-              }
-            }
-          }
-        }
-      }
-    }
-
-    //
-    // Finally, find the sources for all the actual arguments needing labels.
-    std::vector<Value *>::iterator i;
-    for (i = ActualArgs.begin(); i != ActualArgs.end(); ++i) {
-      Value * V = *i;
-      Worklist.push_back (std::make_pair (V, F));
-    }
-
-    //
-    // Add the new items to process to the processed list.
-    for (unsigned index = 0; index < ActualArgs.size(); ++index) {
-      if (!(isa<Constant>(ActualArgs[index])))
-        Processed.insert (ActualArgs[index]);
-    }
-  }
-
-  return;
-}
-
-
-///
-/// Method: runOnModule()
+/// Method: runOnModul  //e()
 ///
 /// Description:
 ///  Entry point for this LLVM pass.  Find statements that require the
@@ -486,10 +518,28 @@ StaticSlice::runOnModule (Module & M) {
     //logFile << "\n" << "### " << F->getName().str() << " ###" << &(*F) << "\n";
     for (src_iterator si = src_begin(F); si != src_end(F); ++si) {
       Value* v = const_cast<Value*>(*si);
-      std::string Str;
-      raw_string_ostream oss2(Str);
-      v->print(oss2);
-      logFile << oss2.str() << "\n";
+      string valueStr;
+      raw_string_ostream valueOss(valueStr);
+      v->print(valueOss);
+      // If the source is an instruction, make sure to have its debug information
+      unsigned lineNumber = 0;
+      StringRef fileName;
+      StringRef directory;
+      if (Instruction* instr = dyn_cast<Instruction>(v)) {
+        if (MDNode *N = instr->getMetadata("dbg")) {
+          DILocation loc(N);
+          lineNumber = loc.getLineNumber();
+          fileName = loc.getFilename();
+          directory = loc.getDirectory();
+        }
+      }
+      string debugLoc("");
+      ostringstream ss;
+      if (lineNumber > 0 ){
+        ss << lineNumber;
+        debugLoc += directory.str() + "/" + fileName.str() + ": " + ss.str();
+      }
+      logFile << valueOss.str() << debugLoc << "\n";
     }
   }
 

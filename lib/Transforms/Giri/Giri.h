@@ -17,8 +17,6 @@
 #ifndef _CIF_FINDFLOWS_H_
 #define _CIF_FINDFLOWS_H_
 
-//#include "giri/config.h"
-
 #include "llvm/Constant.h"
 #include "llvm/Module.h"
 #include "llvm/Pass.h"
@@ -32,6 +30,7 @@
 #include <vector>
 
 using namespace llvm;
+using namespace std;
 
 //
 // Function: removeIncompatibleTargets()
@@ -54,12 +53,11 @@ using namespace llvm;
 static void inline
 removeIncompatibleTargets (const CallInst * CI,
                            std::vector<const Function *> & Targets) {
-  //
   // If the call is a direct call, do not look for incompatibility.
   // [BK] We shouldn't be getting here with a direct function call
-  if (CI->getCalledFunction()) return;
+  if (CI->getCalledFunction()) 
+    return;
 
-  //
   // Remove any function from the set of targets that has the wrong number of
   // arguments.  Find all the functions to remove first and record them in a
   // container so that we don't invalidate any iterators.
@@ -83,7 +81,6 @@ removeIncompatibleTargets (const CallInst * CI,
   return;
 }
 
-//
 // Module Pass: FindFlows
 //
 // Description:
@@ -190,34 +187,44 @@ struct StaticSlice : public ModulePass {
     // Private methods
     void findSources (Function & F);
     void findCallSources (CallInst * CI, Worklist_t & Wl, Processed_t & P);
-    void findArgSources (Argument * Arg, Worklist_t & Wl, Processed_t & P);
-    void findFlow (Value * V, const Function & F);
+    void findArgSources  (Argument * Arg, Worklist_t & Wl, Processed_t & P);
+    void findFlow  (Value * V, const Function & F);
     void addSource (const Value * V, const Function * F);
-    void findCallTargets (CallInst * callInst, std::vector<const Function *> & Targets);
-
-    bool isFilteredCall (CallInst* callInst);
-    bool isSpecialCall (CallInst* callInst);
     
-    void handleSpecialCall(CallInst* callInst, std::vector<const Function *> & Targets);
+    void findCallTargets   (CallInst * callInst, vector<const Function*> & Targets, 
+                            vector<Value*>& operands);
+    void handleSpecialCall (CallInst* callInst, vector<const Function*>& Targets, 
+                            vector<Value*>& operands);
+    
+    bool isFilteredCall (CallInst* callInst);
+    bool isSpecialCall  (CallInst* callInst);
+    
+    void extractArgs (Argument* Arg, vector<const Function *>& Targets,
+                      Processed_t& Processed, vector<Value*>& operands,
+                      vector<Value*>& actualArgs);
     
     // Map from values needing labels to sources from which those labels derive
     SourceMap Sources;
 
     // Set of phi nodes that will need special processing
-    std::set<const PHINode *> PhiNodes;
+    set<const PHINode *> PhiNodes;
 
     // Set of return instructions that require labels
-    std::set<const ReturnInst *> Returns;
+    set<const ReturnInst *> Returns;
 
     // Set of function arguments that require labels
-    std::set<const Argument *> Args;
+    set<const Argument *> Args;
 
     // Worklist of return instructions to process
-    std::map<Function *, std::set<Argument *> > ArgWorklist;
+    map<Function *, std::set<Argument *> > ArgWorklist;
 
     // Passes used by this pass
-    EQTDDataStructures * dsaPass;
+    EQTDDataStructures* dsaPass;
     DebugInfoManager* debugInfoManager;
+    
+    // For all the source values we save, try to keep as accurate debug information as possible
+    // The debug information for a given value may be 
+    map<Value*, vector<MDNode*>> valueToDbgMetadata;
     
     std::set<std::string> filteredFunctions;
     std::set<std::string> specialFunctions;
