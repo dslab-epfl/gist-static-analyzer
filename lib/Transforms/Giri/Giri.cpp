@@ -46,8 +46,7 @@ using namespace std;
 ///  false - This value is not a source.  Its label is the join of the labels
 ///          of its input operands.
 ///
-static inline bool
-isASource (const Value * V) {
+static inline bool isASource (const Value * V) {
   // Call instructions are sources *unless* they are inline assembly.
   if (const CallInst * CI = dyn_cast<CallInst>(V)) {
     if (isa<InlineAsm>(CI->getOperand(0)))
@@ -57,27 +56,18 @@ isASource (const Value * V) {
   }
 
   if (isa<LoadInst>(V)){
-    cerr << "1:load\n";
     return true;
   }
   if (isa<Argument>(V)){
-    cerr << "1:argument\n";
     return true;
   }
   if (isa<AllocaInst>(V)){
-    cerr << "1:alloca\n";
     return true;
   }
   if (isa<Constant>(V)){
-    cerr << "1:constant\n";
-    string valueStr;
-    raw_string_ostream valueOss(valueStr);
-    V->print(valueOss);
-    cerr << " " << valueOss.str() << endl;
     return true;
   }
   if (isa<GlobalValue>(V)){
-    cerr << "1:global\n";
     return true;
   }
 
@@ -547,7 +537,6 @@ StaticSlice::runOnModule (Module & M) {
 
   logFile.close();
 
-  //
   // This is an analysis pass, so always return false.
   return false;
 }
