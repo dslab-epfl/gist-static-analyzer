@@ -224,7 +224,7 @@ struct StaticSlice : public ModulePass {
     
     // For all the source values we save, try to keep as accurate debug information as possible
     // The debug information for a given value may be 
-    map<Value*, vector<MDNode*>> valueToDbgMetadata;
+    map<Value*, vector<MDNode*> > valueToDbgMetadata;
     
     std::set<std::string> filteredFunctions;
     std::set<std::string> specialFunctions;

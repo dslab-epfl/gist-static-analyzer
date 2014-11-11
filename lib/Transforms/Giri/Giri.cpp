@@ -188,7 +188,7 @@ void StaticSlice::findSources (Function & F) {
     instr->getOperand(0)->print(oss);
     errs() << "target operand: " << oss.str() << "\n";
     findFlow (instr->getOperand(0), F);
-    valueToDbgMetadata[instr->getOperand(0)] = instr->getMetadata("dbg");
+    valueToDbgMetadata[instr->getOperand(0)].push_back(instr->getMetadata("dbg"));
   }
   else
     assert(false && "Target instruction is not a load! Handle this case");
@@ -245,7 +245,7 @@ void StaticSlice::findCallTargets (CallInst * callInst,
     // Filter out some functions which we do not consider as sources
     if (isFilteredCall(callInst))
       return;
-    cerr << "f: " << calledFunction->getName().str() << endl;
+
     Targets.push_back (calledFunction);
   } else {
     // This is an indirect function call.  Get the DSNode for the function
@@ -417,7 +417,7 @@ StaticSlice::findArgSources (Argument* Arg,
   return;
 }
 
-///
+
 /// Method: findCallSources()
 ///
 /// Description:
@@ -437,15 +437,15 @@ StaticSlice::findArgSources (Argument* Arg,
 ///              container to ensure that they are only identified once for
 ///              information flow purposes.
 ///
-void
-StaticSlice::findCallSources (CallInst* CI,
-                              Worklist_t& Worklist,
-                              Processed_t& Processed) {
+void StaticSlice::findCallSources (CallInst* CI,
+                                   Worklist_t& Worklist,
+                                   Processed_t& Processed) {
   cerr << "Finding call sources: " << CI->getCalledFunction()->getName().str() << endl ; 
   // Find the function called by this call instruction
   vector<const Function *> Targets;
   vector<Value*> operands;
   findCallTargets (CI, Targets, operands);
+  valueToDbgMetadata[CI].push_back(CI->getMetadata("dbg"));
 
   // Process each potential function call target
   const Type* VoidType = Type::getVoidTy(getGlobalContext());
@@ -465,8 +465,10 @@ StaticSlice::findCallSources (CallInst* CI,
     // this is okay since Returns is a set that does not allow duplicate
     // entries.
     for (Function::iterator BB = F->begin(); BB != F->end(); ++BB)
-      if (ReturnInst* RI = dyn_cast<ReturnInst>(BB->getTerminator()))
+      if (ReturnInst* RI = dyn_cast<ReturnInst>(BB->getTerminator())) {
         NewReturns.push_back (RI);
+        valueToDbgMetadata[RI].push_back(RI->getMetadata("dbg"));
+      }
 
     // Record the returns that require labels.
     // [BK] this may not be needed for our purposes
@@ -487,8 +489,8 @@ StaticSlice::findCallSources (CallInst* CI,
   return;
 }
 
-///
-/// Method: runOnModul  //e()
+
+/// Method: runOnModule()
 ///
 /// Description:
 ///  Entry point for this LLVM pass.  Find statements that require the
