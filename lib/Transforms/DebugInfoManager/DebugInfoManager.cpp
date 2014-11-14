@@ -100,8 +100,10 @@ bool DebugInfoManager::runOnModule(Module& m) {
               // other unlikely instructions like bitcasts and instrinsics
               if (isa<LoadInst>(*ii)) {
                 StringRef directory = Loc.getDirectory();
-                errs() << "\n### Target LLVM instrcution:" << "\n";
-                errs() << "  " << directory << "/" << fileName<< " : " << lineNumber << *ii << "\n\n";
+                errs() << "------------------------" << "\n";
+                errs() << "Target LLVM instruction:" << "\n";
+                errs() << "------------------------" << "\n";
+                errs() << "\t" << *ii << "\n\t|--> " << directory << "/" << fileName<< " : " << lineNumber << "\n\n";
 		// Here invoke giri to get the backward slice
                 // trackUseDefChain(*ii);
 		targetInstruction = &(*ii);
