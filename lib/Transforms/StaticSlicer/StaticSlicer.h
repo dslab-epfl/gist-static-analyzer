@@ -30,7 +30,6 @@
 #include <vector>
 
 using namespace llvm;
-using namespace std;
 
 //
 // Function: removeIncompatibleTargets()
@@ -51,7 +50,7 @@ using namespace std;
 //  This function is here because it is needed by several classes.
 //
 static void inline
-removeIncompatibleTargets (const CallInst * CI,
+removeIncompatibleTargets (const CallInst* CI,
                            std::vector<const Function *> & Targets) {
   // If the call is a direct call, do not look for incompatibility.
   // [BK] We shouldn't be getting here with a direct function call
@@ -61,8 +60,8 @@ removeIncompatibleTargets (const CallInst * CI,
   // Remove any function from the set of targets that has the wrong number of
   // arguments.  Find all the functions to remove first and record them in a
   // container so that we don't invalidate any iterators.
-  std::vector<const Function *>::iterator FI = Targets.begin();
-  std::vector<const Function *>::iterator FE = Targets.begin();
+  std::vector<const Function*>::iterator FI = Targets.begin();
+  std::vector<const Function*>::iterator FE = Targets.begin();
   while (FI != FE) {
     const Function * F = *FI;
     // CI->getNumOperands() - 1, because one parameter of the actual function itself
@@ -81,7 +80,7 @@ removeIncompatibleTargets (const CallInst * CI,
   return;
 }
 
-// Module Pass: FindFlows
+// Module Pass: StaticSlice
 //
 // Description:
 //  This pass analyzes a function and determines the sources of information
@@ -131,13 +130,13 @@ struct StaticSlice : public ModulePass {
       // called, but the runtime calls them
       specialFunctions.insert("pthread_create");
     }
-    virtual bool runOnModule (Module & M);
+    virtual bool runOnModule (Module& M);
 
     const char *getPassName() const {
-      return "Find Flows";
+      return "Static Slice";
     }
 
-    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+    virtual void getAnalysisUsage(AnalysisUsage& AU) const {
       // We need DSA information for finding indirect function call targets
       AU.addRequired<EQTDDataStructures>();
       AU.addRequired<DebugInfoManager>();
@@ -152,8 +151,8 @@ struct StaticSlice : public ModulePass {
     //////////////////////////////////////////////////////////////////////////
     // Public type definitions
     //////////////////////////////////////////////////////////////////////////
-    typedef std::set<const Value *> SourceSet;
-    typedef std::map<const Function *, SourceSet > SourceMap;
+    typedef std::set<const Value*> SourceSet;
+    typedef std::map<const Function*, SourceSet > SourceMap;
     typedef SourceSet::iterator src_iterator;
 
     //////////////////////////////////////////////////////////////////////////
@@ -191,32 +190,32 @@ struct StaticSlice : public ModulePass {
     void findFlow  (Value * V, const Function & F);
     void addSource (const Value * V, const Function * F);
     
-    void findCallTargets   (CallInst * callInst, vector<const Function*> & Targets, 
-                            vector<Value*>& operands);
-    void handleSpecialCall (CallInst* callInst, vector<const Function*>& Targets, 
-                            vector<Value*>& operands);
+    void findCallTargets   (CallInst * callInst, std::vector<const Function*> & Targets, 
+                            std::vector<Value*>& operands);
+    void handleSpecialCall (CallInst* callInst, std::vector<const Function*>& Targets, 
+                            std::vector<Value*>& operands);
     
     bool isFilteredCall (CallInst* callInst);
     bool isSpecialCall  (CallInst* callInst);
     
-    void extractArgs (Argument* Arg, vector<const Function *>& Targets,
-                      Processed_t& Processed, vector<Value*>& operands,
-                      vector<Value*>& actualArgs);
+    void extractArgs (Argument* Arg, std::vector<const Function *>& Targets,
+                      Processed_t& Processed, std::vector<Value*>& operands,
+                      std::vector<Value*>& actualArgs);
     
     // Map from values needing labels to sources from which those labels derive
     SourceMap Sources;
 
     // Set of phi nodes that will need special processing
-    set<const PHINode *> PhiNodes;
+    std::set<const PHINode *> PhiNodes;
 
     // Set of return instructions that require labels
-    set<const ReturnInst *> Returns;
+    std::set<const ReturnInst *> Returns;
 
     // Set of function arguments that require labels
-    set<const Argument *> Args;
+    std::set<const Argument *> Args;
 
     // Worklist of return instructions to process
-    map<Function *, std::set<Argument *> > ArgWorklist;
+    std::map<Function *, std::set<Argument *> > ArgWorklist;
 
     // Passes used by this pass
     EQTDDataStructures* dsaPass;
@@ -224,10 +223,12 @@ struct StaticSlice : public ModulePass {
     
     // For all the source values we save, try to keep as accurate debug information as possible
     // The debug information for a given value may be 
-    map<Value*, vector<MDNode*> > valueToDbgMetadata;
+    std::map<Value*, std::vector<MDNode*> > valueToDbgMetadata;
     
     std::set<std::string> filteredFunctions;
     std::set<std::string> specialFunctions;
+    
+    std::map<const Function*, CallInst*> funcToCallInst;
 };
 
 #endif

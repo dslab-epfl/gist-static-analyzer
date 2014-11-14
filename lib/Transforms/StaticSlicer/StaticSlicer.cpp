@@ -56,23 +56,18 @@ static inline bool isASource (const Value * V) {
   }
 
   if (isa<LoadInst>(V)){
-    cerr << "load\n";  
     return true;
   }
   if (isa<Argument>(V)){
-    cerr << "arg\n";
     return true;
   }
   if (isa<AllocaInst>(V)){
-    cerr << "alloca\n";
     return true;
   }
   if (isa<Constant>(V)){
-    cerr << "constant\n";
     return true;
   }
   if (isa<GlobalValue>(V)){
-    cerr << "globalvalue\n";
     return true;
   }
 
@@ -101,104 +96,6 @@ void StaticSlice::addSource(const Value * V, const Function * F) {
   return;
 }
 
-
-///
-/// Method: findFlow()
-///
-/// Description:
-///  For the given value, find all of the values upon which it depends.  The
-///  labels of these values will combine together to form the label of the given
-///  value.
-///
-void StaticSlice::findFlow (Value * Initial, const Function & Fu) {
-  // Already processed values
-  Processed_t Processed;
-
-  // Worklist
-  Worklist_t Worklist;
-  Worklist.push_back (std::make_pair(Initial, &Fu));
-
-  while (Worklist.size()) {
-    //
-    // Pop an item off of the worklist.
-    //
-    Value * V = Worklist.back().first;
-    const Function * F = Worklist.back().second;
-    Worklist.pop_back();
-
-    // If the value is a source, add it to the set of sources.  Otherwise, add
-    // its operands to the worklist if they have not yet been processed. 
-    if (isASource (V)) {
-      addSource (V, F);
-
-      // Some sources imply that information flow must be traced inside another
-      // function.  Needing the label of a call instruction's return value
-      // means that we need to know the sources for the called function's
-      // return value.  Requiring the label of a function argument means that
-      // we'll need the labels of any value passed into the function.
-      if (CallInst * CI = dyn_cast<CallInst>(V)) {
-        findCallSources (CI, Worklist, Processed);
-      } else if (Argument * Arg = dyn_cast<Argument>(V)) {
-        findArgSources (Arg, Worklist, Processed);
-      }
-    } else if (User * U = dyn_cast<User>(V)) {
-      assert (isa<Instruction>(U) && 
-              "user is not an instruction, will lose debug information");
-      Instruction* instr = dyn_cast<Instruction>(U);
-      
-      // Record any phi nodes located
-      if (PHINode * PHI = dyn_cast<PHINode>(V))
-        PhiNodes.insert (PHI);
-
-      for (unsigned index = 0; index < U->getNumOperands(); ++index) {
-        Value* operand = U->getOperand(index); 
-        if (Processed.find (operand) == Processed.end()) {
-          Worklist.push_back (std::make_pair(operand, F));
-
-          if (PHINode * PHI = dyn_cast<PHINode>(V))
-            valueToDbgMetadata[operand].push_back(PHI->getIncomingBlock(index)->getTerminator()->getMetadata("dbg"));
-          else 
-            valueToDbgMetadata[operand].push_back(instr->getMetadata("dbg"));
-
-          if (!(isa<Constant>(operand)))
-            Processed.insert (operand);
-        }
-      }
-    }
-  }
-
-  return;
-}
-
-
-///
-/// Method: findSources()
-///
-/// Description:
-///  For every store and external function call in the specified function, find
-///  all the instructions that generate a label (i.e., is a source of
-///  information)  for the value(s) being stored into memory.
-///
-/// Inputs:
-///  F - The function to analyze.
-///
-void StaticSlice::findSources (Function & F) {
-  // Retrieve the target instruction from the debug info manager
-  // and process those the information flow of its inputs.
-  assert (debugInfoManager->targetInstruction && "Target instruction cannot be NULL");
-  if (LoadInst * instr = dyn_cast<LoadInst>(debugInfoManager->targetInstruction)) {
-    std::string Str;
-    raw_string_ostream oss(Str);
-    instr->getOperand(0)->print(oss);
-    errs() << "target operand: " << oss.str() << "\n";
-    valueToDbgMetadata[instr->getOperand(0)].push_back(instr->getMetadata("dbg"));
-    findFlow (instr->getOperand(0), F); 
-  }
-  else
-    assert(false && "Target instruction is not a load! Handle this case");
-
-  return;
-}
 
 /// This only works for direct function calls
 bool StaticSlice::isFilteredCall (CallInst* callInst) {
@@ -290,19 +187,27 @@ void StaticSlice::handleSpecialCall(CallInst* callInst,
     assert(isa<Function>(v) && 
            "The third operand of the pthread_create call must be a function");
     const Function* f = dyn_cast<Function>(v);
-    Targets.push_back(f);  
+    Targets.push_back(f);
+    
+    funcToCallInst[f] = callInst;
+    
+    if(callInst->getCalledFunction() == f) {
+      cerr <<  "!@@@@@@2match" << endl;
+    }
+      
     
     v = callInst->getOperand(3);
     assert(isa<Instruction>(v) && 
            "The fourth operand of the pthread_create call must be a ");
     operands.push_back(callInst->getOperand(3));
+    
   }
 }
 
 
 ///
 void StaticSlice::extractArgs (Argument * Arg, 
-                               vector<const Function *>& Targets,
+                               vector<const Function*>& Targets,
                                Processed_t& Processed,
                                vector<Value*>& operands,
                                vector<Value*>& actualArgs) {
@@ -310,9 +215,17 @@ void StaticSlice::extractArgs (Argument * Arg,
   // specified argument belongs.
   Function* calledFunc = Arg->getParent();
   std::set<const Function *> TargetSet;
+  std::set<const Function *>::iterator it;
   TargetSet.insert (Targets.begin(), Targets.end());
-  if ((TargetSet.find (calledFunc)) == (TargetSet.end()))
+  it = TargetSet.find (calledFunc);
+  if (it == TargetSet.end())
     return;
+  else {
+    // We need to explicity add special callers
+    CallInst* specialCaller = funcToCallInst[*it];
+    addSource(specialCaller, specialCaller->getParent()->getParent());
+    valueToDbgMetadata[specialCaller].push_back(specialCaller->getMetadata("dbg")); 
+  }
   
   // Assert that the call and the called function have the same # of arguments.
   assert ((calledFunc->getFunctionType()->getNumParams()) == operands.size()
@@ -324,14 +237,7 @@ void StaticSlice::extractArgs (Argument * Arg,
   for (unsigned index = 0;
        index < operands.size();
        ++index, ++FormalArg) {
-    
-    string str1;
-    raw_string_ostream oss1(str1);
-    FormalArg->print(oss1);
 
-    string str2;
-    raw_string_ostream oss2(str2);
-    Arg->print(oss2);
     if (((Argument *)(FormalArg)) == Arg) {
       if (Processed.find (operands[index]) == Processed.end()) {
         actualArgs.push_back (operands[index]);
@@ -374,30 +280,32 @@ void StaticSlice::findArgSources (Argument* Arg,
     // Scan the function looking for call instructions.
     for (Function::iterator BB = F->begin(); BB != F->end(); ++BB) {
       for (BasicBlock::iterator II = BB->begin(); II != BB->end(); ++II) {
-        if (CallInst * callInst = dyn_cast<CallInst>(II)) {
+        if (CallInst* callInst = dyn_cast<CallInst>(II)) {
           // Ignore inline assembly code.
           if (isa<InlineAsm>(callInst->getOperand(0)))
             continue;
-
+          
           // Find the set of functions called by this call instruction.
           vector <const Function*> Targets;
           vector<Value*> operands;
-          // Some functions such as pthread_create require sepcial handling 
-          if (isSpecialCall(callInst)) { 
+          // Some functions such as pthread_create require sepcial handling
+          if (isSpecialCall(callInst)) {
             handleSpecialCall(callInst, Targets, operands);
-          } else {       
-            findCallTargets (callInst, Targets, operands);  
+          } else {
+            findCallTargets (callInst, Targets, operands);
           }
-          if (!operands.empty())
+          if (!operands.empty()) {
+            assert(Targets.size() == 1 && "2 calls to the same function in same BB, examine");
             extractArgs(Arg, Targets, Processed, operands, actualArgs);
+          }
         }
       }
     }
 
     // Finally, find the sources for all the actual arguments needing labels.
-    vector<Value *>::iterator i;
+    vector<Value*>::iterator i;
     for (i = actualArgs.begin(); i != actualArgs.end(); ++i) {
-      Value * V = *i;
+      Value* V = *i;
       Worklist.push_back (make_pair (V, F));
     }
 
@@ -434,11 +342,9 @@ void StaticSlice::findArgSources (Argument* Arg,
 void StaticSlice::findCallSources (CallInst* CI,
                                    Worklist_t& Worklist,
                                    Processed_t& Processed) {
-  cerr << "Finding call sources: " << CI->getCalledFunction()->getName().str() << endl ; 
   // Find the function called by this call instruction
   vector<const Function *> Targets;
   vector<Value*> operands;
-  
   valueToDbgMetadata[CI].push_back(CI->getMetadata("dbg"));
   findCallTargets (CI, Targets, operands);
 
@@ -473,6 +379,7 @@ void StaticSlice::findCallSources (CallInst* CI,
     std::vector<ReturnInst*>::iterator ri;
     for (ri = NewReturns.begin(); ri != NewReturns.end(); ++ri) {
       ReturnInst* RI = *ri;
+
       valueToDbgMetadata[RI].push_back(RI->getMetadata("dbg"));
 
       if (Processed.find (RI) == Processed.end()) {
@@ -485,6 +392,105 @@ void StaticSlice::findCallSources (CallInst* CI,
   return;
 }
 
+///
+/// Method: findFlow()
+///
+/// Description:
+///  For the given value, find all of the values upon which it depends.  The
+///  labels of these values will combine together to form the label of the given
+///  value.
+///
+void StaticSlice::findFlow (Value * Initial, const Function & Fu) {
+  // Already processed values
+  Processed_t Processed;
+
+  // Worklist
+  Worklist_t Worklist;
+  Worklist.push_back (std::make_pair(Initial, &Fu));
+
+  while (Worklist.size()) {
+    //
+    // Pop an item off of the worklist.
+    //
+    Value * v = Worklist.back().first;
+    const Function * f = Worklist.back().second;
+    Worklist.pop_back();
+
+    // If the value is a source, add it to the set of sources.  Otherwise, add
+    // its operands to the worklist if they have not yet been processed. 
+    if (isASource (v)) {
+      addSource (v, f);
+
+      // Some sources imply that information flow must be traced inside another
+      // function.  Needing the label of a call instruction's return value
+      // means that we need to know the sources for the called function's
+      // return value.  Requiring the label of a function argument means that
+      // we'll need the labels of any value passed into the function.
+      if (CallInst * CI = dyn_cast<CallInst>(v)) {
+        findCallSources (CI, Worklist, Processed);
+      } else if (Argument * Arg = dyn_cast<Argument>(v)) {
+        findArgSources (Arg, Worklist, Processed);
+      }
+    } else if (User * user = dyn_cast<User>(v)) {
+      assert (isa<Instruction>(user) && 
+              "user is not an instruction, will lose debug information");
+      Instruction* instr = dyn_cast<Instruction>(user);
+      
+      // Record any phi nodes located
+      if (PHINode * phiNode = dyn_cast<PHINode>(v))
+        PhiNodes.insert (phiNode);
+
+      for (unsigned index = 0; index < user->getNumOperands(); ++index) {
+        Value* operand = user->getOperand(index); 
+        if (Processed.find (operand) == Processed.end()) {
+          Worklist.push_back (std::make_pair(operand, f));
+
+          if (PHINode* PHI = dyn_cast<PHINode>(v))
+            valueToDbgMetadata[operand].push_back(PHI->getIncomingBlock(index)->getTerminator()->getMetadata("dbg"));
+          else if (!isa<CallInst>(operand)) {
+            valueToDbgMetadata[operand].push_back(instr->getMetadata("dbg"));
+          }
+          if (!(isa<Constant>(operand)))
+            Processed.insert (operand);
+        }
+      }
+    }
+  }
+
+  return;
+}
+
+///
+/// Method: findSources()
+///
+/// Description:
+///  For every store and external function call in the specified function, find
+///  all the instructions that generate a label (i.e., is a source of
+///  information)  for the value(s) being stored into memory.
+///
+/// Inputs:
+///  F - The function to analyze.
+///
+void StaticSlice::findSources (Function & F) {
+  // Retrieve the target instruction from the debug info manager
+  // and process those the information flow of its inputs.
+  assert (debugInfoManager->targetInstruction && "Target instruction cannot be NULL");
+  if (LoadInst * instr = dyn_cast<LoadInst>(debugInfoManager->targetInstruction)) {
+    std::string Str;
+    raw_string_ostream oss(Str);
+    instr->getOperand(0)->print(oss);
+    errs() << "------------------------" << "\n";
+    errs() << "     Target Operand    :" << "\n";
+    errs() << "------------------------" << "\n";
+    errs() << oss.str() << "\n";
+    valueToDbgMetadata[instr->getOperand(0)].push_back(instr->getMetadata("dbg"));
+    findFlow (instr->getOperand(0), F); 
+  }
+  else
+    assert(false && "Target instruction is not a load! Handle this case");
+
+  return;
+}
 
 /// Method: runOnModule()
 ///
@@ -511,6 +517,10 @@ bool StaticSlice::runOnModule (Module& module) {
   assert(debugInfoManager->targetFunction && "Target function cannot be NULL");
   findSources (*(debugInfoManager->targetFunction));
 
+  errs() << "\n------------------------" << "\n";
+  errs() << "      Static Slice     :" << "\n";
+  errs() << "------------------------" << "\n";
+  
   for (Module::iterator fi = module.begin(); fi != module.end(); ++fi) {
     for (src_iterator si = src_begin(fi); si != src_end(fi); ++si) {
       Value* v = const_cast<Value*>(*si);
@@ -520,7 +530,7 @@ bool StaticSlice::runOnModule (Module& module) {
 
       unsigned lineNumber = 0;
       StringRef fileName;
-      StringRef directory;
+      StringRef directory; 
       assert((valueToDbgMetadata[v].size() > 0) && 
              "we should have had the debug information for this value");
       
@@ -559,4 +569,4 @@ bool StaticSlice::runOnModule (Module& module) {
 char StaticSlice::ID = 0;
 
 /// Pass registration
-static RegisterPass<StaticSlice> X ("slice", "Find Information Flows");
+static RegisterPass<StaticSlice> X ("slice", "Compute a static slice given an instruction");

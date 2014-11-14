@@ -104,10 +104,9 @@ bool DebugInfoManager::runOnModule(Module& m) {
                 errs() << "Target LLVM instruction:" << "\n";
                 errs() << "------------------------" << "\n";
                 errs() << "\t" << *ii << "\n\t|--> " << directory << "/" << fileName<< " : " << lineNumber << "\n\n";
-		// Here invoke giri to get the backward slice
                 // trackUseDefChain(*ii);
-		targetInstruction = &(*ii);
-		targetFunction = &(*fi);
+                targetInstruction = &(*ii);
+                targetFunction = &(*fi);
               }
             }
           }
