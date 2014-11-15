@@ -202,6 +202,12 @@ struct StaticSlice : public ModulePass {
                       Processed_t& Processed, std::vector<Value*>& operands,
                       std::vector<Value*>& actualArgs);
     
+    void generateSliceReport(Module& module);
+    
+    void createDebugMetadataString(std::string& str, 
+                                   Function* f,
+                                   MDNode* node);
+    
     // Map from values needing labels to sources from which those labels derive
     SourceMap Sources;
 

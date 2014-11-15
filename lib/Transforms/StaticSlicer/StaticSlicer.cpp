@@ -30,7 +30,77 @@
 using namespace llvm;
 using namespace std;
 
-///
+
+static string removeLeadingWhitespace (string str) {
+  str.erase (str.begin(), 
+             std::find_if(str.begin(), str.end(), 
+             std::bind2nd(std::not_equal_to<char>(), ' ')));
+  return str;
+}
+
+
+void StaticSlice::generateSliceReport(Module& module) {
+  ofstream logFile;
+  logFile.open ("slice.log");
+  
+  logFile << "\n------------------------" << "\n";
+  logFile << "      Static Slice     :" << "\n";
+  logFile << "------------------------" << "\n";
+  
+  string targetDebugLoc = "";
+  createDebugMetadataString(targetDebugLoc, 
+                            debugInfoManager->targetFunction,
+                            debugInfoManager->targetInstruction->getMetadata("dbg"));
+
+  string valueStr;
+  raw_string_ostream valueOss(valueStr);
+  debugInfoManager->targetInstruction->print(valueOss);
+  // Remove leading whitespaces
+  string instrStr = valueOss.str();
+  logFile << removeLeadingWhitespace(instrStr) << "\n" << targetDebugLoc << "\n";
+  
+  for (Module::iterator fi = module.begin(); fi != module.end(); ++fi) {
+    for (src_iterator si = src_begin(fi); si != src_end(fi); ++si) {
+      Value* v = const_cast<Value*>(*si);
+      string valueStr;
+      raw_string_ostream valueOss(valueStr);
+      v->print(valueOss);
+
+      assert((valueToDbgMetadata[v].size() > 0) && 
+             "we should have had the debug information for this value");
+      
+      string debugLoc("");
+      for (size_t i = 0; i < valueToDbgMetadata[v].size(); ++i) {
+        createDebugMetadataString(debugLoc, &*fi, valueToDbgMetadata[v][i]);
+      }
+      
+      string instrStr = valueOss.str();
+      logFile << removeLeadingWhitespace(instrStr) << "\n" << debugLoc << "\n";
+    }
+  }
+
+  logFile.close();  
+}
+
+
+void StaticSlice::createDebugMetadataString(string& str, 
+                                            Function* f, 
+                                            MDNode* node) {
+  if (node) {    
+    DILocation loc(node);
+    unsigned lineNumber = loc.getLineNumber();
+    StringRef fileName = loc.getFilename();
+    StringRef directory = loc.getDirectory();
+    
+    ostringstream ss;
+    if (lineNumber > 0 ) {
+      ss << lineNumber;
+      str += "\t|--> " + directory.str() + "/" + fileName.str() + ": " + ss.str() + "\tF:" + f->getName().str() + "\n";
+    }
+  }
+}
+
+
 /// Function: isASource()
 ///
 /// Description:
@@ -506,9 +576,6 @@ void StaticSlice::findSources (Function & F) {
 ///  false - The module was not modified.
 ///
 bool StaticSlice::runOnModule (Module& module) {
-  std::ofstream logFile;
-  logFile.open ("slice.log");
-
   // Get prerequisite passes.
   dsaPass = &getAnalysis<EQTDDataStructures>();
   debugInfoManager = &getAnalysis<DebugInfoManager>();
@@ -517,76 +584,7 @@ bool StaticSlice::runOnModule (Module& module) {
   assert(debugInfoManager->targetFunction && "Target function cannot be NULL");
   findSources (*(debugInfoManager->targetFunction));
 
-  //generateReport();
-  
-  logFile << "\n------------------------" << "\n";
-  logFile << "      Static Slice     :" << "\n";
-  logFile << "------------------------" << "\n";
-  
-  string targetDebugInfo = "";
-  if (MDNode* node = debugInfoManager->targetInstruction->getMetadata("dbg")) {
-    DILocation loc(node);
-    unsigned lineNumber = loc.getLineNumber();
-    StringRef fileName = loc.getFilename();
-    StringRef directory = loc.getDirectory();
-    ostringstream ss;
-    if (lineNumber > 0 ){
-      ss << lineNumber;
-
-      targetDebugInfo += "\t|--> " + directory.str() + "/" + fileName.str() + ": " + ss.str() + "\tF:" + debugInfoManager->targetFunction->getName().str() + "\n";
-    }
-    string valueStr;
-    raw_string_ostream valueOss(valueStr);
-    debugInfoManager->targetInstruction->print(valueOss);
-    // Remove leading whitespaces
-    string instrStr = valueOss.str();
-    instrStr.erase(instrStr.begin(), 
-                   std::find_if(instrStr.begin(), instrStr.end(), 
-                                std::bind2nd(std::not_equal_to<char>(), ' ')));
-    logFile << instrStr << "\n" << targetDebugInfo << "\n";
-  }
-  
-  
-  for (Module::iterator fi = module.begin(); fi != module.end(); ++fi) {
-    for (src_iterator si = src_begin(fi); si != src_end(fi); ++si) {
-      Value* v = const_cast<Value*>(*si);
-      string valueStr;
-      raw_string_ostream valueOss(valueStr);
-      v->print(valueOss);
-
-      unsigned lineNumber = 0;
-      StringRef fileName;
-      StringRef directory; 
-      assert((valueToDbgMetadata[v].size() > 0) && 
-             "we should have had the debug information for this value");
-      
-      string debugLoc("");
-      for (size_t i = 0; i < valueToDbgMetadata[v].size(); ++i) {
-        if (MDNode* node = valueToDbgMetadata[v][i]) {
-          DILocation loc(node);
-          lineNumber = loc.getLineNumber();
-          fileName = loc.getFilename();
-          directory = loc.getDirectory();
-          
-          ostringstream ss;
-          if (lineNumber > 0 ){
-            ss << lineNumber;
-
-            debugLoc += "\t|--> " + directory.str() + "/" + fileName.str() + ": " + ss.str() + "\tF:" + fi->getName().str() + "\n";
-          }
-        }
-      }
-      
-      // Remove leading whitespaces
-      string instrStr = valueOss.str();
-      instrStr.erase(instrStr.begin(), 
-                     std::find_if(instrStr.begin(), instrStr.end(), 
-                                  std::bind2nd(std::not_equal_to<char>(), ' ')));
-      logFile << instrStr << "\n" << debugLoc << "\n";
-    }
-  }
-
-  logFile.close();
+  generateSliceReport(module);
 
   // This is an analysis pass, so always return false.
   return false;
