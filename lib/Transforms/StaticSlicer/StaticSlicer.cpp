@@ -523,6 +523,30 @@ bool StaticSlice::runOnModule (Module& module) {
   logFile << "      Static Slice     :" << "\n";
   logFile << "------------------------" << "\n";
   
+  string targetDebugInfo = "";
+  if (MDNode* node = debugInfoManager->targetInstruction->getMetadata("dbg")) {
+    DILocation loc(node);
+    unsigned lineNumber = loc.getLineNumber();
+    StringRef fileName = loc.getFilename();
+    StringRef directory = loc.getDirectory();
+    ostringstream ss;
+    if (lineNumber > 0 ){
+      ss << lineNumber;
+
+      targetDebugInfo += "\t|--> " + directory.str() + "/" + fileName.str() + ": " + ss.str() + "\tF:" + debugInfoManager->targetFunction->getName().str() + "\n";
+    }
+    string valueStr;
+    raw_string_ostream valueOss(valueStr);
+    debugInfoManager->targetInstruction->print(valueOss);
+    // Remove leading whitespaces
+    string instrStr = valueOss.str();
+    instrStr.erase(instrStr.begin(), 
+                   std::find_if(instrStr.begin(), instrStr.end(), 
+                                std::bind2nd(std::not_equal_to<char>(), ' ')));
+    logFile << instrStr << "\n" << targetDebugInfo << "\n";
+  }
+  
+  
   for (Module::iterator fi = module.begin(); fi != module.end(); ++fi) {
     for (src_iterator si = src_begin(fi); si != src_end(fi); ++si) {
       Value* v = const_cast<Value*>(*si);
