@@ -224,7 +224,7 @@ void StaticSlice::extractArgs (Argument * Arg,
     // We need to explicity add special callers
     CallInst* specialCaller = funcToCallInst[*it];
     addSource(specialCaller, specialCaller->getParent()->getParent());
-    valueToDbgMetadata[specialCaller].push_back(specialCaller->getMetadata("dbg")); 
+    valueToDbgMetadata[specialCaller].push_back(specialCaller->getMetadata("dbg"));
   }
   
   // Assert that the call and the called function have the same # of arguments.
@@ -517,9 +517,11 @@ bool StaticSlice::runOnModule (Module& module) {
   assert(debugInfoManager->targetFunction && "Target function cannot be NULL");
   findSources (*(debugInfoManager->targetFunction));
 
-  errs() << "\n------------------------" << "\n";
-  errs() << "      Static Slice     :" << "\n";
-  errs() << "------------------------" << "\n";
+  //generateReport();
+  
+  logFile << "\n------------------------" << "\n";
+  logFile << "      Static Slice     :" << "\n";
+  logFile << "------------------------" << "\n";
   
   for (Module::iterator fi = module.begin(); fi != module.end(); ++fi) {
     for (src_iterator si = src_begin(fi); si != src_end(fi); ++si) {
@@ -545,7 +547,8 @@ bool StaticSlice::runOnModule (Module& module) {
           ostringstream ss;
           if (lineNumber > 0 ){
             ss << lineNumber;
-            debugLoc += "\t|--> " + directory.str() + "/" + fileName.str() + ": " + ss.str() + "\n";
+
+            debugLoc += "\t|--> " + directory.str() + "/" + fileName.str() + ": " + ss.str() + "\tF:" + fi->getName().str() + "\n";
           }
         }
       }
