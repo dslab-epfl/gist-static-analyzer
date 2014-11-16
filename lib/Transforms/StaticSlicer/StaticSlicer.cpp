@@ -47,7 +47,7 @@ void StaticSlice::generateSliceReport(Module& module) {
   logFile << "      Static Slice     :" << "\n";
   logFile << "------------------------" << "\n";
   
-  string targetDebugLoc = "";
+  string targetDebugLoc = "Source";
   createDebugMetadataString(targetDebugLoc, 
                             debugInfoManager->targetFunction,
                             debugInfoManager->targetInstruction->getMetadata("dbg"));
