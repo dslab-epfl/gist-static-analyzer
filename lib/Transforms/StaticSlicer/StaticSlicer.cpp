@@ -449,9 +449,12 @@ void StaticSlice::findCallSources (CallInst* CI,
     std::vector<ReturnInst*>::iterator ri;
     for (ri = NewReturns.begin(); ri != NewReturns.end(); ++ri) {
       ReturnInst* RI = *ri;
-
+      
+      // kasikci: may need to remove this, adding it so that there is
+      // more clarity on kcachegrind with respect to where the return is
+      addSource(RI, RI->getParent()->getParent());
       valueToDbgMetadata[RI].push_back(RI->getMetadata("dbg"));
-
+      
       if (Processed.find (RI) == Processed.end()) {
         Worklist.push_back (std::make_pair(RI, F));
         Processed.insert (RI);
