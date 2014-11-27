@@ -188,6 +188,7 @@ struct StaticSlice : public ModulePass {
     void findCallSources (CallInst * CI, Worklist_t & Wl, Processed_t & P);
     void findArgSources  (Argument * Arg, Worklist_t & Wl, Processed_t & P);
     void findFlow  (Value * V, const Function & F);
+    bool isASource (Worklist_t& Worklist, Processed_t& Processed, const Value * v, const Function * F);
     void addSource (const Value * V, const Function * F);
     
     void findCallTargets   (CallInst * callInst, std::vector<const Function*> & Targets, 
@@ -198,9 +199,10 @@ struct StaticSlice : public ModulePass {
     bool isFilteredCall (CallInst* callInst);
     bool isSpecialCall  (CallInst* callInst);
     
-    void extractArgs (Argument* Arg, std::vector<const Function *>& Targets,
+    void extractArgs (Worklist_t& Worklist, Argument* Arg, 
+                      std::vector<const Function *>& Targets,
                       Processed_t& Processed, std::vector<Value*>& operands,
-                      std::vector<Value*>& actualArgs);
+                      std::vector<Value*>& actualArgs, bool isSpecial);
     
     void generateSliceReport(Module& module);
     

@@ -31,6 +31,7 @@ using namespace llvm;
 using namespace std;
 
 
+///
 static string removeLeadingWhitespace (string str) {
   str.erase (str.begin(), 
              std::find_if(str.begin(), str.end(), 
@@ -39,6 +40,7 @@ static string removeLeadingWhitespace (string str) {
 }
 
 
+///
 void StaticSlice::generateSliceReport(Module& module) {
   ofstream logFile;
   logFile.open ("slice.log");
@@ -66,9 +68,9 @@ void StaticSlice::generateSliceReport(Module& module) {
       raw_string_ostream valueOss(valueStr);
       v->print(valueOss);
 
-      assert((valueToDbgMetadata[v].size() > 0) && 
+      /*assert((valueToDbgMetadata[v].size() > 0) && 
              "we should have had the debug information for this value");
-      
+      */
       string debugLoc("");
       for (size_t i = 0; i < valueToDbgMetadata[v].size(); ++i) {
         createDebugMetadataString(debugLoc, &*fi, valueToDbgMetadata[v][i]);
@@ -116,31 +118,75 @@ void StaticSlice::createDebugMetadataString(string& str,
 ///  false - This value is not a source.  Its label is the join of the labels
 ///          of its input operands.
 ///
-static inline bool isASource (const Value * V) {
+bool StaticSlice::isASource (Worklist_t& Worklist, Processed_t& Processed, 
+                             const Value * v, const Function * F) { 
   // Call instructions are sources *unless* they are inline assembly.
-  if (const CallInst * CI = dyn_cast<CallInst>(V)) {
-    if (isa<InlineAsm>(CI->getOperand(0)))
+  if (const CallInst * callInst = dyn_cast<CallInst>(v)) {
+    if (isa<InlineAsm>(callInst->getOperand(0)))
       return false;
     else
       return true;
   }
+  
+  // If there is a use of the value v in a store instruction as the destination operand,
+  // it means someone is storing to this value, we want to also track where that source
+  // of that store is coming from
+  Value::const_use_iterator it;
+  for (it = v->use_begin(); it != v->use_end() ; ++it) {
+    std::string Str2;
+    raw_string_ostream oss2(Str2);
+    const User* u = *it;
+    if (const StoreInst* storeInst = dyn_cast<StoreInst>(u)){
+      std::string Str3;
+      raw_string_ostream oss3(Str3);  
+      storeInst->getOperand(0)->print(oss3);
+      cerr << "op0: " << oss3.str() << endl;
+      
+      std::string Str4;
+      raw_string_ostream oss4(Str4);
+      storeInst->getOperand(1)->print(oss4);
+      cerr << "op1: " << oss4.str() << endl;
+      
+      if(v == storeInst->getOperand(1)) {   
+        if(Processed.find (storeInst->getOperand(0)) == Processed.end()) {
+          cerr << "match" << endl;
+          Worklist.push_back (std::make_pair(storeInst->getOperand(0), F));
+          Processed.insert(storeInst->getOperand(0));
+          valueToDbgMetadata[storeInst->getOperand(0)].push_back(storeInst->getMetadata("dbg"));
+        }
+      }
+                   
+      it->print(oss2);
+      cerr << "user: " << oss2.str() << endl;
+    }
+  }
+  
+  if (const LoadInst* loadInst = dyn_cast<LoadInst>(v)){
+    // Don't stop if it is a load, add the operand to the worklist, this is because
+    // even we reached a load from memory, we would like to trace where that value 
+    // might be coming from
+    if(Processed.find (loadInst->getOperand(0)) == Processed.end()) {
+      Worklist.push_back (std::make_pair(loadInst->getOperand(0), F));
+      Processed.insert(loadInst->getOperand(0));
+      valueToDbgMetadata[loadInst->getOperand(0)].push_back(loadInst->getMetadata("dbg"));
+    }
+    return true;
+  }
 
-  if (isa<LoadInst>(V)){
+  if (isa<Argument>(v)){
     return true;
   }
-  if (isa<Argument>(V)){
+  if (isa<AllocaInst>(v)){
     return true;
   }
-  if (isa<AllocaInst>(V)){
+  if (isa<Constant>(v)){
     return true;
   }
-  if (isa<Constant>(V)){
+  if (isa<GlobalValue>(v)){
     return true;
   }
-  if (isa<GlobalValue>(V)){
-    return true;
-  }
-
+  
+  
   return false;
 }
 
@@ -208,7 +254,7 @@ void StaticSlice::findCallTargets (CallInst * callInst,
   // We do not consider the intrinsics as sources
   if (isa<IntrinsicInst>(callInst))
     return;
-      
+  
   // Check to see if the call instruction is a direct call.  If so, then add
   // the target to the set of known targets and return.
   Function * calledFunction = callInst->getCalledFunction();
@@ -233,9 +279,9 @@ void StaticSlice::findCallTargets (CallInst * callInst,
   }
   
   // we have a +1, because the first operand is the function call itself
-  for (User::op_iterator it = callInst->op_begin() + 1, 
-       end = callInst->op_end(); it != end; ++it) {
-    operands.push_back((Value*)&*it);
+  for (unsigned index = 0; index < callInst->getNumOperands() - 1; ++index) {
+    Value* operand = callInst->getOperand(index);    
+    operands.push_back(operand);
   }
   return;
 }
@@ -276,11 +322,13 @@ void StaticSlice::handleSpecialCall(CallInst* callInst,
 
 
 ///
-void StaticSlice::extractArgs (Argument * Arg, 
+void StaticSlice::extractArgs (Worklist_t& Worklist,
+                               Argument * Arg, 
                                vector<const Function*>& Targets,
                                Processed_t& Processed,
                                vector<Value*>& operands,
-                               vector<Value*>& actualArgs) {
+                               vector<Value*>& actualArgs,
+                               bool isSpecial) {
   // Skip this call site if it does not call the function to which the
   // specified argument belongs.
   Function* calledFunc = Arg->getParent();
@@ -290,7 +338,8 @@ void StaticSlice::extractArgs (Argument * Arg,
   it = TargetSet.find (calledFunc);
   if (it == TargetSet.end())
     return;
-  else {
+  
+  if (isSpecial) {
     // We need to explicity add special callers
     CallInst* specialCaller = funcToCallInst[*it];
     addSource(specialCaller, specialCaller->getParent()->getParent());
@@ -309,7 +358,7 @@ void StaticSlice::extractArgs (Argument * Arg,
        ++index, ++FormalArg) {
 
     if (((Argument *)(FormalArg)) == Arg) {
-      if (Processed.find (operands[index]) == Processed.end()) {
+      if (Processed.find (operands[index]) == Processed.end()) {  
         actualArgs.push_back (operands[index]);
       }
     }
@@ -359,14 +408,15 @@ void StaticSlice::findArgSources (Argument* Arg,
           vector <const Function*> Targets;
           vector<Value*> operands;
           // Some functions such as pthread_create require sepcial handling
-          if (isSpecialCall(callInst)) {
+          bool isSpecial = isSpecialCall(callInst);
+          if (isSpecial) {
             handleSpecialCall(callInst, Targets, operands);
           } else {
             findCallTargets (callInst, Targets, operands);
           }
           if (!operands.empty()) {
             assert(Targets.size() == 1 && "2 calls to the same function in same BB, examine");
-            extractArgs(Arg, Targets, Processed, operands, actualArgs);
+            extractArgs(Worklist, Arg, Targets, Processed, operands, actualArgs, isSpecial);
           }
         }
       }
@@ -376,6 +426,9 @@ void StaticSlice::findArgSources (Argument* Arg,
     vector<Value*>::iterator i;
     for (i = actualArgs.begin(); i != actualArgs.end(); ++i) {
       Value* V = *i;
+      if(Instruction* instr = dyn_cast<Instruction>(V)) {
+        valueToDbgMetadata[instr].push_back(instr->getMetadata("dbg"));
+      }
       Worklist.push_back (make_pair (V, F));
     }
 
@@ -491,7 +544,7 @@ void StaticSlice::findFlow (Value * Initial, const Function & Fu) {
 
     // If the value is a source, add it to the set of sources.  Otherwise, add
     // its operands to the worklist if they have not yet been processed. 
-    if (isASource (v)) {
+    if (isASource (Worklist, Processed, v, f)) {
       addSource (v, f);
 
       // Some sources imply that information flow must be traced inside another
