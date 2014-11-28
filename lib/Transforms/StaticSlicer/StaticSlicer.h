@@ -170,10 +170,6 @@ struct StaticSlice : public ModulePass {
       return PhiNodes;
     }
 
-    bool returnNeedsLabel (const ReturnInst & RI) {
-      return (Returns.find (&RI) != Returns.end());
-    }
-
     bool argNeedsLabel (const Argument * Arg) {
       return (Args.find (Arg) != Args.end());
     }
@@ -210,20 +206,16 @@ struct StaticSlice : public ModulePass {
                                    Function* f,
                                    MDNode* node);
     
+    void cacheCallInstructions(Module& module);
+    
     // Map from values needing labels to sources from which those labels derive
     SourceMap Sources;
 
     // Set of phi nodes that will need special processing
     std::set<const PHINode *> PhiNodes;
 
-    // Set of return instructions that require labels
-    std::set<const ReturnInst *> Returns;
-
     // Set of function arguments that require labels
     std::set<const Argument *> Args;
-
-    // Worklist of return instructions to process
-    std::map<Function *, std::set<Argument *> > ArgWorklist;
 
     // Passes used by this pass
     EQTDDataStructures* dsaPass;
@@ -237,6 +229,8 @@ struct StaticSlice : public ModulePass {
     std::set<std::string> specialFunctions;
     
     std::map<const Function*, CallInst*> funcToCallInst;
+    
+    std::map<Function*, std::vector<CallInst*> > callCache;
 };
 
 #endif

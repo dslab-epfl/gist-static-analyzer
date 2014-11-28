@@ -136,28 +136,15 @@ bool StaticSlice::isASource (Worklist_t& Worklist, Processed_t& Processed,
     std::string Str2;
     raw_string_ostream oss2(Str2);
     const User* u = *it;
-    if (const StoreInst* storeInst = dyn_cast<StoreInst>(u)){
-      std::string Str3;
-      raw_string_ostream oss3(Str3);  
-      storeInst->getOperand(0)->print(oss3);
-      cerr << "op0: " << oss3.str() << endl;
-      
-      std::string Str4;
-      raw_string_ostream oss4(Str4);
-      storeInst->getOperand(1)->print(oss4);
-      cerr << "op1: " << oss4.str() << endl;
-      
+    if (const StoreInst* storeInst = dyn_cast<StoreInst>(u)){      
       if(v == storeInst->getOperand(1)) {   
         if(Processed.find (storeInst->getOperand(0)) == Processed.end()) {
-          cerr << "match" << endl;
           Worklist.push_back (std::make_pair(storeInst->getOperand(0), F));
           Processed.insert(storeInst->getOperand(0));
           valueToDbgMetadata[storeInst->getOperand(0)].push_back(storeInst->getMetadata("dbg"));
         }
       }
-                   
       it->print(oss2);
-      cerr << "user: " << oss2.str() << endl;
     }
   }
   
@@ -215,24 +202,26 @@ void StaticSlice::addSource(const Value * V, const Function * F) {
 
 /// This only works for direct function calls
 bool StaticSlice::isFilteredCall (CallInst* callInst) {
-  assert (callInst->getCalledFunction() && 
-          "Filtering only works for direct function calls");
-      
-  std::string calleeName = callInst->getCalledFunction()->getName().str();
-  if (filteredFunctions.find(calleeName) != filteredFunctions.end()){
-    return true;
+  Function* calledFunction = callInst->getCalledFunction();
+  
+  if(calledFunction) {
+    std::string calleeName = calledFunction->getName().str();
+    if (filteredFunctions.find(calleeName) != filteredFunctions.end()){
+      return true;
+    } 
   }
   return false;
 }
 
 /// This only works for direct function calls
 bool StaticSlice::isSpecialCall(CallInst* callInst) {
-  assert (callInst->getCalledFunction() && 
-          "Special handling only works for direct function calls");
-      
-  std::string funcName = callInst->getCalledFunction()->getName().str();
-  if (specialFunctions.find(funcName) != specialFunctions.end()){
-    return true;
+  Function* calledFunction = callInst->getCalledFunction();
+  
+  if(calledFunction) {
+    std::string funcName = calledFunction->getName().str();
+    if (specialFunctions.find(funcName) != specialFunctions.end()){
+      return true;
+    }
   }
   return false;
 }
@@ -259,10 +248,6 @@ void StaticSlice::findCallTargets (CallInst * callInst,
   // the target to the set of known targets and return.
   Function * calledFunction = callInst->getCalledFunction();
   if (calledFunction) {
-    // Filter out some functions which we do not consider as sources
-    if (isFilteredCall(callInst))
-      return;
-
     Targets.push_back (calledFunction);
   } else {
     // This is an indirect function call.  Get the DSNode for the function
@@ -415,13 +400,17 @@ void StaticSlice::findArgSources (Argument* Arg,
             findCallTargets (callInst, Targets, operands);
           }
           if (!operands.empty()) {
-            assert(Targets.size() == 1 && "2 calls to the same function in same BB, examine");
+            if(Targets.size() > 1) {
+              for(unsigned index = 0; index < Targets.size(); ++index) {
+                cerr << Targets[index]->getName().str() << endl;
+              }
+            }
             extractArgs(Worklist, Arg, Targets, Processed, operands, actualArgs, isSpecial);
           }
         }
       }
     }
-
+    
     // Finally, find the sources for all the actual arguments needing labels.
     vector<Value*>::iterator i;
     for (i = actualArgs.begin(); i != actualArgs.end(); ++i) {
@@ -431,7 +420,7 @@ void StaticSlice::findArgSources (Argument* Arg,
       }
       Worklist.push_back (make_pair (V, F));
     }
-
+  
     // Add the new items to process to the processed list.
     for (unsigned index = 0; index < actualArgs.size(); ++index) {
       if (!(isa<Constant>(actualArgs[index])))
@@ -492,10 +481,6 @@ void StaticSlice::findCallSources (CallInst* CI,
       if (ReturnInst* RI = dyn_cast<ReturnInst>(BB->getTerminator())) {
         NewReturns.push_back (RI);
       }
-
-    // Record the returns that require labels.
-    // [BK] this may not be needed for our purposes
-    Returns.insert (NewReturns.begin(), NewReturns.end());
 
     // Finally, add any return instructions that have not already been
     // processed to the worklist
@@ -618,6 +603,28 @@ void StaticSlice::findSources (Function & F) {
   return;
 }
 
+void StaticSlice::cacheCallInstructions(Module& module) {
+  for (Module::iterator F = module.begin(); F != module.end(); ++F) {
+    // Scan the function looking for call instructions.
+    for (Function::iterator BB = F->begin(); BB != F->end(); ++BB) {
+      for (BasicBlock::iterator II = BB->begin(); II != BB->end(); ++II) {
+        if (CallInst* callInst = dyn_cast<CallInst>(II)) {
+          // Ignore inline assembly code.
+          if (isa<InlineAsm>(callInst->getOperand(0)))
+            continue;
+          
+          // Filter out some functions which we do not consider as sources
+          if (isFilteredCall(callInst))
+            continue;
+          
+          callCache[&*F].push_back(callInst);
+        }
+      }
+    }
+  }
+  
+}
+
 /// Method: runOnModule()
 ///
 /// Description:
@@ -636,6 +643,9 @@ bool StaticSlice::runOnModule (Module& module) {
   dsaPass = &getAnalysis<EQTDDataStructures>();
   debugInfoManager = &getAnalysis<DebugInfoManager>();
 
+  // Cache all call instructions as this will speed up finding the sources of arguments 
+  cacheCallInstructions(module);
+  
   // Finding the sources of all labels of the target instruction we get from the coredump.
   assert(debugInfoManager->targetFunction && "Target function cannot be NULL");
   findSources (*(debugInfoManager->targetFunction));
