@@ -216,7 +216,14 @@ struct StaticSlice : public ModulePass {
     
     std::map<const Function*, CallInst*> funcToCallInst;
     
-    std::map<Function*, std::vector<CallInst*> > callCache;
+    typedef std::map<Function*, std::vector<CallInst*> > CallInstrCache_t;
+    CallInstrCache_t callInstrCache;
+    
+    typedef std::map<CallInst*, std::pair<std::vector<const Function*>, std::vector<Value*> > > CallTargetsCache_t;
+    CallTargetsCache_t callTargetsCache;
+    
+    std::ofstream debugLogFile;
+     
 };
 
 #endif

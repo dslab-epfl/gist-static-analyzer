@@ -391,57 +391,45 @@ void StaticSlice::findArgSources (Argument* Arg,
   // all the actual parameters.
   Module * M = Arg->getParent()->getParent();
   for (Module::iterator F = M->begin(); F != M->end(); ++F) {
-    // Set of actual arguments needing labels
-    
-
-    // Scan the function looking for call instructions.
-    for (Function::iterator BB = F->begin(); BB != F->end(); ++BB) {
-      for (BasicBlock::iterator II = BB->begin(); II != BB->end(); ++II) {
-        if (CallInst* callInst = dyn_cast<CallInst>(II)) {
-          vector<Value*> actualArgs;
-          // Ignore inline assembly code.
-          if (isa<InlineAsm>(callInst->getOperand(0)))
-            continue;
-          
-          // Find the set of functions called by this call instruction.
-          vector <const Function*> Targets;
-          vector<Value*> operands;
-          // Some functions such as pthread_create require sepcial handling
-          bool isSpecial = isSpecialCall(callInst);
-          if (isSpecial) {
-            handleSpecialCall(callInst, Targets, operands);
-          } else {
-            findCallTargets (callInst, Targets, operands);
-          }
-          if (!operands.empty())
-            extractArgs(Arg, Targets, Processed, operands, actualArgs, isSpecial);
-
-          if(!actualArgs.empty()) {
-            addSource(callInst, &*F);
-            valueToDbgMetadata[callInst].insert(callInst->getMetadata("dbg"));
-          }
-        
-          // Finally, find the sources for all the actual arguments needing labels.
-          vector<Value*>::iterator i;
-          for (i = actualArgs.begin(); i != actualArgs.end(); ++i) {
-            if (Instruction* instr = dyn_cast<Instruction>(*i))
-              valueToDbgMetadata[*i].insert(instr->getMetadata("dbg"));
-
-            Worklist.push_back (make_pair (*i, F));
-          }
-        
-          // Add the new items to process to the processed list.
-          for (unsigned index = 0; index < actualArgs.size(); ++index) {
-            if (!(isa<Constant>(actualArgs[index])))
-              Processed.insert (actualArgs[index]);
-          }
-        }
+    std::vector<CallInst*>::iterator it;
+    for (it = callInstrCache[&*F].begin(); it != callInstrCache[&*F].end(); ++it) {          
+      vector<Value*> actualArgs;
+      
+      // Find the set of functions called by this call instruction.
+      vector <const Function*> Targets;
+      vector<Value*> operands;
+      // Some functions such as pthread_create require sepcial handling
+      bool isSpecial = isSpecialCall(*it);
+      if (isSpecial) {
+        handleSpecialCall(*it, Targets, operands);
+      } else {
+        findCallTargets (*it, Targets, operands);
       }
-    }
+      if (!operands.empty())
+        extractArgs(Arg, Targets, Processed, operands, actualArgs, isSpecial);
+
+      if(!actualArgs.empty()) {
+        addSource(*it, &*F);
+        valueToDbgMetadata[*it].insert((*it)->getMetadata("dbg"));
+      }
     
+      // Finally, find the sources for all the actual arguments needing labels.
+      vector<Value*>::iterator i;
+      for (i = actualArgs.begin(); i != actualArgs.end(); ++i) {
+        if (Instruction* instr = dyn_cast<Instruction>(*i))
+          valueToDbgMetadata[*i].insert(instr->getMetadata("dbg"));
 
+        Worklist.push_back (make_pair (*i, F));
+      }
+    
+      // Add the new items to process to the processed list.
+      for (unsigned index = 0; index < actualArgs.size(); ++index) {
+        if (!(isa<Constant>(actualArgs[index])))
+          Processed.insert (actualArgs[index]);
+      }    
+    }
   }
-
+    
   return;
 }
 
@@ -631,7 +619,13 @@ void StaticSlice::cacheCallInstructions(Module& module) {
           if (isFilteredCall(callInst))
             continue;
           
-          callCache[&*F].push_back(callInst);
+          vector<const Function*> targets;
+          vector<Value*> operands;
+              
+          findCallTargets(callInst, targets, operands);
+          callTargetsCache[callInst] = make_pair(targets, operands); 
+          
+          callInstrCache[&*F].push_back(callInst);
         }
       }
     }
