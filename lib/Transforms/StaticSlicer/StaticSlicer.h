@@ -60,21 +60,13 @@ removeIncompatibleTargets (const CallInst* CI,
   // Remove any function from the set of targets that has the wrong number of
   // arguments.  Find all the functions to remove first and record them in a
   // container so that we don't invalidate any iterators.
-  std::vector<const Function*>::iterator FI = Targets.begin();
-  std::vector<const Function*>::iterator FE = Targets.begin();
-  while (FI != FE) {
-    const Function * F = *FI;
-    // CI->getNumOperands() - 1, because one parameter of the actual function itself
-    if ((F->getFunctionType()->getNumParams()) != (CI->getNumOperands() - 1)) {
-      if (FI == Targets.begin()) {
-        Targets.erase (Targets.begin());
-        FI = Targets.begin();
-      } else {
-        Targets.erase (FI--);
-      }
-    } else {
-      ++F;
-    }
+  std::vector<const Function*>::iterator it = Targets.begin();
+  
+  while(it != Targets.end()) {
+    if((*it)->getFunctionType()->getNumParams() != (CI->getNumOperands() - 1))
+      it = Targets.erase(it);
+    else 
+      ++it;
   }
 
   return;
@@ -170,10 +162,6 @@ struct StaticSlice : public ModulePass {
       return PhiNodes;
     }
 
-    bool argNeedsLabel (const Argument * Arg) {
-      return (Args.find (Arg) != Args.end());
-    }
-
   private:
     // Private typedefs
     typedef std::vector<std::pair<Value *, const Function * > > Worklist_t;
@@ -195,8 +183,7 @@ struct StaticSlice : public ModulePass {
     bool isFilteredCall (CallInst* callInst);
     bool isSpecialCall  (CallInst* callInst);
     
-    void extractArgs (Worklist_t& Worklist, Argument* Arg, 
-                      std::vector<const Function *>& Targets,
+    void extractArgs (Argument* Arg,std::vector<const Function *>& Targets,
                       Processed_t& Processed, std::vector<Value*>& operands,
                       std::vector<Value*>& actualArgs, bool isSpecial);
     
@@ -208,14 +195,13 @@ struct StaticSlice : public ModulePass {
     
     void cacheCallInstructions(Module& module);
     
+    MDNode* extractAllocaDebugMetadata (AllocaInst* allocaInst);
+    
     // Map from values needing labels to sources from which those labels derive
     SourceMap Sources;
 
     // Set of phi nodes that will need special processing
     std::set<const PHINode *> PhiNodes;
-
-    // Set of function arguments that require labels
-    std::set<const Argument *> Args;
 
     // Passes used by this pass
     EQTDDataStructures* dsaPass;
@@ -223,7 +209,7 @@ struct StaticSlice : public ModulePass {
     
     // For all the source values we save, try to keep as accurate debug information as possible
     // The debug information for a given value may be 
-    std::map<Value*, std::vector<MDNode*> > valueToDbgMetadata;
+    std::map<Value*, std::set<MDNode*> > valueToDbgMetadata;
     
     std::set<std::string> filteredFunctions;
     std::set<std::string> specialFunctions;

@@ -31,6 +31,27 @@ using namespace llvm;
 using namespace std;
 
 
+void printValue(Value* v) {
+  string Str;
+  raw_string_ostream oss(Str);
+  v->print(oss);
+  cerr << "add: " << oss.str() << endl;
+}
+
+MDNode* StaticSlice::extractAllocaDebugMetadata (AllocaInst* allocaInst) {
+  // We need special treatement to get the debug information for alloca's
+  const BasicBlock* parent = allocaInst->getParent();
+  // Look in the basic block for llvm.dbg.declare that has the debug information for this alloca
+  for (BasicBlock::const_iterator it = parent->begin(); it != parent->end(); ++it) {
+    if (const DbgDeclareInst* dbgDeclareInst = dyn_cast<DbgDeclareInst>(&*it)) {        
+      Value* value = cast<MDNode>(dbgDeclareInst->getOperand(0))->getOperand(0);
+      assert(isa<AllocaInst>(value) && "The operand must be an alloca");
+      return dbgDeclareInst->getMetadata("dbg");
+    }
+  }
+  assert(false && "Could not extract debug information for alloca!");
+}
+
 ///
 static string removeLeadingWhitespace (string str) {
   str.erase (str.begin(), 
@@ -61,22 +82,26 @@ void StaticSlice::generateSliceReport(Module& module) {
   string instrStr = valueOss.str();
   logFile << removeLeadingWhitespace(instrStr) << "\n" << targetDebugLoc << "\n";
   
+  logFile << "Source map size: " << Sources.size() << endl;
+  logFile << "------------------------" << "\n";
+  
   for (Module::iterator fi = module.begin(); fi != module.end(); ++fi) {
     for (src_iterator si = src_begin(fi); si != src_end(fi); ++si) {
       Value* v = const_cast<Value*>(*si);
       string valueStr;
       raw_string_ostream valueOss(valueStr);
       v->print(valueOss);
-
+      instrStr = valueOss.str();
       /*assert((valueToDbgMetadata[v].size() > 0) && 
              "we should have had the debug information for this value");
       */
       string debugLoc("");
-      for (size_t i = 0; i < valueToDbgMetadata[v].size(); ++i) {
-        createDebugMetadataString(debugLoc, &*fi, valueToDbgMetadata[v][i]);
-      }
-      
-      string instrStr = valueOss.str();
+    
+        set<MDNode*>::iterator mi;
+        for (mi = valueToDbgMetadata[v].begin(); mi != valueToDbgMetadata[v].end(); ++mi) {
+          createDebugMetadataString(debugLoc, &*fi, *mi);
+        }
+    
       logFile << removeLeadingWhitespace(instrStr) << "\n" << debugLoc << "\n";
     }
   }
@@ -129,22 +154,22 @@ bool StaticSlice::isASource (Worklist_t& Worklist, Processed_t& Processed,
   }
   
   // If there is a use of the value v in a store instruction as the destination operand,
-  // it means someone is storing to this value, we want to also track where that source
+  // it means someone is storing to this value, we want to also track where the source
   // of that store is coming from
   Value::const_use_iterator it;
   for (it = v->use_begin(); it != v->use_end() ; ++it) {
-    std::string Str2;
-    raw_string_ostream oss2(Str2);
     const User* u = *it;
     if (const StoreInst* storeInst = dyn_cast<StoreInst>(u)){      
       if(v == storeInst->getOperand(1)) {   
         if(Processed.find (storeInst->getOperand(0)) == Processed.end()) {
           Worklist.push_back (std::make_pair(storeInst->getOperand(0), F));
           Processed.insert(storeInst->getOperand(0));
-          valueToDbgMetadata[storeInst->getOperand(0)].push_back(storeInst->getMetadata("dbg"));
+          if(AllocaInst* allocaInst = dyn_cast<AllocaInst>(storeInst->getOperand(1)))
+            valueToDbgMetadata[storeInst->getOperand(0)].insert(extractAllocaDebugMetadata(allocaInst));
+          else
+            valueToDbgMetadata[storeInst->getOperand(0)].insert(storeInst->getMetadata("dbg"));
         }
       }
-      it->print(oss2);
     }
   }
   
@@ -155,7 +180,8 @@ bool StaticSlice::isASource (Worklist_t& Worklist, Processed_t& Processed,
     if(Processed.find (loadInst->getOperand(0)) == Processed.end()) {
       Worklist.push_back (std::make_pair(loadInst->getOperand(0), F));
       Processed.insert(loadInst->getOperand(0));
-      valueToDbgMetadata[loadInst->getOperand(0)].push_back(loadInst->getMetadata("dbg"));
+      if(!isa<AllocaInst>(loadInst->getOperand(0)))
+        valueToDbgMetadata[loadInst->getOperand(0)].insert(loadInst->getMetadata("dbg"));
     }
     return true;
   }
@@ -163,7 +189,9 @@ bool StaticSlice::isASource (Worklist_t& Worklist, Processed_t& Processed,
   if (isa<Argument>(v)){
     return true;
   }
-  if (isa<AllocaInst>(v)){
+  
+  if (AllocaInst* allocaInst = const_cast<AllocaInst*>(dyn_cast<AllocaInst>(v))){
+    valueToDbgMetadata[allocaInst].insert(extractAllocaDebugMetadata(allocaInst));
     return true;
   }
   if (isa<Constant>(v)){
@@ -172,8 +200,7 @@ bool StaticSlice::isASource (Worklist_t& Worklist, Processed_t& Processed,
   if (isa<GlobalValue>(v)){
     return true;
   }
-  
-  
+   
   return false;
 }
 
@@ -188,14 +215,8 @@ bool StaticSlice::isASource (Worklist_t& Worklist, Processed_t& Processed,
 ///  V - A source that needs to be recorded.
 ///
 void StaticSlice::addSource(const Value * V, const Function * F) {
-
   // Record the source in the set of sources.
   Sources[F].insert (V);
-
-  // If the source is an argument, record it specially.
-  // [BK] Not used for the moment
-  if (const Argument * Arg = dyn_cast<Argument>(V))
-    Args.insert (Arg);
   return;
 }
 
@@ -258,14 +279,12 @@ void StaticSlice::findCallTargets (CallInst * callInst,
                     CallGraph.callee_begin(CS),
                     CallGraph.callee_end(CS));
   
-    //
     // Remove targets that do not match the call instruction's argument list.
-    removeIncompatibleTargets  (callInst, Targets);
+    removeIncompatibleTargets (callInst, Targets);
   }
   
-  // we have a +1, because the first operand is the function call itself
-  for (unsigned index = 0; index < callInst->getNumOperands() - 1; ++index) {
-    Value* operand = callInst->getOperand(index);    
+  for (unsigned index = 0; index < callInst->getNumOperands(); ++index) {
+    Value* operand = callInst->getOperand(index);
     operands.push_back(operand);
   }
   return;
@@ -274,7 +293,7 @@ void StaticSlice::findCallTargets (CallInst * callInst,
 
 ///
 void StaticSlice::handleSpecialCall(CallInst* callInst, 
-                                    std::vector<const Function*>& Targets,
+                                    vector<const Function*>& Targets,
                                     vector<Value*>& operands) {
   assert (callInst->getCalledFunction() && 
           "Special handling only works for direct function calls");
@@ -287,28 +306,23 @@ void StaticSlice::handleSpecialCall(CallInst* callInst,
     Value* v = callInst->getOperand(2);
     assert(isa<Function>(v) && 
            "The third operand of the pthread_create call must be a function");
-    const Function* f = dyn_cast<Function>(v);
+    Function* f = dyn_cast<Function>(v);
     Targets.push_back(f);
+    
     
     funcToCallInst[f] = callInst;
     
-    if(callInst->getCalledFunction() == f) {
-      cerr <<  "!@@@@@@2match" << endl;
-    }
-      
-    
     v = callInst->getOperand(3);
     assert(isa<Instruction>(v) && 
-           "The fourth operand of the pthread_create call must be a ");
+           "The fourth operand of the pthread_create call must be an instruction ");
     operands.push_back(callInst->getOperand(3));
-    
+    operands.push_back(f);
   }
 }
 
 
 ///
-void StaticSlice::extractArgs (Worklist_t& Worklist,
-                               Argument * Arg, 
+void StaticSlice::extractArgs (Argument * Arg, 
                                vector<const Function*>& Targets,
                                Processed_t& Processed,
                                vector<Value*>& operands,
@@ -328,12 +342,11 @@ void StaticSlice::extractArgs (Worklist_t& Worklist,
     // We need to explicity add special callers
     CallInst* specialCaller = funcToCallInst[*it];
     addSource(specialCaller, specialCaller->getParent()->getParent());
-    valueToDbgMetadata[specialCaller].push_back(specialCaller->getMetadata("dbg"));
+    valueToDbgMetadata[specialCaller].insert(specialCaller->getMetadata("dbg"));
   }
   
-  // Assert that the call and the called function have the same # of arguments.
-  assert ((calledFunc->getFunctionType()->getNumParams()) == operands.size()
-           && "Number of arguments doesn't match function signature!\n");
+  assert ((calledFunc->getFunctionType()->getNumParams() == operands.size() - 1) 
+          && "Number of arguments doesn't match function signature!\n");
 
   // Walk the argument list of the call instruction and look for actual
   // arguments needing labels.  Add them to our local worklist.
@@ -379,12 +392,13 @@ void StaticSlice::findArgSources (Argument* Arg,
   Module * M = Arg->getParent()->getParent();
   for (Module::iterator F = M->begin(); F != M->end(); ++F) {
     // Set of actual arguments needing labels
-    vector<Value*> actualArgs;
+    
 
     // Scan the function looking for call instructions.
     for (Function::iterator BB = F->begin(); BB != F->end(); ++BB) {
       for (BasicBlock::iterator II = BB->begin(); II != BB->end(); ++II) {
         if (CallInst* callInst = dyn_cast<CallInst>(II)) {
+          vector<Value*> actualArgs;
           // Ignore inline assembly code.
           if (isa<InlineAsm>(callInst->getOperand(0)))
             continue;
@@ -399,33 +413,33 @@ void StaticSlice::findArgSources (Argument* Arg,
           } else {
             findCallTargets (callInst, Targets, operands);
           }
-          if (!operands.empty()) {
-            if(Targets.size() > 1) {
-              for(unsigned index = 0; index < Targets.size(); ++index) {
-                cerr << Targets[index]->getName().str() << endl;
-              }
-            }
-            extractArgs(Worklist, Arg, Targets, Processed, operands, actualArgs, isSpecial);
+          if (!operands.empty())
+            extractArgs(Arg, Targets, Processed, operands, actualArgs, isSpecial);
+
+          if(!actualArgs.empty()) {
+            addSource(callInst, &*F);
+            valueToDbgMetadata[callInst].insert(callInst->getMetadata("dbg"));
+          }
+        
+          // Finally, find the sources for all the actual arguments needing labels.
+          vector<Value*>::iterator i;
+          for (i = actualArgs.begin(); i != actualArgs.end(); ++i) {
+            if (Instruction* instr = dyn_cast<Instruction>(*i))
+              valueToDbgMetadata[*i].insert(instr->getMetadata("dbg"));
+
+            Worklist.push_back (make_pair (*i, F));
+          }
+        
+          // Add the new items to process to the processed list.
+          for (unsigned index = 0; index < actualArgs.size(); ++index) {
+            if (!(isa<Constant>(actualArgs[index])))
+              Processed.insert (actualArgs[index]);
           }
         }
       }
     }
     
-    // Finally, find the sources for all the actual arguments needing labels.
-    vector<Value*>::iterator i;
-    for (i = actualArgs.begin(); i != actualArgs.end(); ++i) {
-      Value* V = *i;
-      if(Instruction* instr = dyn_cast<Instruction>(V)) {
-        valueToDbgMetadata[instr].push_back(instr->getMetadata("dbg"));
-      }
-      Worklist.push_back (make_pair (V, F));
-    }
-  
-    // Add the new items to process to the processed list.
-    for (unsigned index = 0; index < actualArgs.size(); ++index) {
-      if (!(isa<Constant>(actualArgs[index])))
-        Processed.insert (actualArgs[index]);
-    }
+
   }
 
   return;
@@ -457,7 +471,7 @@ void StaticSlice::findCallSources (CallInst* CI,
   // Find the function called by this call instruction
   vector<const Function *> Targets;
   vector<Value*> operands;
-  valueToDbgMetadata[CI].push_back(CI->getMetadata("dbg"));
+  valueToDbgMetadata[CI].insert(CI->getMetadata("dbg"));
   findCallTargets (CI, Targets, operands);
 
   // Process each potential function call target
@@ -491,7 +505,7 @@ void StaticSlice::findCallSources (CallInst* CI,
       // kasikci: may need to remove this, adding it so that there is
       // more clarity on kcachegrind with respect to where the return is
       addSource(RI, RI->getParent()->getParent());
-      valueToDbgMetadata[RI].push_back(RI->getMetadata("dbg"));
+      valueToDbgMetadata[RI].insert(RI->getMetadata("dbg"));
       
       if (Processed.find (RI) == Processed.end()) {
         Worklist.push_back (std::make_pair(RI, F));
@@ -557,9 +571,9 @@ void StaticSlice::findFlow (Value * Initial, const Function & Fu) {
           Worklist.push_back (std::make_pair(operand, f));
 
           if (PHINode* PHI = dyn_cast<PHINode>(v))
-            valueToDbgMetadata[operand].push_back(PHI->getIncomingBlock(index)->getTerminator()->getMetadata("dbg"));
+            valueToDbgMetadata[operand].insert(PHI->getIncomingBlock(index)->getTerminator()->getMetadata("dbg"));
           else if (!isa<CallInst>(operand)) {
-            valueToDbgMetadata[operand].push_back(instr->getMetadata("dbg"));
+            valueToDbgMetadata[operand].insert(instr->getMetadata("dbg"));
           }
           if (!(isa<Constant>(operand)))
             Processed.insert (operand);
@@ -587,14 +601,14 @@ void StaticSlice::findSources (Function & F) {
   // and process those the information flow of its inputs.
   assert (debugInfoManager->targetInstruction && "Target instruction cannot be NULL");
   if (LoadInst * instr = dyn_cast<LoadInst>(debugInfoManager->targetInstruction)) {
-    std::string Str;
+    string Str;
     raw_string_ostream oss(Str);
     instr->getOperand(0)->print(oss);
     errs() << "------------------------" << "\n";
     errs() << "     Target Operand    :" << "\n";
     errs() << "------------------------" << "\n";
     errs() << oss.str() << "\n";
-    valueToDbgMetadata[instr->getOperand(0)].push_back(instr->getMetadata("dbg"));
+    valueToDbgMetadata[instr->getOperand(0)].insert(instr->getMetadata("dbg"));
     findFlow (instr->getOperand(0), F); 
   }
   else
