@@ -309,9 +309,6 @@ void StaticSlice::handleSpecialCall(CallInst* callInst,
     Function* f = dyn_cast<Function>(v);
     Targets.push_back(f);
     
-    
-    funcToCallInst[f] = callInst;
-    
     v = callInst->getOperand(3);
     assert(isa<Instruction>(v) && 
            "The fourth operand of the pthread_create call must be an instruction ");
@@ -335,16 +332,10 @@ void StaticSlice::extractArgs (CallInst* callInst,
   vector<const Function*> Targets; 
   vector<Value*> operands; 
   
-  if (isSpecialCall(callInst)) {
-    handleSpecialCall(callInst, Targets, operands);
-    CallInst* specialCaller = funcToCallInst[*it];
-    addSource(specialCaller, specialCaller->getParent()->getParent());
-    valueToDbgMetadata[specialCaller].insert(specialCaller->getMetadata("dbg"));
-  } else {
-    calledFunc = Arg->getParent();
-    Targets = callTargetsCache[callInst].first;
-    operands = callTargetsCache[callInst].second;
-  }
+  calledFunc = Arg->getParent();
+  Targets = callTargetsCache[callInst].first;
+  operands = callTargetsCache[callInst].second;
+  
   
   TargetSet.insert (Targets.begin(), Targets.end());
   it = TargetSet.find (calledFunc);
@@ -588,13 +579,10 @@ void StaticSlice::findSources (Function & F) {
   // and process those the information flow of its inputs.
   assert (debugInfoManager->targetInstruction && "Target instruction cannot be NULL");
   if (LoadInst * instr = dyn_cast<LoadInst>(debugInfoManager->targetInstruction)) {
-    string Str;
-    raw_string_ostream oss(Str);
-    instr->getOperand(0)->print(oss);
     errs() << "------------------------" << "\n";
     errs() << "     Target Operand    :" << "\n";
     errs() << "------------------------" << "\n";
-    errs() << oss.str() << "\n";
+    errs() << *instr << "\n";
     valueToDbgMetadata[instr->getOperand(0)].insert(instr->getMetadata("dbg"));
     findFlow (instr->getOperand(0), F); 
   }
@@ -620,8 +608,12 @@ void StaticSlice::cacheCallInstructions(Module& module) {
           
           vector<const Function*> targets;
           vector<Value*> operands;
-              
-          findCallTargets(callInst, targets, operands);
+          
+          if (isSpecialCall(callInst))
+            handleSpecialCall(callInst, targets, operands);
+          else
+            findCallTargets(callInst, targets, operands);
+                     
           callTargetsCache[callInst] = make_pair(targets, operands); 
           
           callInstrCache[&*F].push_back(callInst);

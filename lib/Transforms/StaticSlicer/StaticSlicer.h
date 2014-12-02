@@ -215,8 +215,6 @@ struct StaticSlice : public ModulePass {
     std::set<std::string> filteredFunctions;
     std::set<std::string> specialFunctions;
     
-    std::map<const Function*, CallInst*> funcToCallInst;
-    
     typedef std::map<Function*, std::vector<CallInst*> > CallInstrCache_t;
     CallInstrCache_t callInstrCache;
     
