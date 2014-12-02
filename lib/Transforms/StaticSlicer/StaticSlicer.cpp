@@ -162,7 +162,7 @@ bool StaticSlice::isASource (Worklist_t& Worklist, Processed_t& Processed,
     if (const StoreInst* storeInst = dyn_cast<StoreInst>(u)){      
       if(v == storeInst->getOperand(1)) {   
         if(Processed.find (storeInst->getOperand(0)) == Processed.end()) {
-          Worklist.push_back (std::make_pair(storeInst->getOperand(0), F));
+          Worklist.push_back (make_pair(storeInst->getOperand(0), F));
           Processed.insert(storeInst->getOperand(0));
           if(AllocaInst* allocaInst = dyn_cast<AllocaInst>(storeInst->getOperand(1)))
             valueToDbgMetadata[storeInst->getOperand(0)].insert(extractAllocaDebugMetadata(allocaInst));
@@ -178,7 +178,7 @@ bool StaticSlice::isASource (Worklist_t& Worklist, Processed_t& Processed,
     // even we reached a load from memory, we would like to trace where that value 
     // might be coming from
     if(Processed.find (loadInst->getOperand(0)) == Processed.end()) {
-      Worklist.push_back (std::make_pair(loadInst->getOperand(0), F));
+      Worklist.push_back (make_pair(loadInst->getOperand(0), F));
       Processed.insert(loadInst->getOperand(0));
       if(!isa<AllocaInst>(loadInst->getOperand(0)))
         valueToDbgMetadata[loadInst->getOperand(0)].insert(loadInst->getMetadata("dbg"));
@@ -226,7 +226,7 @@ bool StaticSlice::isFilteredCall (CallInst* callInst) {
   Function* calledFunction = callInst->getCalledFunction();
   
   if(calledFunction) {
-    std::string calleeName = calledFunction->getName().str();
+    string calleeName = calledFunction->getName().str();
     if (filteredFunctions.find(calleeName) != filteredFunctions.end()){
       return true;
     } 
@@ -239,7 +239,7 @@ bool StaticSlice::isSpecialCall(CallInst* callInst) {
   Function* calledFunction = callInst->getCalledFunction();
   
   if(calledFunction) {
-    std::string funcName = calledFunction->getName().str();
+    string funcName = calledFunction->getName().str();
     if (specialFunctions.find(funcName) != specialFunctions.end()){
       return true;
     }
@@ -326,8 +326,8 @@ void StaticSlice::extractArgs (CallInst* callInst,
   // Skip this call site if it does not call the function to which the
   // specified argument belongs.
   Function* calledFunc = NULL;
-  std::set<const Function *> TargetSet;
-  std::set<const Function *>::iterator it;
+  set<const Function *> TargetSet;
+  set<const Function *>::iterator it;
   
   vector<const Function*> Targets; 
   vector<Value*> operands; 
@@ -388,7 +388,7 @@ void StaticSlice::findArgSources (Argument* Arg,
   // all the actual parameters.
   Module * M = Arg->getParent()->getParent();
   for (Module::iterator F = M->begin(); F != M->end(); ++F) {
-    std::vector<CallInst*>::iterator it;
+    vector<CallInst*>::iterator it;
     for (it = callInstrCache[&*F].begin(); it != callInstrCache[&*F].end(); ++it) {          
       vector<Value*> actualArgs;
       
@@ -476,7 +476,7 @@ void StaticSlice::findCallSources (CallInst* CI,
 
     // Finally, add any return instructions that have not already been
     // processed to the worklist
-    std::vector<ReturnInst*>::iterator ri;
+    vector<ReturnInst*>::iterator ri;
     for (ri = NewReturns.begin(); ri != NewReturns.end(); ++ri) {
       ReturnInst* RI = *ri;
       
@@ -486,7 +486,7 @@ void StaticSlice::findCallSources (CallInst* CI,
       valueToDbgMetadata[RI].insert(RI->getMetadata("dbg"));
       
       if (Processed.find (RI) == Processed.end()) {
-        Worklist.push_back (std::make_pair(RI, F));
+        Worklist.push_back (make_pair(RI, F));
         Processed.insert (RI);
       }
     }
@@ -509,7 +509,7 @@ void StaticSlice::findFlow (Value * Initial, const Function & Fu) {
 
   // Worklist
   Worklist_t Worklist;
-  Worklist.push_back (std::make_pair(Initial, &Fu));
+  Worklist.push_back (make_pair(Initial, &Fu));
 
   while (Worklist.size()) {
     //
@@ -546,7 +546,7 @@ void StaticSlice::findFlow (Value * Initial, const Function & Fu) {
       for (unsigned index = 0; index < user->getNumOperands(); ++index) {
         Value* operand = user->getOperand(index); 
         if (Processed.find (operand) == Processed.end()) {
-          Worklist.push_back (std::make_pair(operand, f));
+          Worklist.push_back (make_pair(operand, f));
 
           if (PHINode* PHI = dyn_cast<PHINode>(v))
             valueToDbgMetadata[operand].insert(PHI->getIncomingBlock(index)->getTerminator()->getMetadata("dbg"));
@@ -621,7 +621,6 @@ void StaticSlice::cacheCallInstructions(Module& module) {
       }
     }
   }
-  
 }
 
 /// Method: runOnModule()
