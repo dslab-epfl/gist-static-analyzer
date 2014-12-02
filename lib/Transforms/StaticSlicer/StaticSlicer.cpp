@@ -322,28 +322,34 @@ void StaticSlice::handleSpecialCall(CallInst* callInst,
 
 
 ///
-void StaticSlice::extractArgs (Argument * Arg, 
-                               vector<const Function*>& Targets,
+void StaticSlice::extractArgs (CallInst* callInst,
+                               Argument * Arg, 
                                Processed_t& Processed,
-                               vector<Value*>& operands,
-                               vector<Value*>& actualArgs,
-                               bool isSpecial) {
+                               vector<Value*>& actualArgs) {
   // Skip this call site if it does not call the function to which the
   // specified argument belongs.
-  Function* calledFunc = Arg->getParent();
+  Function* calledFunc = NULL;
   std::set<const Function *> TargetSet;
   std::set<const Function *>::iterator it;
+  
+  vector<const Function*> Targets; 
+  vector<Value*> operands; 
+  
+  if (isSpecialCall(callInst)) {
+    handleSpecialCall(callInst, Targets, operands);
+    CallInst* specialCaller = funcToCallInst[*it];
+    addSource(specialCaller, specialCaller->getParent()->getParent());
+    valueToDbgMetadata[specialCaller].insert(specialCaller->getMetadata("dbg"));
+  } else {
+    calledFunc = Arg->getParent();
+    Targets = callTargetsCache[callInst].first;
+    operands = callTargetsCache[callInst].second;
+  }
+  
   TargetSet.insert (Targets.begin(), Targets.end());
   it = TargetSet.find (calledFunc);
   if (it == TargetSet.end())
     return;
-  
-  if (isSpecial) {
-    // We need to explicity add special callers
-    CallInst* specialCaller = funcToCallInst[*it];
-    addSource(specialCaller, specialCaller->getParent()->getParent());
-    valueToDbgMetadata[specialCaller].insert(specialCaller->getMetadata("dbg"));
-  }
   
   assert ((calledFunc->getFunctionType()->getNumParams() == operands.size() - 1) 
           && "Number of arguments doesn't match function signature!\n");
@@ -399,14 +405,7 @@ void StaticSlice::findArgSources (Argument* Arg,
       vector <const Function*> Targets;
       vector<Value*> operands;
       // Some functions such as pthread_create require sepcial handling
-      bool isSpecial = isSpecialCall(*it);
-      if (isSpecial) {
-        handleSpecialCall(*it, Targets, operands);
-      } else {
-        findCallTargets (*it, Targets, operands);
-      }
-      if (!operands.empty())
-        extractArgs(Arg, Targets, Processed, operands, actualArgs, isSpecial);
+      extractArgs(*it, Arg, Processed, actualArgs);
 
       if(!actualArgs.empty()) {
         addSource(*it, &*F);

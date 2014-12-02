@@ -183,9 +183,10 @@ struct StaticSlice : public ModulePass {
     bool isFilteredCall (CallInst* callInst);
     bool isSpecialCall  (CallInst* callInst);
     
-    void extractArgs (Argument* Arg,std::vector<const Function *>& Targets,
-                      Processed_t& Processed, std::vector<Value*>& operands,
-                      std::vector<Value*>& actualArgs, bool isSpecial);
+    void extractArgs (CallInst* callInst,
+                      Argument * Arg, 
+                      Processed_t& Processed,
+                      std::vector<Value*>& actualArgs);
     
     void generateSliceReport(Module& module);
     
