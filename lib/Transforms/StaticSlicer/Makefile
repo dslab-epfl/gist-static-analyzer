@@ -1,4 +1,4 @@
-##===- lib/Transforms/Hello/Makefile -----------------------*- Makefile -*-===##
+##===- lib/Transforms/StaticSlicer/Makefile -----------------------*- Makefile -*-===##
 #
 #                     The LLVM Compiler Infrastructure
 #
