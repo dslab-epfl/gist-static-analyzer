@@ -113,7 +113,7 @@ bool DebugInfoManager::runOnModule(Module& m) {
         }
      }
    }
-  return true;
+  return false;
 }
 
 char DebugInfoManager::ID = 0;
