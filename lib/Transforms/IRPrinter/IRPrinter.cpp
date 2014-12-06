@@ -1,4 +1,4 @@
-//===- Hello.cpp - Example code from "Writing an LLVM Pass" ---------------===//
+//===- IRPrinter.cpp - -----------------------------------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements two versions of the LLVM "Hello World" pass described
-// in docs/WritingAnLLVMPass.html
+// This file implements a fast IR printing pass
+// 
 //
 //===----------------------------------------------------------------------===//
 
@@ -17,40 +17,46 @@
 #include "llvm/Function.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/Statistic.h"
+
 using namespace llvm;
 
-STATISTIC(HelloCounter, "Counts number of functions greeted");
-
-namespace {
-  // Hello - The first implementation, without getAnalysisUsage.
-  struct Hello : public FunctionPass {
-    static char ID; // Pass identification, replacement for typeid
-    Hello() : FunctionPass(ID) {}
-
-    virtual bool runOnFunction(Function &F) {
-      ++HelloCounter;
-      errs() << "Hello: ";
-      errs().write_escaped(F.getName()) << '\n';
-      return false;
-    }
-  };
-}
-
-char Hello::ID = 0;
-static RegisterPass<Hello> X("hello", "Hello World Pass");
 
 namespace {
   // Hello2 - The second implementation with getAnalysisUsage implemented.
-  struct Hello2 : public FunctionPass {
+  struct IRPrinter : public ModulePass {
     static char ID; // Pass identification, replacement for typeid
-    Hello2() : FunctionPass(ID) {}
+    IRPrinter() : ModulePass(ID) {}
 
-    virtual bool runOnFunction(Function &F) {
-      ++HelloCounter;
-      errs() << "Hello: ";
-      errs().write_escaped(F.getName()) << '\n';
-      return false;
-    }
+    virtual bool runOnModule(Module &m) {
+      /*
+      for (Module::iterator fi = m.begin(), fe = m.end(); fi != fe; ++fi) {
+        for (Function::iterator bi = fi->begin(), be = fi->end(); bi != be; ++bi) {
+          // TODO: Improve this comparison by getting mangled names from the elf debug information
+          if(fi->getName().find(StringRef(FunctionName)) != StringRef::npos)
+            for (BasicBlock::iterator ii = bi->begin(), ie = bi->end(); ii != ie; ++ii) { 
+              if (MDNode *N = ii->getMetadata("dbg")) {
+                DILocation Loc(N);
+                unsigned lineNumber = Loc.getLineNumber();
+                StringRef fileName = Loc.getFilename();
+                if(lineNumber == LineNumber) {
+                  // Instead of assuming the offending instruction is a load, we may filter for several
+                  // other unlikely instructions like bitcasts and instrinsics
+                  if (isa<LoadInst>(*ii)) {
+                    StringRef directory = Loc.getDirectory();
+                    errs() << "------------------------" << "\n";
+                    errs() << "Target LLVM instruction:" << "\n";
+                    errs() << "------------------------" << "\n";
+                    errs() << "\t" << *ii << "\n\t|--> " << directory << "/" << fileName<< " : " << lineNumber << "\n\n";
+                    // trackUseDefChain(*ii);
+                    targetInstruction = &(*ii);
+                    targetFunction = &(*fi);
+                  }
+                }
+              }
+            }
+        }
+      }
+*/    }
 
     // We don't modify the program, so we preserve all analyses
     virtual void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -59,6 +65,6 @@ namespace {
   };
 }
 
-char Hello2::ID = 0;
-static RegisterPass<Hello2>
-Y("hello2", "Hello World Pass (with getAnalysisUsage implemented)");
+char IRPrinter::ID = 0;
+static RegisterPass<IRPrinter>
+Y("irprinter", "A fast IRPrinter");
