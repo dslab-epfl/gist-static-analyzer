@@ -137,27 +137,20 @@ struct StaticSlice : public ModulePass {
     };
 
     virtual void releaseMemory () {
-      Sources.clear();
+      sources.clear();
     }
 
     //////////////////////////////////////////////////////////////////////////
     // Public type definitions
-    //////////////////////////////////////////////////////////////////////////
+    //////////////////////////////////////////////////////////////////////////   
     typedef std::set<const Value*> SourceSet;
     typedef std::map<const Function*, SourceSet > SourceMap;
     typedef SourceSet::iterator src_iterator;
-
+    typedef std::vector<const Function*>::iterator fun_iterator;
+    
     //////////////////////////////////////////////////////////////////////////
     // Public, class specific methods
     //////////////////////////////////////////////////////////////////////////
-    src_iterator src_begin(const Function * F) {
-      return Sources[F].begin();
-    }
-
-    src_iterator src_end(const Function * F) {
-      return Sources[F].end();
-    }
-
     const std::set<const PHINode *> & getPHINodes (void) {
       return PhiNodes;
     }
@@ -191,7 +184,7 @@ struct StaticSlice : public ModulePass {
     void generateSliceReport(Module& module);
     
     void createDebugMetadataString(std::string& str, 
-                                   Function* f,
+                                   const Function* f,
                                    MDNode* node);
     
     void cacheCallInstructions(Module& module);
@@ -199,7 +192,8 @@ struct StaticSlice : public ModulePass {
     MDNode* extractAllocaDebugMetadata (AllocaInst* allocaInst);
     
     // Map from values needing labels to sources from which those labels derive
-    SourceMap Sources;
+    SourceMap sources;
+    std::vector<const Function*> orderedSources;
 
     // Set of phi nodes that will need special processing
     std::set<const PHINode *> PhiNodes;

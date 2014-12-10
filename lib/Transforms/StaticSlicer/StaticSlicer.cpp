@@ -82,25 +82,25 @@ void StaticSlice::generateSliceReport(Module& module) {
   string instrStr = valueOss.str();
   logFile << removeLeadingWhitespace(instrStr) << "\n" << targetDebugLoc << "\n";
   
-  logFile << "Source map size: " << Sources.size() << endl;
+  logFile << "Source map size: " << sources.size() << endl;
   logFile << "------------------------" << "\n";
   
-  for (Module::iterator fi = module.begin(); fi != module.end(); ++fi) {
-    for (src_iterator si = src_begin(fi); si != src_end(fi); ++si) {
+  for (fun_iterator fi = orderedSources.begin(); fi != orderedSources.end(); ++fi) {
+    for (src_iterator si = sources[*fi].begin(); si != sources[*fi].end(); ++si) {
       Value* v = const_cast<Value*>(*si);
       string valueStr;
       raw_string_ostream valueOss(valueStr);
       v->print(valueOss);
       instrStr = valueOss.str();
-      /*assert((valueToDbgMetadata[v].size() > 0) && 
+      assert((valueToDbgMetadata[v].size() > 0) && 
              "we should have had the debug information for this value");
-      */
+      
       string debugLoc("");
     
-        set<MDNode*>::iterator mi;
-        for (mi = valueToDbgMetadata[v].begin(); mi != valueToDbgMetadata[v].end(); ++mi) {
-          createDebugMetadataString(debugLoc, &*fi, *mi);
-        }
+      set<MDNode*>::iterator mi;
+      for (mi = valueToDbgMetadata[v].begin(); mi != valueToDbgMetadata[v].end(); ++mi) {
+        createDebugMetadataString(debugLoc, *fi, *mi);
+      }
     
       logFile << removeLeadingWhitespace(instrStr) << "\n" << debugLoc << "\n";
     }
@@ -111,7 +111,7 @@ void StaticSlice::generateSliceReport(Module& module) {
 
 
 void StaticSlice::createDebugMetadataString(string& str, 
-                                            Function* f, 
+                                            const Function* f, 
                                             MDNode* node) {
   if (node) {    
     DILocation loc(node);
@@ -215,8 +215,11 @@ bool StaticSlice::isASource (Worklist_t& Worklist, Processed_t& Processed,
 ///  V - A source that needs to be recorded.
 ///
 void StaticSlice::addSource(const Value * V, const Function * F) {
+  if(sources.find(F) == sources.end())
+    orderedSources.push_back(F);
   // Record the source in the set of sources.
-  Sources[F].insert (V);
+  sources[F].insert (V);
+
   return;
 }
 
