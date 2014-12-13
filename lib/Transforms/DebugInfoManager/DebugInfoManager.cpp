@@ -14,13 +14,13 @@
 using namespace llvm;
 using namespace std;
 
-static cl::opt<string> FileName("file-name",
+static cl::opt<string> TargetFileName("target-file-name",
        cl::desc("The file name that contains the target instruction"),
        cl::init(""));
-static cl::opt<string> FunctionName("function-name",
+static cl::opt<string> TargetFunctionName("target-function-name",
        cl::desc("The function where the instruction lies"),
        cl::init(""));
-static cl::opt<unsigned> LineNumber("line-number",
+static cl::opt<unsigned> TargetLineNumber("target-line-number",
        cl::desc("The line number of the target instruction"),
        cl::init(0));
 static cl::opt<bool> Debug("debug-debug-info-manager",
@@ -34,7 +34,7 @@ static cl::opt<bool> FindMultBBCode("find-mult-bb",
 DebugInfoManager::DebugInfoManager() : ModulePass(ID){
   if (FindMultBBCode)
     ;
-  else if (LineNumber == 0 || FileName == "" || FunctionName == "") {
+  else if (TargetLineNumber == 0 || TargetFileName == "" || TargetFunctionName == "") {
     errs() << "\nYou need to provide the file name, function name, and "
            << "the line number to retrieve the LLVM IR instruction!!!" << "\n\n";
               exit(1);
@@ -95,13 +95,13 @@ bool DebugInfoManager::runOnModule(Module& m) {
       errs() << "Function: " << fi->getName() << "\n";
     for (Function::iterator bi = fi->begin(), be = fi->end(); bi != be; ++bi) {
       // TODO: Improve this comparison by getting mangled names from the elf debug information
-      if(fi->getName().find(StringRef(FunctionName)) != StringRef::npos)
+      if(fi->getName().find(StringRef(TargetFunctionName)) != StringRef::npos)
         for (BasicBlock::iterator ii = bi->begin(), ie = bi->end(); ii != ie; ++ii) { 
           if (MDNode *N = ii->getMetadata("dbg")) {
             DILocation Loc(N);
             unsigned lineNumber = Loc.getLineNumber();
             StringRef fileName = Loc.getFilename();
-            if(lineNumber == LineNumber) {
+            if(lineNumber == TargetLineNumber) {
               // Instead of assuming the offending instruction is a load, we may filter for several
               // other unlikely instructions like bitcasts and instrinsics
               if (isa<LoadInst>(*ii)) {
