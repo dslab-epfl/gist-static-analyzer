@@ -30,6 +30,7 @@ static cl::opt<bool> FindMultBBCode("find-mult-bb",
        cl::desc("Find and count the lines of source code that have multi-basic-block LLVM implementations"),
        cl::init(false));
 
+
 DebugInfoManager::DebugInfoManager() : ModulePass(ID){
   if (FindMultBBCode)
     ;
@@ -40,14 +41,17 @@ DebugInfoManager::DebugInfoManager() : ModulePass(ID){
   }
 }
 
+
 const char* DebugInfoManager::getPassName() const {
   return "DebugInfoLocator";
 }
+
 
 void DebugInfoManager::getAnalysisUsage(AnalysisUsage &au) const {
   // We don't modify the program and preserve all the passes
   au.setPreservesAll();
 }
+
 
 void DebugInfoManager::printDebugInfo(Instruction& instr) {
   MDNode *N = instr.getMetadata("dbg");
@@ -57,6 +61,7 @@ void DebugInfoManager::printDebugInfo(Instruction& instr) {
   StringRef directory = Loc.getDirectory();
   errs() << "\t\t" << directory << "/" << fileName<< " : " << lineNumber << "\n ";
 }
+
 
 void DebugInfoManager::trackUseDefChain(Value& value){
   string Str;
@@ -81,6 +86,7 @@ void DebugInfoManager::trackUseDefChain(Value& value){
     //printDebugInfo(*geptr);
   }
 }
+
 
 // TODO: We should cache the results once they are computed for a given binary.
 bool DebugInfoManager::runOnModule(Module& m) {
