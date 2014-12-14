@@ -37,52 +37,6 @@ static cl::opt<std::string> GftFileName("gft-file-name",
        cl::init(""));
 
 
-bool isInPTTrace(std::string str) {return false;}
-
-//
-// Function: removeIncompatibleTargets()
-//
-// Description:
-//  If the call is an indirect call, remove all targets from the list that have
-//  an incompatible number of arguments.
-//
-// Inputs:
-//  CI      - The call instruction.
-//  Targets - The set of function call targets previously computed for this
-//            call instruction.
-//
-// Outputs:
-//  Targets - The same set as was input with mismatching targets removed.
-//
-// Note:
-//  This function is here because it is needed by several classes.
-//
-static void inline
-removeIncompatibleTargets (const CallInst* CI,
-                           std::vector<const Function *> & Targets) {
-  // If the call is a direct call, do not look for incompatibility.
-  //  if (CI->getCalledFunction()) 
-  //    return;
-
-  // Remove any function from the set of targets that has the wrong number of
-  // arguments.  Find all the functions to remove first and record them in a
-  // container so that we don't invalidate any iterators.
-  std::vector<const Function*>::iterator it = Targets.begin();
-  
-  while(it != Targets.end()) {
-    if((*it)->getFunctionType()->getNumParams() != (CI->getNumOperands() - 1))
-      it = Targets.erase(it);
-    else if(!isInPTTrace((*it)->getName().str())) {    
-      bool isInPTTrace(std::string str);
-      it = Targets.erase(it);
-    }
-    else 
-      ++it;
-  }
-
-  return;
-}
-
 // Module Pass: StaticSlice
 //
 // Description:
@@ -134,9 +88,9 @@ struct StaticSlice : public ModulePass {
       specialFunctions.insert("pthread_create");
       
       std::ifstream file(StringRef(GftFileName).str().c_str() );
-      std::string str; 
-      while (std::getline(file, str)) {
-        ;
+      std::string funcName;
+      while (std::getline(file, funcName)) {
+        ptFunctionSet.insert(funcName);
       }
     }
     virtual bool runOnModule (Module& M);
@@ -207,6 +161,11 @@ struct StaticSlice : public ModulePass {
     void cacheCallInstructions(Module& module);
     
     MDNode* extractAllocaDebugMetadata (AllocaInst* allocaInst);
+    
+    void removeIncompatibleTargets (const CallInst* CI,
+                               std::vector<const Function *> & Targets);
+    
+    bool isInPTTrace(std::string str);
     
     // Map from values needing labels to sources from which those labels derive
     SourceMap sources;

@@ -250,6 +250,56 @@ bool StaticSlice::isSpecialCall(CallInst* callInst) {
   return false;
 }
 
+
+bool StaticSlice::isInPTTrace(string str) {
+  return false;
+}
+
+
+//
+// Function: removeIncompatibleTargets()
+//
+// Description:
+//  If the call is an indirect call, remove all targets from the list that have
+//  an incompatible number of arguments.
+//
+// Inputs:
+//  CI      - The call instruction.
+//  Targets - The set of function call targets previously computed for this
+//            call instruction.
+//
+// Outputs:
+//  Targets - The same set as was input with mismatching targets removed.
+//
+// Note:
+//  This function is here because it is needed by several classes.
+//
+void StaticSlice::removeIncompatibleTargets (const CallInst* CI,
+                           std::vector<const Function *> & Targets) {
+  // If the call is a direct call, do not look for incompatibility.
+  //  if (CI->getCalledFunction()) 
+  //    return;
+
+  // Remove any function from the set of targets that has the wrong number of
+  // arguments.  Find all the functions to remove first and record them in a
+  // container so that we don't invalidate any iterators.
+  std::vector<const Function*>::iterator it = Targets.begin();
+  
+  while(it != Targets.end()) {
+    if((*it)->getFunctionType()->getNumParams() != (CI->getNumOperands() - 1))
+      it = Targets.erase(it);
+    else if(!isInPTTrace((*it)->getName().str())) {   
+      cerr << "Erasing: " << (*it)->getName().str() << endl;
+      it = Targets.erase(it);
+    }
+    else 
+      ++it;
+  }
+
+  return;
+}
+
+
 /// Method: findCallTargets()
 ///
 /// Description:
