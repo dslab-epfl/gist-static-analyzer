@@ -453,6 +453,7 @@ void StaticSlice::findCallSources (CallInst* CI,
   vector<const Function *> Targets;
   vector<Value*> operands;
   valueToDbgMetadata[CI].insert(CI->getMetadata("dbg"));
+  // TODO: cache should be handling this, remove 
   findCallTargets (CI, Targets, operands);
 
   // Process each potential function call target
@@ -594,6 +595,7 @@ void StaticSlice::findSources (Function & F) {
 
   return;
 }
+
 
 void StaticSlice::cacheCallInstructions(Module& module) {
   for (Module::iterator F = module.begin(); F != module.end(); ++F) {

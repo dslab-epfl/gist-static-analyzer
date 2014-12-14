@@ -28,8 +28,16 @@
 #include <map>
 #include <set>
 #include <vector>
+#include <fstream>
 
 using namespace llvm;
+
+static cl::opt<std::string> GftFileName("gft-file-name",
+       cl::desc("The file name that contains Intel PT function trace"),
+       cl::init(""));
+
+
+bool isInPTTrace(std::string str) {return false;}
 
 //
 // Function: removeIncompatibleTargets()
@@ -53,9 +61,8 @@ static void inline
 removeIncompatibleTargets (const CallInst* CI,
                            std::vector<const Function *> & Targets) {
   // If the call is a direct call, do not look for incompatibility.
-  // [BK] We shouldn't be getting here with a direct function call
-  if (CI->getCalledFunction()) 
-    return;
+  //  if (CI->getCalledFunction()) 
+  //    return;
 
   // Remove any function from the set of targets that has the wrong number of
   // arguments.  Find all the functions to remove first and record them in a
@@ -65,6 +72,10 @@ removeIncompatibleTargets (const CallInst* CI,
   while(it != Targets.end()) {
     if((*it)->getFunctionType()->getNumParams() != (CI->getNumOperands() - 1))
       it = Targets.erase(it);
+    else if(!isInPTTrace((*it)->getName().str())) {    
+      bool isInPTTrace(std::string str);
+      it = Targets.erase(it);
+    }
     else 
       ++it;
   }
@@ -121,6 +132,12 @@ struct StaticSlice : public ModulePass {
       // care when tracing call chains, as they are not explicitly
       // called, but the runtime calls them
       specialFunctions.insert("pthread_create");
+      
+      std::ifstream file(StringRef(GftFileName).str().c_str() );
+      std::string str; 
+      while (std::getline(file, str)) {
+        ;
+      }
     }
     virtual bool runOnModule (Module& M);
 
@@ -217,6 +234,7 @@ struct StaticSlice : public ModulePass {
     
     std::ofstream debugLogFile;
      
+    std::set<std::string> ptFunctionSet;
 };
 
 #endif
