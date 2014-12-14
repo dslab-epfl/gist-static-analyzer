@@ -32,7 +32,7 @@
 
 using namespace llvm;
 
-static cl::opt<std::string> GftFileName("gft-file-name",
+static cl::opt<std::string> GftFileName("gft-file",
        cl::desc("The file name that contains Intel PT function trace"),
        cl::init(""));
 
