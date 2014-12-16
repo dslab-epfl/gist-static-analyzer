@@ -32,7 +32,7 @@
 
 using namespace llvm;
 
-static cl::opt<std::string> GftFileName("gft-file",
+static cl::opt<std::string> GftFile("gft-file",
        cl::desc("The file name that contains Intel PT function trace"),
        cl::init(""));
 
@@ -87,7 +87,7 @@ struct StaticSlice : public ModulePass {
       // called, but the runtime calls them
       specialFunctions.insert("pthread_create");
       
-      std::ifstream file(StringRef(GftFileName).str().c_str() );
+      std::ifstream file(StringRef(GftFile).str().c_str() );
       std::string funcName;
       while (std::getline(file, funcName)) {
         ptFunctionSet.insert(funcName);

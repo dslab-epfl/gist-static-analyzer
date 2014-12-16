@@ -66,10 +66,6 @@ void StaticSlice::generateSliceReport(Module& module) {
   ofstream logFile;
   logFile.open ("slice.log");
   
-  logFile << "\n------------------------" << "\n";
-  logFile << "      Static Slice     :" << "\n";
-  logFile << "------------------------" << "\n";
-  
   string targetDebugLoc = "Source";
   createDebugMetadataString(targetDebugLoc, 
                             debugInfoManager->targetFunction,
@@ -82,7 +78,16 @@ void StaticSlice::generateSliceReport(Module& module) {
   string instrStr = valueOss.str();
   logFile << removeLeadingWhitespace(instrStr) << "\n" << targetDebugLoc << "\n";
   
-  logFile << "Source map size: " << sources.size() << endl;
+  int sliceSize = 0;
+  for (fun_iterator fi = orderedSources.begin(); fi != orderedSources.end(); ++fi) {
+    for (src_iterator si = sources[*fi].begin(); si != sources[*fi].end(); ++si) {
+      sliceSize++;
+    }
+  }
+  
+  logFile << "\n------------------------" << "\n";
+  logFile << ": Static Slice         :" << "\n";
+  logFile << ":  size: " << sliceSize << endl;
   logFile << "------------------------" << "\n";
   
   for (fun_iterator fi = orderedSources.begin(); fi != orderedSources.end(); ++fi) {
@@ -252,7 +257,7 @@ bool StaticSlice::isSpecialCall(CallInst* callInst) {
 
 
 bool StaticSlice::isInPTTrace(string str) {
-  return false;
+  return ptFunctionSet.find(str) != ptFunctionSet.end();
 }
 
 
@@ -275,7 +280,7 @@ bool StaticSlice::isInPTTrace(string str) {
 //  This function is here because it is needed by several classes.
 //
 void StaticSlice::removeIncompatibleTargets (const CallInst* CI,
-                           std::vector<const Function *> & Targets) {
+                                             vector<const Function *> & Targets) {
   // If the call is a direct call, do not look for incompatibility.
   //  if (CI->getCalledFunction()) 
   //    return;
@@ -289,11 +294,11 @@ void StaticSlice::removeIncompatibleTargets (const CallInst* CI,
     if((*it)->getFunctionType()->getNumParams() != (CI->getNumOperands() - 1))
       it = Targets.erase(it);
     else if(!isInPTTrace((*it)->getName().str())) {   
-      cerr << "Erasing: " << (*it)->getName().str() << endl;
       it = Targets.erase(it);
     }
-    else 
+    else {
       ++it;
+    }
   }
 
   return;
@@ -331,10 +336,9 @@ void StaticSlice::findCallTargets (CallInst * callInst,
     Targets.insert (Targets.end(),
                     CallGraph.callee_begin(CS),
                     CallGraph.callee_end(CS));
-  
-    // Remove targets that do not match the call instruction's argument list.
-    removeIncompatibleTargets (callInst, Targets);
   }
+
+  removeIncompatibleTargets (callInst, Targets);
   
   for (unsigned index = 0; index < callInst->getNumOperands(); ++index) {
     Value* operand = callInst->getOperand(index);
