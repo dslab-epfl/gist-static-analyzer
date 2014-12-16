@@ -257,7 +257,12 @@ bool StaticSlice::isSpecialCall(CallInst* callInst) {
 
 
 bool StaticSlice::isInPTTrace(string str) {
-  return ptFunctionSet.find(str) != ptFunctionSet.end();
+  if(ptTraceGiven)
+    return ptFunctionSet.find(str) != ptFunctionSet.end();
+  else {
+    return true;
+    
+  } 
 }
 
 
@@ -293,7 +298,7 @@ void StaticSlice::removeIncompatibleTargets (const CallInst* CI,
   while(it != Targets.end()) {
     if((*it)->getFunctionType()->getNumParams() != (CI->getNumOperands() - 1))
       it = Targets.erase(it);
-    else if(!isInPTTrace((*it)->getName().str())) {   
+    else if(!isInPTTrace((*it)->getName().str())) {
       it = Targets.erase(it);
     }
     else {

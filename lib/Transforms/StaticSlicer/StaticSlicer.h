@@ -50,7 +50,7 @@ struct StaticSlice : public ModulePass {
     //////////////////////////////////////////////////////////////////////////
 
     static char ID;
-    StaticSlice () : ModulePass (ID), dsaPass(NULL), debugInfoManager(NULL) {
+    StaticSlice () : ModulePass (ID), dsaPass(NULL), debugInfoManager(NULL) , ptTraceGiven(true){
       // Filter the below set of functions from potential  
       // call sites for the arguments we are tracking
       filteredFunctions.insert("fwrite");
@@ -87,10 +87,13 @@ struct StaticSlice : public ModulePass {
       // called, but the runtime calls them
       specialFunctions.insert("pthread_create");
       
-      std::ifstream file(StringRef(GftFile).str().c_str() );
-      std::string funcName;
-      while (std::getline(file, funcName)) {
-        ptFunctionSet.insert(funcName);
+      if(StringRef(GftFile).empty())
+        ptTraceGiven = false;
+      else {
+        std::ifstream file(StringRef(GftFile).str().c_str());
+        std::string funcName;
+        while (std::getline(file, funcName))
+          ptFunctionSet.insert(funcName);
       }
     }
     virtual bool runOnModule (Module& M);
@@ -177,6 +180,7 @@ struct StaticSlice : public ModulePass {
     // Passes used by this pass
     EQTDDataStructures* dsaPass;
     DebugInfoManager* debugInfoManager;
+    bool ptTraceGiven;
     
     // For all the source values we save, try to keep as accurate debug information as possible
     // The debug information for a given value may be 
