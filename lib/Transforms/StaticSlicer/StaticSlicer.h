@@ -87,10 +87,10 @@ struct StaticSlice : public ModulePass {
       // called, but the runtime calls them
       specialFunctions.insert("pthread_create");
       
-      if(StringRef(GftFile).empty())
+      std::ifstream file(StringRef(GftFile).str().c_str());
+      if(!file.good())
         ptTraceGiven = false;
-      else {
-        std::ifstream file(StringRef(GftFile).str().c_str());
+      else {  
         std::string funcName;
         while (std::getline(file, funcName))
           ptFunctionSet.insert(funcName);

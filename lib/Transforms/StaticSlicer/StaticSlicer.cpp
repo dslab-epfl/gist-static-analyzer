@@ -45,6 +45,8 @@ MDNode* StaticSlice::extractAllocaDebugMetadata (AllocaInst* allocaInst) {
   for (BasicBlock::const_iterator it = parent->begin(); it != parent->end(); ++it) {
     if (const DbgDeclareInst* dbgDeclareInst = dyn_cast<DbgDeclareInst>(&*it)) {        
       Value* value = cast<MDNode>(dbgDeclareInst->getOperand(0))->getOperand(0);
+      if(!value)
+        return NULL;
       assert(isa<AllocaInst>(value) && "The operand must be an alloca");
       return dbgDeclareInst->getMetadata("dbg");
     }
@@ -300,6 +302,7 @@ void StaticSlice::removeIncompatibleTargets (const CallInst* CI,
       it = Targets.erase(it);
     else if(!isInPTTrace((*it)->getName().str())) {
       it = Targets.erase(it);
+      cerr << "removing:" << (*it)->getName().str() << endl;
     }
     else {
       ++it;
@@ -525,6 +528,8 @@ void StaticSlice::findCallSources (CallInst* CI,
     Function * F = const_cast<Function *>((Targets.back()));
     Targets.pop_back ();
 
+    if(F->getReturnType() == VoidType)
+      return;
     // Ensure that the function's return value is not void
     assert ((F->getReturnType() != VoidType) && "Want void function label!\n");
 
