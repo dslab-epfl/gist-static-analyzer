@@ -80,20 +80,22 @@ void StaticSlice::generateSliceReport(Module& module) {
   string instrStr = valueOss.str();
   logFile << removeLeadingWhitespace(instrStr) << "\n" << targetDebugLoc << "\n";
   
-  int sliceSize = 0;
+  unsigned sliceSize = 0;
   for (fun_iterator fi = orderedSources.begin(); fi != orderedSources.end(); ++fi) {
     for (src_iterator si = sources[*fi].begin(); si != sources[*fi].end(); ++si) {
       Value* v = const_cast<Value*>(*si);
-      for (set<MDNode*>::iterator mi = valueToDbgMetadata[v].begin(); mi != valueToDbgMetadata[v].end(); ++mi) {
-        sliceSize++;
-      }
+        sliceSize += valueToDbgMetadata[v].size();
     }
   }
   
   logFile << "\n------------------------" << "\n";
   logFile << ": Static Slice         :" << "\n";
+  logFile << ":  funcs: " << orderedSources.size() << endl;
   logFile << ":  size: " << sliceSize << endl;
+  logFile << ":  call cache size: " << callInstrCache.size() << endl;
   logFile << "------------------------" << "\n";
+ 
+  return;
   
   for (fun_iterator fi = orderedSources.begin(); fi != orderedSources.end(); ++fi) {
     for (src_iterator si = sources[*fi].begin(); si != sources[*fi].end(); ++si) {
@@ -460,8 +462,6 @@ void StaticSlice::findArgSources (Argument* Arg,
       vector<Value*> actualArgs;
       
       // Find the set of functions called by this call instruction.
-      vector <const Function*> Targets;
-      vector<Value*> operands;
       // Some functions such as pthread_create require sepcial handling
       extractArgs(*it, Arg, Processed, actualArgs);
 
@@ -518,8 +518,10 @@ void StaticSlice::findCallSources (CallInst* CI,
   vector<Value*> operands;
   valueToDbgMetadata[CI].insert(CI->getMetadata("dbg"));
   // TODO: cache should be handling this, remove 
-  findCallTargets (CI, Targets, operands);
-
+  
+  Targets = callTargetsCache[CI].first;
+  operands = callTargetsCache[CI].second;
+  
   // Process each potential function call target
   const Type* VoidType = Type::getVoidTy(getGlobalContext());
   while (Targets.size()) {
