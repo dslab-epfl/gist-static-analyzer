@@ -83,7 +83,10 @@ void StaticSlice::generateSliceReport(Module& module) {
   int sliceSize = 0;
   for (fun_iterator fi = orderedSources.begin(); fi != orderedSources.end(); ++fi) {
     for (src_iterator si = sources[*fi].begin(); si != sources[*fi].end(); ++si) {
-      sliceSize++;
+      Value* v = const_cast<Value*>(*si);
+      for (set<MDNode*>::iterator mi = valueToDbgMetadata[v].begin(); mi != valueToDbgMetadata[v].end(); ++mi) {
+        sliceSize++;
+      }
     }
   }
   
@@ -104,8 +107,7 @@ void StaticSlice::generateSliceReport(Module& module) {
       
       string debugLoc("");
     
-      set<MDNode*>::iterator mi;
-      for (mi = valueToDbgMetadata[v].begin(); mi != valueToDbgMetadata[v].end(); ++mi) {
+      for (set<MDNode*>::iterator mi = valueToDbgMetadata[v].begin(); mi != valueToDbgMetadata[v].end(); ++mi) {
         createDebugMetadataString(debugLoc, *fi, *mi);
       }
     
