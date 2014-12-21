@@ -1,21 +1,7 @@
-//===- FindFlows.h - Find information flows within a program -----------------//
-// 
-//                          The Information Flow Compiler
-//
-// This file was developed by the LLVM research group and is distributed under
-// the University of Illinois Open Source License. See LICENSE.TXT for details.
-// 
-//===----------------------------------------------------------------------===//
-//
-// This file implements a pass that finds information flows within a program.
-// To be more precise, it identifies where information flow checks are needed
-// and where information escapes into memory and then finds the source of that
-// information.
-//
-//===----------------------------------------------------------------------===//
+//===- StaticSlicer.h - Find information flows within a program -----------------//
 
-#ifndef _CIF_FINDFLOWS_H_
-#define _CIF_FINDFLOWS_H_
+#ifndef _STATIC_SLICER_
+#define _STATIC_SLICER_
 
 #include "llvm/Constant.h"
 #include "llvm/Module.h"
@@ -29,6 +15,7 @@
 #include <set>
 #include <vector>
 #include <fstream>
+#include <tuple>
 
 using namespace llvm;
 
@@ -111,15 +98,15 @@ struct StaticSlice : public ModulePass {
     };
 
     virtual void releaseMemory () {
-      sources.clear();
+      sources.clear();  
     }
 
     //////////////////////////////////////////////////////////////////////////
     // Public type definitions
     //////////////////////////////////////////////////////////////////////////   
-    typedef std::set<const Value*> SourceSet;
-    typedef std::map<const Function*, SourceSet > SourceMap;
-    typedef SourceSet::iterator src_iterator;
+    //typedef std::set<const Value*> SourceSet;
+    //typedef std::map<const Function*, SourceSet > SourceMap;
+    //typedef SourceSet::iterator src_iterator;
     typedef std::vector<const Function*>::iterator fun_iterator;
     
     //////////////////////////////////////////////////////////////////////////
@@ -131,16 +118,17 @@ struct StaticSlice : public ModulePass {
 
   private:
     // Private typedefs
-    typedef std::vector<std::pair<Value *, const Function * > > Worklist_t;
+    typedef std::tuple<Value *, const Function*, MDNode*> WorkItem_t;
+    typedef std::vector<WorkItem_t> Worklist_t;
     typedef std::set<const Value *> Processed_t;
-
+    
     // Private methods
     void findSources (Function & F);
     void findCallSources (CallInst * CI, Worklist_t & Wl, Processed_t & P);
     void findArgSources  (Argument * Arg, Worklist_t & Wl, Processed_t & P);
-    void findFlow  (Value * V, const Function & F);
+    void findFlow  (Value * V, const Function & F, MDNode* node);
     bool isASource (Worklist_t& Worklist, Processed_t& Processed, const Value * v, const Function * F);
-    void addSource (const Value * V, const Function * F);
+    void addSource (WorkItem_t item);
     
     void findCallTargets   (CallInst * callInst, std::vector<const Function*> & Targets, 
                             std::vector<Value*>& operands);
@@ -169,10 +157,6 @@ struct StaticSlice : public ModulePass {
                                std::vector<const Function *> & Targets);
     
     bool isInPTTrace(std::string str);
-    
-    // Map from values needing labels to sources from which those labels derive
-    SourceMap sources;
-    std::vector<const Function*> orderedSources;
 
     // Set of phi nodes that will need special processing
     std::set<const PHINode *> PhiNodes;
@@ -181,10 +165,6 @@ struct StaticSlice : public ModulePass {
     EQTDDataStructures* dsaPass;
     DebugInfoManager* debugInfoManager;
     bool ptTraceGiven;
-    
-    // For all the source values we save, try to keep as accurate debug information as possible
-    // The debug information for a given value may be 
-    std::map<Value*, std::set<MDNode*> > valueToDbgMetadata;
     
     std::set<std::string> filteredFunctions;
     std::set<std::string> specialFunctions;
@@ -198,6 +178,7 @@ struct StaticSlice : public ModulePass {
     std::ofstream debugLogFile;
      
     std::set<std::string> ptFunctionSet;
+    
+    std::vector<WorkItem_t> sources;
 };
-
 #endif
