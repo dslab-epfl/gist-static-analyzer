@@ -73,7 +73,6 @@ void StaticSlice::generateSliceReport(Module& module) {
   string valueStr;
   raw_string_ostream valueOss(valueStr);
   debugInfoManager->targetInstruction->print(valueOss);
-  // Remove leading whitespaces
   string instrStr = valueOss.str();
   logFile << removeLeadingWhitespace(instrStr) << "\n" << targetDebugLoc << "\n";
   
@@ -81,12 +80,15 @@ void StaticSlice::generateSliceReport(Module& module) {
   logFile << ": Static Slice         :" << "\n";
   logFile << ":  call cache size: " << callInstrCache.size() << endl;
   logFile << "------------------------" << "\n";
-
-  string DebugLoc("");
+  
   for (std::vector<WorkItem_t>::iterator it = sources.begin(); it != sources.end(); ++it) {
     Value* v = get<0>(*it);
     const Function* f = get<1>(*it);
     MDNode* node = get<2>(*it);
+    
+    string valueStr;
+    raw_string_ostream oss(valueStr);
+    v->print(oss);
     
     DILocation loc(node);
     unsigned lineNumber = loc.getLineNumber();
@@ -97,7 +99,10 @@ void StaticSlice::generateSliceReport(Module& module) {
     if (lineNumber > 0 ) {
       ss << lineNumber;
       string dbgString = "\t|--> " + directory.str() + "/" + fileName.str() + ": " + ss.str() + "\tF:" + f->getName().str() + "\n";
-      logFile << dbgString;
+      logFile << removeLeadingWhitespace(oss.str()) << dbgString;
+    } else {
+      printValue(v);
+      assert(true && "Line number for the debug information is null!");
     }
   }
   logFile.close();  
@@ -293,7 +298,7 @@ void StaticSlice::removeIncompatibleTargets (const CallInst* CI,
       it = Targets.erase(it);
     else if(!isInPTTrace((*it)->getName().str())) {
       it = Targets.erase(it);
-      cerr << "removing:" << (*it)->getName().str() << endl;
+      //cerr << "removing:" << (*it)->getName().str() << endl;
     }
     else {
       ++it;
@@ -503,9 +508,12 @@ void StaticSlice::findCallSources (CallInst* CI,
   // Find the function called by this call instruction
   vector<const Function *> Targets;
   vector<Value*> operands;
-  //dbgMetadata.push_back(make_pair(CI, CI->getMetadata("dbg")));
-  // TODO: cache should be handling this, remove 
   
+  if(Processed.find(CI) == Processed.end()) {
+    Worklist.push_back(WorkItem_t(CI, CI->getParent()->getParent(), CI->getMetadata("dbg")));
+    Processed.insert(CI);
+  }
+
   Targets = callTargetsCache[CI].first;
   operands = callTargetsCache[CI].second;
   
@@ -541,7 +549,7 @@ void StaticSlice::findCallSources (CallInst* CI,
       
       if (Processed.find (RI) == Processed.end()) {
         Worklist.push_back (WorkItem_t(RI, F, RI->getMetadata("dbg")));
-        //addSource(RI, RI->getParent()->getParent());
+        addSource(WorkItem_t(RI, F, RI->getMetadata("dbg")));
         Processed.insert (RI);
       }
     }
@@ -573,7 +581,7 @@ void StaticSlice::findFlow (Value * Initial, const Function & Fu, MDNode* node) 
     const Function * f = get<1>(item);
     MDNode* node = get<2>(item); 
     Worklist.pop_back();
-
+  
     // If the value is a source, add it to the set of sources.  Otherwise, add
     // its operands to the worklist if they have not yet been processed. 
     if (isASource (Worklist, Processed, v, f)) {
@@ -602,11 +610,12 @@ void StaticSlice::findFlow (Value * Initial, const Function & Fu, MDNode* node) 
           MDNode* n = NULL;
           if (PHINode* PHI = dyn_cast<PHINode>(v)) {
             n = PHI->getIncomingBlock(index)->getTerminator()->getMetadata("dbg");
-          } else if (!isa<CallInst>(operand)) {
+          } else {
             assert (isa<Instruction>(user) && 
                     "user is not an instruction, will lose debug information");
             n = instr->getMetadata("dbg");
           }
+          
           Worklist.push_back(WorkItem_t(operand, f, n));
           if (!(isa<Constant>(operand)))
             Processed.insert (operand);
