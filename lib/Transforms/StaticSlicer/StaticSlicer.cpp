@@ -97,8 +97,10 @@ void StaticSlice::generateSliceReport(Module& module) {
     ostringstream ss;
  
     if (lineNumber > 0 ) {
+      if(!isInBBTrace(directory.str() + "/" + fileName.str(), lineNumber))
+        continue;
       ss << lineNumber;
-      string dbgString = "\t|--> " + directory.str() + "/" + fileName.str() + ": " + ss.str() + "\tF:" + f->getName().str() + "\n";
+      string dbgString = "\n\t|--> " + directory.str() + "/" + fileName.str() + ": " + ss.str() + "\tF:" + f->getName().str() + "\n";
       logFile << removeLeadingWhitespace(oss.str()) << dbgString;
     } else {
       printValue(v);
@@ -255,11 +257,21 @@ bool StaticSlice::isSpecialCall(CallInst* callInst) {
 
 
 bool StaticSlice::isInPTTrace(string str) {
-  if(ptTraceGiven)
+  if(gftTraceGiven)
     return ptFunctionSet.find(str) != ptFunctionSet.end();
   else {
     return true;
     
+  } 
+}
+
+
+bool StaticSlice::isInBBTrace(string file, int line) {
+  cerr << "checking: " << file << " line: " << line << endl;
+  if(bbTraceGiven)
+    return fileToLines[file].find(line) != fileToLines[file].end();
+  else {
+    return true;
   } 
 }
 
@@ -284,10 +296,6 @@ bool StaticSlice::isInPTTrace(string str) {
 //
 void StaticSlice::removeIncompatibleTargets (const CallInst* CI,
                                              vector<const Function *> & Targets) {
-  // If the call is a direct call, do not look for incompatibility.
-  //  if (CI->getCalledFunction()) 
-  //    return;
-
   // Remove any function from the set of targets that has the wrong number of
   // arguments.  Find all the functions to remove first and record them in a
   // container so that we don't invalidate any iterators.
@@ -298,7 +306,7 @@ void StaticSlice::removeIncompatibleTargets (const CallInst* CI,
       it = Targets.erase(it);
     else if(!isInPTTrace((*it)->getName().str())) {
       it = Targets.erase(it);
-      //cerr << "removing:" << (*it)->getName().str() << endl;
+      cerr << "removing: " << (*it)->getName().str() << endl; 
     }
     else {
       ++it;

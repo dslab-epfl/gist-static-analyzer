@@ -23,6 +23,9 @@ static cl::opt<std::string> GftFile("gft-file",
        cl::desc("The file name that contains Intel PT function trace"),
        cl::init(""));
 
+static cl::opt<std::string> BBFile("bb-file",
+       cl::desc("The file name that contains Intel PT basic block trace"),
+       cl::init(""));
 
 // Module Pass: StaticSlice
 //
@@ -37,7 +40,7 @@ struct StaticSlice : public ModulePass {
     //////////////////////////////////////////////////////////////////////////
 
     static char ID;
-    StaticSlice () : ModulePass (ID), dsaPass(NULL), debugInfoManager(NULL) , ptTraceGiven(true){
+    StaticSlice () : ModulePass (ID), dsaPass(NULL), debugInfoManager(NULL) , gftTraceGiven(true), bbTraceGiven(true){
       // Filter the below set of functions from potential  
       // call sites for the arguments we are tracking
       filteredFunctions.insert("fwrite");
@@ -73,14 +76,29 @@ struct StaticSlice : public ModulePass {
       // care when tracing call chains, as they are not explicitly
       // called, but the runtime calls them
       specialFunctions.insert("pthread_create");
+
+      std::ifstream bbFile(StringRef(BBFile).str().c_str());
+      if(!bbFile.good())
+        bbTraceGiven = false;
+      else {
+        std::string bbFileLine;
+        std::string currentFile = "";
+        while (std::getline(bbFile, bbFileLine))
+          if(bbFileLine.at(0) == '/') {
+            currentFile = bbFileLine; 
+          } else {
+            fileToLines[currentFile].insert(std::stoi(bbFileLine));
+          }
+      }
       
-      std::ifstream file(StringRef(GftFile).str().c_str());
-      if(!file.good())
-        ptTraceGiven = false;
+      std::ifstream gftFile(StringRef(GftFile).str().c_str());
+      if(!gftFile.good())
+        gftTraceGiven = false;
       else {  
         std::string funcName;
-        while (std::getline(file, funcName))
+        while (std::getline(gftFile, funcName)) {
           ptFunctionSet.insert(funcName);
+        }
       }
     }
     virtual bool runOnModule (Module& M);
@@ -157,14 +175,15 @@ struct StaticSlice : public ModulePass {
                                std::vector<const Function *> & Targets);
     
     bool isInPTTrace(std::string str);
-
+    bool isInBBTrace(std::string func, int line);
     // Set of phi nodes that will need special processing
     std::set<const PHINode *> PhiNodes;
 
     // Passes used by this pass
     EQTDDataStructures* dsaPass;
     DebugInfoManager* debugInfoManager;
-    bool ptTraceGiven;
+    bool gftTraceGiven;
+    bool bbTraceGiven;
     
     std::set<std::string> filteredFunctions;
     std::set<std::string> specialFunctions;
@@ -180,5 +199,7 @@ struct StaticSlice : public ModulePass {
     std::set<std::string> ptFunctionSet;
     
     std::vector<WorkItem_t> sources;
+    
+    std::map<std::string, std::set<int> > fileToLines;
 };
 #endif
