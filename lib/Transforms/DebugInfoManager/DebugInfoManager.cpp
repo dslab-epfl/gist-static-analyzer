@@ -104,13 +104,12 @@ bool DebugInfoManager::runOnModule(Module& m) {
             if(lineNumber == TargetLineNumber) {
               // Instead of assuming the offending instruction is a load, we may filter for several
               // other unlikely instructions like bitcasts and instrinsics
-              if (isa<LoadInst>(*ii)) {
+              if (isa<LoadInst>(*ii) && (fileName.find(StringRef(TargetFileName))) != StringRef::npos) {
                 StringRef directory = Loc.getDirectory();
                 errs() << "------------------------" << "\n";
                 errs() << "Target LLVM instruction:" << "\n";
                 errs() << "------------------------" << "\n";
                 errs() << "\t" << *ii << "\n\t|--> " << directory << "/" << fileName<< " : " << lineNumber << "\n\n";
-                // trackUseDefChain(*ii);
                 targetInstruction = &(*ii);
                 targetFunction = &(*fi);
               }
