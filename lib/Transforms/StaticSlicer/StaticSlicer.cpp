@@ -85,26 +85,27 @@ void StaticSlice::generateSliceReport(Module& module) {
     Value* v = get<0>(*it);
     const Function* f = get<1>(*it);
     MDNode* node = get<2>(*it);
-    
+    /*
     string valueStr;
     raw_string_ostream oss(valueStr);
     v->print(oss);
-    
+    */
     DILocation loc(node);
     unsigned lineNumber = loc.getLineNumber();
     StringRef fileName = loc.getFilename();
     StringRef directory = loc.getDirectory();
     ostringstream ss;
- 
+
     if (lineNumber > 0 ) {
       if(!isInBBTrace(directory.str() + "/" + fileName.str(), lineNumber))
         continue;
       ss << lineNumber;
       string dbgString = "\n\t|--> " + directory.str() + "/" + fileName.str() + ": " + ss.str() + "\tF:" + f->getName().str() + "\n";
-      logFile << removeLeadingWhitespace(oss.str()) << dbgString;
+      logFile /* << removeLeadingWhitespace(oss.str()) */ << dbgString;
     } else {
-      printValue(v);
-      assert(true && "Line number for the debug information is null!");
+      // TODO: have a look at these cases that we deliberately left with null debug information
+      // printValue(v);
+      // assert(true && "Line number for the debug information is null!");
     }
   }
   logFile.close();  
@@ -267,7 +268,6 @@ bool StaticSlice::isInPTTrace(string str) {
 
 
 bool StaticSlice::isInBBTrace(string file, int line) {
-  cerr << "checking: " << file << " line: " << line << endl;
   if(bbTraceGiven)
     return fileToLines[file].find(line) != fileToLines[file].end();
   else {
@@ -305,8 +305,7 @@ void StaticSlice::removeIncompatibleTargets (const CallInst* CI,
     if((*it)->getFunctionType()->getNumParams() != (CI->getNumOperands() - 1))
       it = Targets.erase(it);
     else if(!isInPTTrace((*it)->getName().str())) {
-      it = Targets.erase(it);
-      cerr << "removing: " << (*it)->getName().str() << endl; 
+      it = Targets.erase(it); 
     }
     else {
       ++it;
@@ -405,7 +404,6 @@ void StaticSlice::extractArgs (CallInst* callInst,
   Targets = callTargetsCache[callInst].first;
   operands = callTargetsCache[callInst].second;
   
-  
   TargetSet.insert (Targets.begin(), Targets.end());
   it = TargetSet.find (calledFunc);
   if (it == TargetSet.end())
@@ -475,7 +473,7 @@ void StaticSlice::findArgSources (Argument* Arg,
         if (Instruction* instr = dyn_cast<Instruction>(*i)) {
           node = instr->getMetadata("dbg");
         }
-        ;
+        
         Worklist.push_back (WorkItem_t(*i, F, node));
       } 
     
@@ -535,8 +533,11 @@ void StaticSlice::findCallSources (CallInst* CI,
     Function * F = const_cast<Function *>((Targets.back()));
     Targets.pop_back ();
 
-    //if(F->getReturnType() == VoidType)
-    //  return;
+    // TODO: This shouldn't happen if we extract the exact target that this call instruction calls
+    // from PT. Right now, we are simply filterin based on which functions are called.
+    if(F->getReturnType() == VoidType) {
+      return;
+    }
     // Ensure that the function's return value is not void
     assert ((F->getReturnType() != VoidType) && "Want void function label!\n");
 
