@@ -31,7 +31,7 @@ static cl::opt<bool> FindMultBBCode("find-mult-bb",
        cl::init(false));
 
 
-DebugInfoManager::DebugInfoManager() : ModulePass(ID){
+DebugInfoManager::DebugInfoManager() : ModulePass(ID), targetOperand(NULL) {
   if (FindMultBBCode)
     ;
   else if (TargetLineNumber == 0 || TargetFileName == "" || TargetFunctionName == "") {
@@ -104,14 +104,25 @@ bool DebugInfoManager::runOnModule(Module& m) {
             if(lineNumber == TargetLineNumber) {
               // Instead of assuming the offending instruction is a load, we may filter for several
               // other unlikely instructions like bitcasts and instrinsics
-              if (isa<LoadInst>(*ii) && (fileName.find(StringRef(TargetFileName))) != StringRef::npos) {
-                StringRef directory = Loc.getDirectory();
-                errs() << "------------------------" << "\n";
-                errs() << "Target LLVM instruction:" << "\n";
-                errs() << "------------------------" << "\n";
-                errs() << "\t" << *ii << "\n\t|--> " << directory << "/" << fileName<< " : " << lineNumber << "\n\n";
-                targetInstruction = &(*ii);
-                targetFunction = &(*fi);
+              if ((fileName.find(StringRef(TargetFileName))) != StringRef::npos) {
+                if (isa<LoadInst>(*ii)) {
+                  StringRef directory = Loc.getDirectory();
+                  errs() << "------------------------" << "\n";
+                  errs() << "Target LLVM instruction:" << "\n";
+                  errs() << "------------------------" << "\n";
+                  errs() << "\t" << *ii << "\n\t|--> " << directory << "/" << fileName<< " : " << lineNumber << "\n\n";
+                  targetInstruction = &(*ii);
+                  targetOperand = targetInstruction->getOperand(0); // For a load, we are interested in the first operand
+                  targetFunction = &(*fi);
+                } else if (CallInst* CI = dyn_cast<CallInst>(&(*ii))) {
+                  assert (fileName == "mod_mem_cache.c" && 
+                          "We admit a call instruction only in the case of mod_mem_cache.c");
+                  targetInstruction = &(*ii);
+                  assert (CI->getCalledFunction()->getName().str() == "free" && 
+                          "We only know the case of free being here at this moment (for double free)");
+                  targetOperand = targetInstruction->getOperand(0);
+                  targetFunction = &(*fi);
+                }
               }
             }
           }

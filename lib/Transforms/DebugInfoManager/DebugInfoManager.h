@@ -10,6 +10,7 @@ namespace llvm{
 
     void trackUseDefChain(Value& value);
     virtual bool runOnModule(Module& m);
+    Value* targetOperand;
     Instruction* targetInstruction;
     Function* targetFunction;
 

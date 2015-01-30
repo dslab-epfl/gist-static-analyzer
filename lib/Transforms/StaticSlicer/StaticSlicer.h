@@ -157,7 +157,7 @@ struct StaticSlice : public ModulePass {
     bool isSpecialCall  (CallInst* callInst);
     
     void extractArgs (CallInst* callInst,
-                      Argument * Arg, 
+                      Argument * Arg,   
                       Processed_t& Processed,
                       std::vector<Value*>& actualArgs);
     

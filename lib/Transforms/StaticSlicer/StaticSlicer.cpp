@@ -81,33 +81,37 @@ void StaticSlice::generateSliceReport(Module& module) {
   logFile << ":  call cache size: " << callInstrCache.size() << endl;
   logFile << "------------------------" << "\n";
   
+  unsigned sliceSize = 0; 
   for (std::vector<WorkItem_t>::iterator it = sources.begin(); it != sources.end(); ++it) {
     Value* v = get<0>(*it);
     const Function* f = get<1>(*it);
     MDNode* node = get<2>(*it);
-    /*
+    
     string valueStr;
     raw_string_ostream oss(valueStr);
     v->print(oss);
-    */
+    
     DILocation loc(node);
     unsigned lineNumber = loc.getLineNumber();
     StringRef fileName = loc.getFilename();
     StringRef directory = loc.getDirectory();
     ostringstream ss;
-
+   
     if (lineNumber > 0 ) {
       if(!isInBBTrace(directory.str() + "/" + fileName.str(), lineNumber))
         continue;
+      
+      ++sliceSize;
       ss << lineNumber;
       string dbgString = "\n\t|--> " + directory.str() + "/" + fileName.str() + ": " + ss.str() + "\tF:" + f->getName().str() + "\n";
-      logFile /* << removeLeadingWhitespace(oss.str()) */ << dbgString;
+      logFile << removeLeadingWhitespace(oss.str()) << dbgString;
     } else {
       // TODO: have a look at these cases that we deliberately left with null debug information
       // printValue(v);
       // assert(true && "Line number for the debug information is null!");
     }
   }
+  logFile << "\n*** Slice size:" << sliceSize << endl;
   logFile.close();  
 }
 
@@ -172,6 +176,7 @@ bool StaticSlice::isASource (Worklist_t& Worklist, Processed_t& Processed,
           else {
             node = storeInst->getMetadata("dbg");
           }
+          
           Worklist.push_back(WorkItem_t(storeInst->getOperand(0), F, node));
           Processed.insert(storeInst->getOperand(0));
         }
@@ -473,7 +478,6 @@ void StaticSlice::findArgSources (Argument* Arg,
         if (Instruction* instr = dyn_cast<Instruction>(*i)) {
           node = instr->getMetadata("dbg");
         }
-        
         Worklist.push_back (WorkItem_t(*i, F, node));
       } 
     
@@ -650,16 +654,17 @@ void StaticSlice::findFlow (Value * Initial, const Function & Fu, MDNode* node) 
 void StaticSlice::findSources (Function & F) {
   // Retrieve the target instruction from the debug info manager
   // and process those the information flow of its inputs.
-  assert (debugInfoManager->targetInstruction && "Target instruction cannot be NULL");
-  if (LoadInst * instr = dyn_cast<LoadInst>(debugInfoManager->targetInstruction)) {
-    errs() << "------------------------" << "\n";
-    errs() << "     Target Operand    :" << "\n";
-    errs() << "------------------------" << "\n";
-    errs() << *instr << "\n";
-    findFlow (instr->getOperand(0), F, instr->getMetadata("dbg")); 
-  }
-  else
-    assert(false && "Target instruction is not a load! Handle this case");
+  assert (debugInfoManager->targetOperand && "Target instruction cannot be NULL");
+
+  errs() << "------------------------" << "\n";
+  errs() << "     Target Operand    :" << "\n";
+  errs() << "------------------------" << "\n";
+  errs() << *debugInfoManager->targetInstruction << "\n";
+  printValue(debugInfoManager->targetOperand);
+  findFlow (debugInfoManager->targetOperand, F, 
+            debugInfoManager->targetInstruction->getMetadata("dbg")); 
+
+  assert(false && "Target instruction is not a load! Handle this case");
 
   return;
 }
