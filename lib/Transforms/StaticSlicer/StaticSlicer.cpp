@@ -664,8 +664,6 @@ void StaticSlice::findSources (Function & F) {
   findFlow (debugInfoManager->targetOperand, F, 
             debugInfoManager->targetInstruction->getMetadata("dbg")); 
 
-  assert(false && "Target instruction is not a load! Handle this case");
-
   return;
 }
 
