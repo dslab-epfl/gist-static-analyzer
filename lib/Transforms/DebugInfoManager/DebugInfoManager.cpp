@@ -115,8 +115,10 @@ bool DebugInfoManager::runOnModule(Module& m) {
                   targetOperand = targetInstruction->getOperand(0); // For a load, we are interested in the first operand
                   targetFunction = &(*fi);
                 } else if (CallInst* CI = dyn_cast<CallInst>(&(*ii))) {
-                  assert (fileName == "mod_mem_cache.c" && 
-                          "We admit a call instruction only in the case of mod_mem_cache.c");
+                  // We admit a call instruction only in the case of mod_mem_cache.c
+                  if (fileName != "mod_mem_cache.c")
+                    continue;
+              
                   targetInstruction = &(*ii);
                   assert (CI->getCalledFunction()->getName().str() == "free" && 
                           "We only know the case of free being here at this moment (for double free)");
