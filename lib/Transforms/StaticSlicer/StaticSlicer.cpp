@@ -87,10 +87,6 @@ void StaticSlice::generateSliceReport(Module& module) {
     const Function* f = get<1>(*it);
     MDNode* node = get<2>(*it);
     
-    string valueStr;
-    raw_string_ostream oss(valueStr);
-    v->print(oss);
-    
     DILocation loc(node);
     unsigned lineNumber = loc.getLineNumber();
     StringRef fileName = loc.getFilename();
@@ -100,6 +96,10 @@ void StaticSlice::generateSliceReport(Module& module) {
     if (lineNumber > 0 ) {
       if(!isInBBTrace(directory.str() + "/" + fileName.str(), lineNumber))
         continue;
+      
+      string valueStr;
+      raw_string_ostream oss(valueStr);
+      v->print(oss);
       
       ++sliceSize;
       ss << lineNumber;
