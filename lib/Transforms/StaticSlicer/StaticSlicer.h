@@ -141,10 +141,10 @@ struct StaticSlice : public ModulePass {
     typedef std::set<const Value *> Processed_t;
     
     // Private methods
-    void findSources (Function & F);
+    void findSources ();
     void findCallSources (CallInst * CI, Worklist_t & Wl, Processed_t & P);
     void findArgSources  (Argument * Arg, Worklist_t & Wl, Processed_t & P);
-    void findFlow  (Value * V, const Function & F, MDNode* node);
+    void findFlow  ();
     bool isASource (Worklist_t& Worklist, Processed_t& Processed, const Value * v, const Function * F);
     void addSource (WorkItem_t item);
     

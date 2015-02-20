@@ -10,9 +10,9 @@ namespace llvm{
 
     void trackUseDefChain(Value& value);
     virtual bool runOnModule(Module& m);
-    Value* targetOperand;
-    Instruction* targetInstruction;
-    Function* targetFunction;
+    std::vector<Value*> targetOperands;
+    std::vector<Instruction*> targetInstructions;
+    std::vector<Function*> targetFunctions;
 
     static char ID;
   };

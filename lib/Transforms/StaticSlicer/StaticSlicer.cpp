@@ -23,6 +23,7 @@
 #include "llvm/DebugInfo.h"
 
 #include "StaticSlicer.h"
+#include <stddef.h> 
 
 using namespace llvm;
 using namespace std;
@@ -66,13 +67,13 @@ void StaticSlice::generateSliceReport(Module& module) {
   logFile.open ("slice.log");
   
   string targetDebugLoc = "Source";
-  createDebugMetadataString(targetDebugLoc, 
+  /*  createDebugMetadataString(targetDebugLoc, 
                             debugInfoManager->targetFunction,
                             debugInfoManager->targetInstruction->getMetadata("dbg"));
-
+  */
   string valueStr;
   raw_string_ostream valueOss(valueStr);
-  debugInfoManager->targetInstruction->print(valueOss);
+  //debugInfoManager->targetInstruction->print(valueOss);
   string instrStr = valueOss.str();
   logFile << removeLeadingWhitespace(instrStr) << "\n" << targetDebugLoc << "\n";
   
@@ -579,13 +580,24 @@ void StaticSlice::findCallSources (CallInst* CI,
 ///  labels of these values will combine together to form the label of the given
 ///  value.
 ///
-void StaticSlice::findFlow (Value * Initial, const Function & Fu, MDNode* node) {
+void StaticSlice::findFlow () {
   // Already processed values
   Processed_t Processed;
 
-  // Worklist
+  // Populate the Worklist
   Worklist_t Worklist;
-  Worklist.push_back (WorkItem_t(Initial, &Fu, node));
+  cerr << "debugInfoManager->targetFunctions.size():" << debugInfoManager->targetFunctions.size() << endl;
+  cerr << "debugInfoManager->targetOperands.size():" << debugInfoManager->targetOperands.size() << endl;
+  cerr << "debugInfoManager->targetInstructions.size():" << debugInfoManager->targetInstructions.size() << endl;
+
+  assert ((debugInfoManager->targetFunctions.size() == debugInfoManager->targetInstructions.size()) &&
+          (debugInfoManager->targetInstructions.size() == debugInfoManager->targetOperands.size()) && 
+          "Sizes of function, instruction and operand vectors should be the same!");
+
+  for (size_t i = 0; i < debugInfoManager->targetFunctions.size(); ++i)
+    Worklist.push_back (WorkItem_t(debugInfoManager->targetOperands[i], 
+                                   debugInfoManager->targetFunctions[i], 
+                                   debugInfoManager->targetInstructions[i]->getMetadata("dbg")));
 
   while (Worklist.size()) {
     // Pop an item off of the worklist.
@@ -636,33 +648,6 @@ void StaticSlice::findFlow (Value * Initial, const Function & Fu, MDNode* node) 
       }
     }
   }
-
-  return;
-}
-
-///
-/// Method: findSources()
-///
-/// Description:
-///  For every store and external function call in the specified function, find
-///  all the instructions that generate a label (i.e., is a source of
-///  information)  for the value(s) being stored into memory.
-///
-/// Inputs:
-///  F - The function to analyze.
-///
-void StaticSlice::findSources (Function & F) {
-  // Retrieve the target instruction from the debug info manager
-  // and process those the information flow of its inputs.
-  assert (debugInfoManager->targetOperand && "Target instruction cannot be NULL");
-
-  errs() << "------------------------" << "\n";
-  errs() << "     Target Operand    :" << "\n";
-  errs() << "------------------------" << "\n";
-  errs() << *debugInfoManager->targetInstruction << "\n";
-  printValue(debugInfoManager->targetOperand);
-  findFlow (debugInfoManager->targetOperand, F, 
-            debugInfoManager->targetInstruction->getMetadata("dbg")); 
 
   return;
 }
@@ -721,8 +706,8 @@ bool StaticSlice::runOnModule (Module& module) {
   cacheCallInstructions(module);
   
   // Finding the sources of all labels of the target instruction we get from the coredump.
-  assert(debugInfoManager->targetFunction && "Target function cannot be NULL");
-  findSources (*(debugInfoManager->targetFunction));
+  assert (debugInfoManager->targetOperands.size() && "Target operands cannot be empty");
+  findFlow();
 
   generateSliceReport(module);
 
