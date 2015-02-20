@@ -8,6 +8,7 @@
 #include "llvm/DebugInfo.h"
 #include <llvm/Constants.h>
 #include <llvm/InlineAsm.h>
+#include <llvm/Intrinsics.h>
 
 #include "DebugInfoManager.h"
 
@@ -105,10 +106,17 @@ bool DebugInfoManager::runOnModule(Module& m) {
             if(lineNumber == TargetLineNumber) {
               // currently only use calls and loads as the potential target instructions
               if ((fileName.find(StringRef(TargetFileName))) != StringRef::npos) {
-                if ((isa<LoadInst>(*ii)) || (isa<CallInst>(&(*ii)))) {
+                if (isa<LoadInst>(*ii)) {
                   targetInstructions.push_back(&(*ii));
                   targetFunctions.push_back(&(*fi));
-                  targetOperands.push_back(ii->getOperand(0));
+                  targetOperands.push_back(ii->getOperand(0));                  
+                } else if (CallInst* CI = dyn_cast<CallInst>(&(*ii))) {
+                  Function* f = dyn_cast<Function>(CI->getOperand(0));                  
+                  if (f && f->getIntrinsicID() == Intrinsic::not_intrinsic) {                    
+                    targetInstructions.push_back(&(*ii));
+                    targetFunctions.push_back(&(*fi));
+                    targetOperands.push_back(CI->getOperand(0));
+                  }          
                 }
               }
             }
