@@ -66,16 +66,18 @@ void StaticSlice::generateSliceReport(Module& module) {
   ofstream logFile;
   logFile.open ("slice.log");
   
-  string targetDebugLoc = "Source";
-  /*  createDebugMetadataString(targetDebugLoc, 
-                            debugInfoManager->targetFunction,
-                            debugInfoManager->targetInstruction->getMetadata("dbg"));
-  */
-  string valueStr;
-  raw_string_ostream valueOss(valueStr);
-  //debugInfoManager->targetInstruction->print(valueOss);
-  string instrStr = valueOss.str();
-  logFile << removeLeadingWhitespace(instrStr) << "\n" << targetDebugLoc << "\n";
+  logFile << "Sources: " << "\n";
+  for (size_t i = 0; i < debugInfoManager->targetFunctions.size(); ++i) {
+    string targetDebugLoc;
+    createDebugMetadataString(targetDebugLoc,
+                              debugInfoManager->targetFunctions[i],
+                              debugInfoManager->targetInstructions[i]->getMetadata("dbg"));
+    string valueStr;
+    raw_string_ostream valueOss(valueStr);
+    debugInfoManager->targetInstructions[i]->print(valueOss);
+    string instrStr = valueOss.str();
+    logFile << removeLeadingWhitespace(instrStr) << "\n" << targetDebugLoc << "\n";
+  }
   
   logFile << "\n------------------------" << "\n";
   logFile << ": Static Slice         :" << "\n";
@@ -586,9 +588,7 @@ void StaticSlice::findFlow () {
 
   // Populate the Worklist
   Worklist_t Worklist;
-  cerr << "debugInfoManager->targetFunctions.size():" << debugInfoManager->targetFunctions.size() << endl;
-  cerr << "debugInfoManager->targetOperands.size():" << debugInfoManager->targetOperands.size() << endl;
-  cerr << "debugInfoManager->targetInstructions.size():" << debugInfoManager->targetInstructions.size() << endl;
+  cerr << "Initial sources size:" << debugInfoManager->targetFunctions.size() << endl;
 
   assert ((debugInfoManager->targetFunctions.size() == debugInfoManager->targetInstructions.size()) &&
           (debugInfoManager->targetInstructions.size() == debugInfoManager->targetOperands.size()) && 

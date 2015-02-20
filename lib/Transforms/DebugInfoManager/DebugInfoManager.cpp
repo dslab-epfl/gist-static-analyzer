@@ -105,48 +105,11 @@ bool DebugInfoManager::runOnModule(Module& m) {
             if(lineNumber == TargetLineNumber) {
               // currently only use calls and loads as the potential target instructions
               if ((fileName.find(StringRef(TargetFileName))) != StringRef::npos) {
-                if (isa<LoadInst>(*ii)) {
-                  targetInstructions.push_back(&(*ii));
-                  targetFunctions.push_back(&(*fi));
-                  targetOperands.push_back(ii->getOperand(0));
-                } else if (isa<CallInst>(&(*ii))) {
+                if ((isa<LoadInst>(*ii)) || (isa<CallInst>(&(*ii)))) {
                   targetInstructions.push_back(&(*ii));
                   targetFunctions.push_back(&(*fi));
                   targetOperands.push_back(ii->getOperand(0));
                 }
-                /* 
-                if (!done) {
-                  if (isa<LoadInst>(*ii)) {
-                    StringRef directory = Loc.getDirectory();
-                    errs() << "------------------------" << "\n";
-                    errs() << "Target LLVM instruction:" << "\n";
-                    errs() << "------------------------" << "\n";
-                    errs() << "\t" << *ii << "\n\t|--> " << directory << "/" << fileName<< " : " << lineNumber << "\n\n";
-                    targetInstruction = &(*ii);
-                    targetOperand = targetInstruction->getOperand(0); // For a load, we are interested in the first operand
-                    targetFunction = &(*fi);
-                    // Special case handlings
-                    if (fileName == "urlglob.c") {
-                      // done = true;
-                    }
-                  } else if (CallInst* CI = dyn_cast<CallInst>(&(*ii))) {
-                    // We admit a call instruction in the case of mod_mem_cache.c
-                    if (fileName == "mod_mem_cache.c") {
-                      done = true;
-                      StringRef directory = Loc.getDirectory();
-                      targetInstruction = &(*ii);
-                      assert (CI->getCalledFunction()->getName().str() == "free" && 
-                              "We only know the case of free being here at this moment (for double free)");
-                      targetOperand = targetInstruction->getOperand(0);
-                      targetFunction = &(*fi);                      
-                    }                    
-                  } else {
-                    ;
-                    StringRef directory = Loc.getDirectory();
-                    errs() << "@@@\t" << *ii << "\n\t|--> " << directory << "/" << fileName<< " : " << lineNumber << "\n\n";
-                  }
-                }
-                */
               }
             }
           }
