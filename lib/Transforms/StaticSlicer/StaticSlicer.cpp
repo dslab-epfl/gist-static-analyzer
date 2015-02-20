@@ -66,7 +66,7 @@ void StaticSlice::generateSliceReport(Module& module) {
   ofstream logFile;
   logFile.open ("slice.log");
   
-  logFile << "Sources: " << "\n";
+  logFile << "Sources, size: " << debugInfoManager->targetFunctions.size() << "\n";
   for (size_t i = 0; i < debugInfoManager->targetFunctions.size(); ++i) {
     string targetDebugLoc;
     createDebugMetadataString(targetDebugLoc,
@@ -588,7 +588,6 @@ void StaticSlice::findFlow () {
 
   // Populate the Worklist
   Worklist_t Worklist;
-  cerr << "Initial sources size:" << debugInfoManager->targetFunctions.size() << endl;
 
   assert ((debugInfoManager->targetFunctions.size() == debugInfoManager->targetInstructions.size()) &&
           (debugInfoManager->targetInstructions.size() == debugInfoManager->targetOperands.size()) && 
