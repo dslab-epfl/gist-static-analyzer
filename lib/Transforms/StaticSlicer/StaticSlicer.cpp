@@ -76,7 +76,7 @@ void StaticSlice::generateSliceReport(Module& module) {
     raw_string_ostream valueOss(valueStr);
     debugInfoManager->targetInstructions[i]->print(valueOss);
     string instrStr = valueOss.str();
-    logFile << removeLeadingWhitespace(instrStr) << "\n" << targetDebugLoc << "\n";
+    logFile << removeLeadingWhitespace(instrStr) << "\n" << "Source" << targetDebugLoc << "\n";
   }
   
   logFile << "\n------------------------" << "\n";
