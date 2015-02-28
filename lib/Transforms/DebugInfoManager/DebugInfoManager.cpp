@@ -10,6 +10,7 @@
 #include <llvm/InlineAsm.h>
 #include <llvm/Intrinsics.h>
 
+#include <sstream>
 #include "DebugInfoManager.h"
 
 using namespace llvm;
@@ -21,9 +22,9 @@ static cl::opt<string> TargetFileName("target-file-name",
 static cl::opt<string> TargetFunctionName("target-function-name",
        cl::desc("The function where the instruction lies"),
        cl::init(""));
-static cl::opt<unsigned> TargetLineNumber("target-line-number",
-       cl::desc("The line number of the target instruction"),
-       cl::init(0));
+static cl::opt<string> TargetLineNumber("target-line-number",
+       cl::desc("The line numbers of the target instructions"),
+       cl::init(""));
 static cl::opt<bool> Debug("debug-debug-info-manager",
        cl::desc("Print debugging statements for debug info manager"),
        cl::init(false));
@@ -35,7 +36,7 @@ static cl::opt<bool> FindMultBBCode("find-mult-bb",
 DebugInfoManager::DebugInfoManager() : ModulePass(ID) {
   if (FindMultBBCode)
     ;
-  else if (TargetLineNumber == 0 || TargetFileName == "" || TargetFunctionName == "") {
+  else if (TargetLineNumber == "" || TargetFileName == "" || TargetFunctionName == "") {
     errs() << "\nYou need to provide the file name, function name, and "
            << "the line number to retrieve the LLVM IR instruction!!!" << "\n\n";
               exit(1);
@@ -89,12 +90,36 @@ void DebugInfoManager::trackUseDefChain(Value& value){
 }
 
 
+set<string>& DebugInfoManager::split(const string &s, char delim, 
+                                        set<string> &elems) {
+  stringstream ss(s);
+  string item;
+  while (getline(ss, item, delim)) {
+    elems.insert(item);
+  }
+  return elems;
+}
+
+
+set<string> DebugInfoManager::split(const string &s, char delim) {
+  set<string> elems;
+  split(s, delim, elems);
+  return elems;
+}
+
 // TODO: We should cache the results once they are computed for a given binary.
 bool DebugInfoManager::runOnModule(Module& m) {
   for (Module::iterator fi = m.begin(), fe = m.end(); fi != fe; ++fi) {
     if (Debug)
       errs() << "Function: " << fi->getName() << "\n";
     
+    // Process line numbers and put them in a set
+    set<string> strLineNumbers = split(TargetLineNumber, ':');
+    set<int> intLineNumbers;
+    for(auto str : strLineNumbers) {
+      intLineNumbers.insert(std::stoi(str));
+    }   
+
     for (Function::iterator bi = fi->begin(), be = fi->end(); bi != be; ++bi) {
       // TODO: Improve this comparison by getting mangled names from the elf debug information
       if(fi->getName().find(StringRef(TargetFunctionName)) != StringRef::npos)
@@ -103,7 +128,7 @@ bool DebugInfoManager::runOnModule(Module& m) {
             DILocation Loc(N);
             unsigned lineNumber = Loc.getLineNumber();
             StringRef fileName = Loc.getFilename();
-            if(lineNumber == TargetLineNumber) {
+            if(intLineNumbers.find(lineNumber) != intLineNumbers.end()) {
               // currently only use calls and loads as the potential target instructions
               if ((fileName.find(StringRef(TargetFileName))) != StringRef::npos) {
                 if (isa<LoadInst>(*ii)) {

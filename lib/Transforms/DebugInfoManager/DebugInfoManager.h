@@ -1,3 +1,4 @@
+#include<set>
 
 namespace llvm{
   class DebugInfoManager : public ModulePass {
@@ -13,6 +14,9 @@ namespace llvm{
     std::vector<Value*> targetOperands;
     std::vector<Instruction*> targetInstructions;
     std::vector<Function*> targetFunctions;
+
+    std::set<std::string>& split(const std::string &s, char delim, std::set<std::string> &elems);
+    std::set<std::string> split(const std::string &s, char delim);
 
     static char ID;
   };
