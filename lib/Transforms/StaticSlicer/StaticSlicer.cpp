@@ -114,7 +114,7 @@ void StaticSlice::generateSliceReport(Module& module) {
       // assert(true && "Line number for the debug information is null!");
     }
   }
-  logFile << "\n*** Slice size:" << sliceSize + sources.size() << endl;
+  logFile << "\n*** Slice size:" << sliceSize + debugInfoManager->targetFunctions.size() << endl;
   logFile.close();  
 }
 
