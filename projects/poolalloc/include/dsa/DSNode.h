@@ -26,6 +26,7 @@
 
 #include <map>
 #include <set>
+#include <iostream>
 
 namespace llvm {
 
@@ -206,7 +207,9 @@ public:
 
   void growSize(unsigned NSize) {
     assert(NSize >= Size && "Cannot shrink");
-    assert(!isCollapsedNode() && "Growing a collapsed node");
+    if (isCollapsedNode())
+      std::cerr << "Silently ignoring !isCollapsedNode()" << std::endl;
+    //assert(!isCollapsedNode() && "Growing a collapsed node");
     Size = NSize;
   }
   
