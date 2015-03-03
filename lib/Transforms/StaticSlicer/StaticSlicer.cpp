@@ -39,17 +39,21 @@ void printValue(Value* v) {
 MDNode* StaticSlice::extractAllocaDebugMetadata (AllocaInst* allocaInst) {
   // We need special treatement to get the debug information for alloca's
   const BasicBlock* parent = allocaInst->getParent();
+
   // Look in the basic block for llvm.dbg.declare that has the debug information for this alloca
   for (BasicBlock::const_iterator it = parent->begin(); it != parent->end(); ++it) {
     if (const DbgDeclareInst* dbgDeclareInst = dyn_cast<DbgDeclareInst>(&*it)) {        
       Value* value = cast<MDNode>(dbgDeclareInst->getOperand(0))->getOperand(0);
       if(!value)
         return NULL;
+      // TODO: we gotta make sure this is the right llvm.dbg.info, to not have a few lines of inaccuracy check that
       assert(isa<AllocaInst>(value) && "The operand must be an alloca");
       return dbgDeclareInst->getMetadata("dbg");
     }
   }
-  assert(false && "Could not extract debug information for alloca!");
+  // TODO: In some rare cases with conditionals, we get here (tranmssion is an example.) 
+  // For now we can lose the debug info, but we have to fix this in the future for complete debug info
+  return NULL;
 }
 
 ///
@@ -380,14 +384,14 @@ void StaticSlice::handleSpecialCall(CallInst* callInst,
     // operand is the argument (instruction) through which a value is passed. 
 
     Value* v = callInst->getOperand(2);
-    assert(isa<Function>(v) && 
-           "The third operand of the pthread_create call must be a function");
+    //assert(isa<Function>(v) && 
+    //       "The third operand of the pthread_create call must be a function");
     Function* f = dyn_cast<Function>(v);
     Targets.push_back(f);
     
     v = callInst->getOperand(3);
-    assert(isa<Instruction>(v) && 
-           "The fourth operand of the pthread_create call must be an instruction ");
+    //assert(isa<Instruction>(v) && 
+    //       "The fourth operand of the pthread_create call must be an instruction ");
     operands.push_back(callInst->getOperand(3));
     operands.push_back(f);
   }
