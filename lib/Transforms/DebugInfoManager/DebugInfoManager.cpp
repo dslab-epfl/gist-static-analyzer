@@ -131,6 +131,7 @@ bool DebugInfoManager::runOnModule(Module& m) {
             if(intLineNumbers.find(lineNumber) != intLineNumbers.end()) {
               // currently only use calls and loads as the potential target instructions
               if ((fileName.find(StringRef(TargetFileName))) != StringRef::npos) {
+                // errs() << *ii << "\n";
                 if (isa<LoadInst>(*ii)) {
                   targetInstructions.push_back(&(*ii));
                   targetFunctions.push_back(&(*fi));
