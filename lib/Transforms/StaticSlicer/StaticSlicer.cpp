@@ -90,7 +90,7 @@ void StaticSlice::generateSliceReport(Module& module) {
   
   unsigned sliceSize = 0; 
   for (std::vector<WorkItem_t>::iterator it = sources.begin(); it != sources.end(); ++it) {
-    Value* v = get<0>(*it);
+    // Value* v = get<0>(*it);
     const Function* f = get<1>(*it);
     MDNode* node = get<2>(*it);
     
@@ -103,15 +103,15 @@ void StaticSlice::generateSliceReport(Module& module) {
     if (lineNumber > 0 ) {
       if(!isInBBTrace(directory.str() + "/" + fileName.str(), lineNumber))
         continue;
-      
+      /*
       string valueStr;
       raw_string_ostream oss(valueStr);
       v->print(oss);
-      
+      */
       ++sliceSize;
       ss << lineNumber;
       string dbgString = "\n\t|--> " + directory.str() + "/" + fileName.str() + ": " + ss.str() + "\tF:" + f->getName().str() + "\n";
-      logFile << removeLeadingWhitespace(oss.str()) << dbgString;
+      logFile << /*removeLeadingWhitespace(oss.str()) <<*/ dbgString;
     } else {
       // TODO: have a look at these cases that we deliberately left with null debug information
       // printValue(v);
