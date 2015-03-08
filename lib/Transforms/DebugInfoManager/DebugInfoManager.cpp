@@ -65,32 +65,6 @@ void DebugInfoManager::printDebugInfo(Instruction& instr) {
   errs() << "\t\t" << directory << "/" << fileName<< " : " << lineNumber << "\n ";
 }
 
-
-void DebugInfoManager::trackUseDefChain(Value& value){
-  string Str;
-  if(LoadInst* loadInst = dyn_cast<LoadInst>(&value)) {
-    Value *v = loadInst->getOperand(0);
-    raw_string_ostream oss(Str);
-    v->print(oss);
-    errs() << oss.str() << "\n";
-    printDebugInfo(*loadInst);
-    if(isa<Instruction>(v))
-      trackUseDefChain(*v);
-    else
-      assert(false && "Handle the non-instruction case");
-  } else if (BitCastInst* bitCastInst = dyn_cast<BitCastInst>(&value)) {
-    Value *v = bitCastInst->getOperand(0);
-    raw_string_ostream oss(Str);
-    v->print(oss);
-    errs() << oss.str() << "\n";
-    printDebugInfo(*bitCastInst);
-  } else if (GetElementPtrInst* geptr = dyn_cast<GetElementPtrInst>(&value)) {
-    geptr->getPointerOperand();
-    //printDebugInfo(*geptr);
-  }
-}
-
-
 set<string>& DebugInfoManager::split(const string &s, char delim, 
                                         set<string> &elems) {
   stringstream ss(s);
@@ -138,12 +112,21 @@ bool DebugInfoManager::runOnModule(Module& m) {
                   targetFunctions.push_back(&(*fi));
                   targetOperands.push_back(ii->getOperand(0));                  
                 } else if (CallInst* CI = dyn_cast<CallInst>(&(*ii))) {
-                  Function* f = dyn_cast<Function>(CI->getOperand(0));                  
-                  if (f && f->getIntrinsicID() == Intrinsic::not_intrinsic) {                    
-                    targetInstructions.push_back(&(*ii));
-                    targetFunctions.push_back(&(*fi));
-                    targetOperands.push_back(CI->getOperand(0));
+                  Function* f = dyn_cast<Function>(CI->getOperand(0));
+                  Value* v = NULL;
+                  if (f && f->getIntrinsicID() == Intrinsic::not_intrinsic)
+                    v = CI->getOperand(0);
+                  else if (MDNode* node = dyn_cast<MDNode>(CI->getOperand(0))){
+                    v = node->getOperand(0);
+                    if (TargetFileName != "htscore.c")
+                      errs() << "Not httrack, this is new!" << "\n";
                   }
+                  
+                  assert (v && "Value cannot be NULL here!");
+
+                  targetInstructions.push_back(&(*ii));
+                  targetFunctions.push_back(&(*fi));
+                  targetOperands.push_back(v);
                 }
               }
             }
