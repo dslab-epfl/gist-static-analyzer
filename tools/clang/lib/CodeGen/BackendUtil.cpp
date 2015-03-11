@@ -168,6 +168,11 @@ static void addThreadSanitizerPass(const PassManagerBuilder &Builder,
   PM.add(createThreadSanitizerPass());
 }
 
+static void addIntelPTInstrumentorPass(const PassManagerBuilder &Builder,
+                                       PassManagerBase &PM) {
+  PM.add(createIntelPTInstrumentorPass());
+}
+
 void EmitAssemblyHelper::CreatePasses(TargetMachine *TM) {
   unsigned OptLevel = CodeGenOpts.OptimizationLevel;
   CodeGenOptions::InliningMethod Inlining = CodeGenOpts.getInlining();
@@ -218,6 +223,12 @@ void EmitAssemblyHelper::CreatePasses(TargetMachine *TM) {
     PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0,
                            addThreadSanitizerPass);
   }
+
+  PMBuilder.addExtension(PassManagerBuilder::EP_OptimizerLast,
+                         addIntelPTInstrumentorPass);
+  PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0,
+                         addIntelPTInstrumentorPass);
+
 
   // Figure out TargetLibraryInfo.
   Triple TargetTriple(TheModule->getTargetTriple());

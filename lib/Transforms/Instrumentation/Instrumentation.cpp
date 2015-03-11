@@ -24,6 +24,7 @@ void llvm::initializeInstrumentation(PassRegistry &Registry) {
   initializeBoundsCheckingPass(Registry);
   initializeEdgeProfilerPass(Registry);
   initializeGCOVProfilerPass(Registry);
+  initializeIntelPTInstrumentorPass(Registry);
   initializeOptimalEdgeProfilerPass(Registry);
   initializePathProfilerPass(Registry);
   initializeThreadSanitizerPass(Registry);

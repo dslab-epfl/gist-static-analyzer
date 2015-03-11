@@ -68,6 +68,7 @@ void initializeAlwaysInlinerPass(PassRegistry&);
 void initializeArgPromotionPass(PassRegistry&);
 void initializeBarrierNoopPass(PassRegistry&);
 void initializeBasicAliasAnalysisPass(PassRegistry&);
+void initializeIntelPTInstrumentorPass(PassRegistry&);
 void initializeBasicCallGraphPass(PassRegistry&);
 void initializeBlockExtractorPassPass(PassRegistry&);
 void initializeBlockFrequencyInfoPass(PassRegistry&);

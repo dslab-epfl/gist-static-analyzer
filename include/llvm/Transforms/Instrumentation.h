@@ -33,6 +33,8 @@ ModulePass *createGCOVProfilerPass(bool EmitNotes = true, bool EmitData = true,
                                    bool Use402Format = false,
                                    bool UseExtraChecksum = false);
 
+ModulePass* createIntelPTInstrumentorPass();
+
 // Insert AddressSanitizer (address sanity checking) instrumentation
 FunctionPass *createAddressSanitizerPass();
 // Insert ThreadSanitizer (race detection) instrumentation
