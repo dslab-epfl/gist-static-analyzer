@@ -102,9 +102,9 @@ bool DebugInfoManager::runOnModule(Module& m) {
           if (MDNode *N = ii->getMetadata("dbg")) {
             DILocation Loc(N);
             unsigned lineNumber = Loc.getLineNumber();
-            StringRef fileName = Loc.getFilename();
             if(intLineNumbers.find(lineNumber) != intLineNumbers.end()) {
-              // currently only use calls and loads as the potential target instructions
+              StringRef fileName = Loc.getFilename();
+              // Currently only use calls and loads as the potential target instructions
               if ((fileName.find(StringRef(TargetFileName))) != StringRef::npos) {
                 errs() << *ii << "\n";
                 if (isa<LoadInst>(*ii)) {
@@ -116,17 +116,17 @@ bool DebugInfoManager::runOnModule(Module& m) {
                   Value* v = NULL;
                   if (f && f->getIntrinsicID() == Intrinsic::not_intrinsic)
                     v = CI->getOperand(0);
-                  else if (MDNode* node = dyn_cast<MDNode>(CI->getOperand(0))){
+                  else if (MDNode* node = dyn_cast<MDNode>(CI->getOperand(0))) {
                     v = node->getOperand(0);
                     if (TargetFileName != "htscore.c")
                       errs() << "Not httrack, this is new!" << "\n";
                   }
                   
-                  assert (v && "Value cannot be NULL here!");
-
-                  targetInstructions.push_back(&(*ii));
-                  targetFunctions.push_back(&(*fi));
-                  targetOperands.push_back(v);
+                  if(v) {
+                    targetInstructions.push_back(&(*ii));
+                    targetFunctions.push_back(&(*fi));
+                    targetOperands.push_back(v);
+                  }
                 }
               }
             }

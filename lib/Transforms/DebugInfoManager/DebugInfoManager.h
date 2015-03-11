@@ -9,7 +9,6 @@ namespace llvm{
     virtual void getAnalysisUsage(AnalysisUsage& au) const;
     void printDebugInfo(Instruction& instr);
 
-    void trackUseDefChain(Value& value);
     virtual bool runOnModule(Module& m);
     std::vector<Value*> targetOperands;
     std::vector<Instruction*> targetInstructions;
