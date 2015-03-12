@@ -7,7 +7,6 @@
 #include "llvm/Instructions.h"
 #include "llvm/DebugInfo.h"
 #include <llvm/Constants.h>
-#include <llvm/InlineAsm.h>
 #include <llvm/Attributes.h>
 #include <llvm/LLVMContext.h>
 #include <llvm/GlobalVariable.h>
@@ -30,9 +29,11 @@
 using namespace llvm;
 using namespace std;
 
-static cl::opt<bool> EnableIntelPtPass("enable-intelpt",
-                                       cl::desc("File name to start PT tracing"),
-                                       cl::init(false));
+namespace llvm{
+    cl::opt<bool> EnableIntelPtPass("enable-intelpt",
+                                    cl::desc("File name to start PT tracing"),
+                                    cl::init(false));
+}
 
 static cl::opt<string> StartFileName("start-file-name",
                                      cl::desc("File name to start PT tracing"),
@@ -78,13 +79,21 @@ ModulePass* llvm::createIntelPTInstrumentorPass() {
 }
 
 
-IntelPTInstrumentor::IntelPTInstrumentor() : ModulePass(ID) {
-  cerr << "enable: " << EnableIntelPtPass << endl;
-  if (StartFileName == "" || StartFunction == "" || StartLineNumber == 0 ||
-      StopFileName == "" || StopFunction == "" || StopLineNumber == 0) {
-    errs() << "\nYou need to provide the start/stop file name, function name, and "
-           << "the line number!!!" << "\n\n";
-              exit(1);
+IntelPTInstrumentor::IntelPTInstrumentor() : ModulePass(ID),  func_startPt(NULL), func_stopPt(NULL) {
+  if (EnableIntelPtPass) {
+    cerr << "Intel PT instrumentation enabled " << endl;
+    cerr << "StartFileName: " << StartFileName << endl;
+    cerr << "StartFunction: " << StartFunction << endl;
+    cerr << "StartLineNumber: " << StopLineNumber << endl;
+    cerr << "StopFileName: " << StopFileName << endl;
+    cerr << "StopFunction: " << StopFunction << endl;
+    cerr << "StopLineNumber: " << StopLineNumber << endl;
+    if (StartFileName == "" || StartFunction == "" || StartLineNumber == 0 ||
+        StopFileName == "" || StopFunction == "" || StopLineNumber == 0) {
+      errs() << "\nYou need to provide the start/stop file name, function name, and "
+             << "the line number!!!" << "\n\n";
+                exit(1);
+    }
   }
 }
 
@@ -109,26 +118,7 @@ void IntelPTInstrumentor::printDebugInfo(Instruction& instr) {
   errs() << "\t\t" << directory << "/" << fileName<< " : " << lineNumber << "\n ";
 }
 
-
-set<string>& IntelPTInstrumentor::split(const string &s, char delim, 
-                                        set<string> &elems) {
-  stringstream ss(s);
-  string item;
-  while (getline(ss, item, delim)) {
-    elems.insert(item);
-  }
-  return elems;
-}
-
-
-set<string> IntelPTInstrumentor::split(const string &s, char delim) {
-  set<string> elems;
-  split(s, delim, elems);
-  return elems;
-}
-
-
-bool IntelPTInstrumentor::runOnModule(Module& m) {
+void IntelPTInstrumentor::setUpInstrumentation(Module& m) {
   // Type Definitions
   PointerType* PointerTy_0 = PointerType::get(IntegerType::get(m.getContext(), 8), 0);
   ArrayType* ArrayTy_1 = ArrayType::get(IntegerType::get(m.getContext(), 8), 15);
@@ -157,9 +147,8 @@ bool IntelPTInstrumentor::runOnModule(Module& m) {
                                              /*isVarArg=*/true);
 
 
-  // Function Declarations                                                                                                             
-
-  Function* func_startPt = m.getFunction("startPt");
+  // Function Declarations
+  func_startPt = m.getFunction("startPt");
   if (!func_startPt) {
     func_startPt = Function::Create(
                                     /*Type=*/FuncTy_4,
@@ -167,51 +156,26 @@ bool IntelPTInstrumentor::runOnModule(Module& m) {
                                     /*Name=*/"startPt", &m);
     func_startPt->setCallingConv(CallingConv::C);
   }
-  /*
-  AttrListPtr func_startPt_PAL;
-  {
-    SmallVector<AttributeWithIndex, 4> Attrs;
-    AttributeWithIndex PAWI;
-    PAWI.Index = 4294967295U; PAWI.Attrs = Attributes::AttrVal::None  | Attributes::AttrVal::NoUnwind | Attributes::AttrVal::UWTable;
-    Attrs.push_back(PAWI);
-    func_startPt_PAL = AttrListPtr::get(Attrs);
 
-  }
-  func_startPt->setAttributes(func_startPt_PAL);
-  */
   Function* func_open = m.getFunction("open");
   if (!func_open) {
     func_open = Function::Create(
                                  /*Type=*/FuncTy_6,
                                  /*Linkage=*/GlobalValue::ExternalLinkage,
-                                 /*Name=*/"open", &m); // (external, no body)                                                                                       
+                                 /*Name=*/"open", &m); // (external, no body)
     func_open->setCallingConv(CallingConv::C);
   }
-  /*
-  AttrListPtr func_open_PAL;
-  func_open->setAttributes(func_open_PAL);
-  */
+
   Function* func_ioctl = m.getFunction("ioctl");
   if (!func_ioctl) {
     func_ioctl = Function::Create(
                                   /*Type=*/FuncTy_8,
                                   /*Linkage=*/GlobalValue::ExternalLinkage,
-                                  /*Name=*/"ioctl", &m); // (external, no body)                                                                                      
+                                  /*Name=*/"ioctl", &m); // (external, no body)
     func_ioctl->setCallingConv(CallingConv::C);
   }
-  /*
-  AttrListPtr func_ioctl_PAL;
-  {
-    SmallVector<AttributeWithIndex, 4> Attrs;
-    AttributeWithIndex PAWI;
-    PAWI.Index = 4294967295U; PAWI.Attrs = Attribute::None  | Attribute::NoUnwind;
-    Attrs.push_back(PAWI);
-    func_ioctl_PAL = AttrListPtr::get(Attrs);
 
-  }
-  func_ioctl->setAttributes(func_ioctl_PAL);
-  */
-  Function* func_stopPt = m.getFunction("stopPt");
+  func_stopPt = m.getFunction("stopPt");
   if (!func_stopPt) {
     func_stopPt = Function::Create(
                                    /*Type=*/FuncTy_4,
@@ -219,26 +183,13 @@ bool IntelPTInstrumentor::runOnModule(Module& m) {
                                    /*Name=*/"stopPt", &m);
     func_stopPt->setCallingConv(CallingConv::C);
   }
-  /*
-  AttrListPtr func_stopPt_PAL;
-  {
-    SmallVector<AttributeWithIndex, 4> Attrs;
-    AttributeWithIndex PAWI;
-    PAWI.Index = 4294967295U; PAWI.Attrs = Attribute::None  | Attribute::NoUnwind | Attribute::UWTable;
-    Attrs.push_back(PAWI);
-    func_stopPt_PAL = AttrListPtr::get(Attrs);
 
-  }
-  func_stopPt->setAttributes(func_stopPt_PAL);
-  */
-  // Global Variable Declarations                                                                                                      
-
-
+  // Global Variable Declarations
   GlobalVariable* gvar_int8_pt = new GlobalVariable(/*Module=*/m,
                                                     /*Type=*/IntegerType::get(m.getContext(), 8),
                                                     /*isConstant=*/false,
                                                     /*Linkage=*/GlobalValue::ExternalLinkage,
-                                                    /*Initializer=*/0, // has initializer, specified below                                                                               
+                                                    /*Initializer=*/0, // has initializer, specified below
                                                     /*Name=*/"pt");
   gvar_int8_pt->setAlignment(1);
 
@@ -246,7 +197,7 @@ bool IntelPTInstrumentor::runOnModule(Module& m) {
                                                        /*Type=*/ArrayTy_1,
                                                        /*isConstant=*/true,
                                                        /*Linkage=*/GlobalValue::PrivateLinkage,
-                                                       /*Initializer=*/0, // has initializer, specified below                                                                               
+                                                       /*Initializer=*/0, // has initializer, specified below
                                                        /*Name=*/".str");
   gvar_array__str->setAlignment(1);
 
@@ -254,11 +205,11 @@ bool IntelPTInstrumentor::runOnModule(Module& m) {
                                                      /*Type=*/IntegerType::get(m.getContext(), 32),
                                                      /*isConstant=*/false,
                                                      /*Linkage=*/GlobalValue::CommonLinkage,
-                                                     /*Initializer=*/0, // has initializer, specified below                                                                               
+                                                     /*Initializer=*/0, // has initializer, specified below
                                                      /*Name=*/"fd");
   gvar_int32_fd->setAlignment(4);
 
-  // Constant Definitions                                                                                                              
+  // Constant Definitions
   ConstantInt* const_int8_9 = ConstantInt::get(m.getContext(), APInt(8, StringRef("0"), 10));
   Constant *const_array_10 = ConstantDataArray::getString(m.getContext(), "/dev/simple-pt", true);
   ConstantInt* const_int32_11 = ConstantInt::get(m.getContext(), APInt(32, StringRef("0"), 10));
@@ -271,27 +222,27 @@ bool IntelPTInstrumentor::runOnModule(Module& m) {
   ConstantInt* const_int64_15 = ConstantInt::get(m.getContext(), APInt(64, StringRef("9904"), 10));
   ConstantInt* const_int64_16 = ConstantInt::get(m.getContext(), APInt(64, StringRef("9905"), 10));
 
-  // Global Variable Definitions                                                                                                       
+  // Global Variable Definitions
   gvar_int8_pt->setInitializer(const_int8_9);
   gvar_array__str->setInitializer(const_array_10);
   gvar_int32_fd->setInitializer(const_int32_11);
 
-  // Function Definitions                                                                                                              
+  // Function Definitions
 
-  // Function: startPt (func_startPt)                                                                                                  
+  // Function: startPt (func_startPt)
   {
 
     BasicBlock* label_entry = BasicBlock::Create(m.getContext(), "entry",func_startPt,0);
     BasicBlock* label_if_then = BasicBlock::Create(m.getContext(), "if.then",func_startPt,0);
     BasicBlock* label_if_end = BasicBlock::Create(m.getContext(), "if.end",func_startPt,0);
 
-    // Block entry (label_entry)                                                                                                        
+    // Block entry (label_entry)
     LoadInst* int8_17 = new LoadInst(gvar_int8_pt, "", false, label_entry);
     int8_17->setAlignment(1);
     ICmpInst* int1_tobool = new ICmpInst(*label_entry, ICmpInst::ICMP_NE, int8_17, const_int8_9, "tobool");
     BranchInst::Create(label_if_end, label_if_then, int1_tobool, label_entry);
 
-    // Block if.then (label_if_then)                                                                                                    
+    // Block if.then (label_if_then)
     StoreInst* void_19 = new StoreInst(const_int8_12, gvar_int8_pt, false, label_if_then);
     void_19->setAlignment(1);
     std::vector<Value*> int32_call_params;
@@ -313,38 +264,27 @@ bool IntelPTInstrumentor::runOnModule(Module& m) {
     CallInst* int32_call1 = CallInst::Create(func_ioctl, int32_call1_params, "call1", label_if_then);
     int32_call1->setCallingConv(CallingConv::C);
     int32_call1->setTailCall(false);
-    /*
-    AttrListPtr int32_call1_PAL;
-    {
-      SmallVector<AttributeWithIndex, 4> Attrs;
-      AttributeWithIndex PAWI;
-      PAWI.Index = 4294967295U; PAWI.Attrs = Attribute::None  | Attribute::NoUnwind;
-      Attrs.push_back(PAWI);
-      int32_call1_PAL = AttrListPtr::get(Attrs);
 
-    }
-    int32_call1->setAttributes(int32_call1_PAL);
-    */
     BranchInst::Create(label_if_end, label_if_then);
 
-    // Block if.end (label_if_end)                                                                                                      
+    // Block if.end (label_if_end)
     ReturnInst::Create(m.getContext(), label_if_end);
   }
 
-  // Function: stopPt (func_stopPt)                                                                                                    
+  // Function: stopPt (func_stopPt)
   {
 
     BasicBlock* label_entry_24 = BasicBlock::Create(m.getContext(), "entry",func_stopPt,0);
     BasicBlock* label_if_then_25 = BasicBlock::Create(m.getContext(), "if.then",func_stopPt,0);
     BasicBlock* label_if_end_26 = BasicBlock::Create(m.getContext(), "if.end",func_stopPt,0);
 
-    // Block entry (label_entry_24)                                                                                                     
+    // Block entry (label_entry_24)
     LoadInst* int8_27 = new LoadInst(gvar_int8_pt, "", false, label_entry_24);
     int8_27->setAlignment(1);
     ICmpInst* int1_tobool_28 = new ICmpInst(*label_entry_24, ICmpInst::ICMP_NE, int8_27, const_int8_9, "tobool");
     BranchInst::Create(label_if_then_25, label_if_end_26, int1_tobool_28, label_entry_24);
 
-    // Block if.then (label_if_then_25)                                                                                                 
+    // Block if.then (label_if_then_25)
     LoadInst* int32_30 = new LoadInst(gvar_int32_fd, "", false, label_if_then_25);
     int32_30->setAlignment(4);
     std::vector<Value*> int32_call_31_params;
@@ -353,24 +293,19 @@ bool IntelPTInstrumentor::runOnModule(Module& m) {
     CallInst* int32_call_31 = CallInst::Create(func_ioctl, int32_call_31_params, "call", label_if_then_25);
     int32_call_31->setCallingConv(CallingConv::C);
     int32_call_31->setTailCall(false);
-    /*
-    AttrListPtr int32_call_31_PAL;
-    {
-      SmallVector<AttributeWithIndex, 4> Attrs;
-      AttributeWithIndex PAWI;
-      PAWI.Index = 4294967295U; PAWI.Attrs = Attribute::None  | Attribute::NoUnwind;
-      Attrs.push_back(PAWI);
-      int32_call_31_PAL = AttrListPtr::get(Attrs);
-
-    }
-    int32_call_31->setAttributes(int32_call_31_PAL);
-    */
     BranchInst::Create(label_if_end_26, label_if_then_25);
 
-    // Block if.end (label_if_end_26)                                                                                                   
+    // Block if.end (label_if_end_26)
     ReturnInst::Create(m.getContext(), label_if_end_26);
 
   }
+}
+
+bool IntelPTInstrumentor::runOnModule(Module& m) {
+  if (!EnableIntelPtPass)
+    return false;
+
+  setUpInstrumentation(m);
 
   unsigned startIndex = 1;
   unsigned stopIndex = 1;
@@ -427,5 +362,5 @@ bool IntelPTInstrumentor::runOnModule(Module& m) {
       }      
     }
   }
-  return false;
+  return true;
 }
