@@ -79,24 +79,13 @@ ModulePass* llvm::createIntelPTInstrumentorPass() {
 
 
 IntelPTInstrumentor::IntelPTInstrumentor() : ModulePass(ID) {
-  //StartFileName = "main.c";
-  //StartFunction = "main";
-  //StartLineNumber = 32;
-
-  //StopFileName = "main.c";
-  //StopFunction = "main";
-  //StopLineNumber = 34;
-
   cerr << "enable: " << EnableIntelPtPass << endl;
-  /*
-
-  if (StartFileName == "" || StartLineNumber == 0 || StartIndex == 0 ||
-      StopFileName == "" || StopLineNumber == 0 || StopLineNumber == 0) {
+  if (StartFileName == "" || StartFunction == "" || StartLineNumber == 0 ||
+      StopFileName == "" || StopFunction == "" || StopLineNumber == 0) {
     errs() << "\nYou need to provide the start/stop file name, function name, and "
            << "the line number!!!" << "\n\n";
               exit(1);
   }
-  */
 }
 
 
