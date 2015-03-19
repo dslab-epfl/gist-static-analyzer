@@ -56,10 +56,6 @@ static cl::opt<unsigned> StopIndex("stop-index",
        cl::desc("Index of the stopping instruction with the matching file name and line number"),
        cl::init(0));
 
-static cl::opt<bool> Debug("debug-debug-info-manager",
-       cl::desc("Print debugging statements for debug info manager"),
-       cl::init(false));
-
 
 IntelPTInstrumentor::IntelPTInstrumentor() : ModulePass(ID) {
   if (StartFileName == "" || StartLineNumber == 0 || StartIndex == 0 ||

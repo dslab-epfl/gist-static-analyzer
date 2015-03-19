@@ -26,9 +26,6 @@ static cl::opt<string> TargetFunctionName("target-function-name",
 static cl::opt<int> TargetLineNumber("target-line-number",
        cl::desc("The line numbers of the target instructions"),
        cl::init(0));
-static cl::opt<bool> Debug("debug-debug-info-manager",
-       cl::desc("Print debugging statements for debug info manager"),
-       cl::init(false));
 
 
 SrcToLLVM::SrcToLLVM() : ModulePass(ID) {
@@ -53,10 +50,7 @@ void SrcToLLVM::getAnalysisUsage(AnalysisUsage &au) const {
 
 bool SrcToLLVM::runOnModule(Module& m) {
   int counter = 0;
-  for (Module::iterator fi = m.begin(), fe = m.end(); fi != fe; ++fi) {
-    if (Debug)
-      errs() << "Function: " << fi->getName() << "\n";
-    
+  for (Module::iterator fi = m.begin(), fe = m.end(); fi != fe; ++fi) {    
     for (Function::iterator bi = fi->begin(), be = fi->end(); bi != be; ++bi) {
       // TODO: Improve this comparison by getting mangled names from the elf debug information
       if(fi->getName().find(StringRef(TargetFunctionName)) != StringRef::npos)

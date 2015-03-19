@@ -61,10 +61,6 @@ static cl::opt<unsigned> StopIndex("stop-index",
                                    cl::desc("Index of the stopping instruction with the matching file name and line number"),
                                    cl::init(1));
 
- static cl::opt<bool> Debug("debug-debug-info-manager",
-                           cl::desc("Print debugging statements for debug info manager"),
-                           cl::init(false));
-
 
 char IntelPTInstrumentor::ID = 0;
 
