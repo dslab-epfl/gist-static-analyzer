@@ -61,7 +61,7 @@ static cl::opt<unsigned> StopIndex("stop-index",
                                    cl::desc("Index of the stopping instruction with the matching file name and line number"),
                                    cl::init(1));
 
-static cl::opt<bool> Debug("debug-debug-info-manager",
+ static cl::opt<bool> Debug("debug-debug-info-manager",
                            cl::desc("Print debugging statements for debug info manager"),
                            cl::init(false));
 
@@ -79,7 +79,7 @@ ModulePass* llvm::createIntelPTInstrumentorPass() {
 }
 
 
-IntelPTInstrumentor::IntelPTInstrumentor() : ModulePass(ID),  func_startPt(NULL), func_stopPt(NULL) {
+IntelPTInstrumentor::IntelPTInstrumentor() : ModulePass(ID),  func_startPt(NULL), func_stopPt(NULL), instrSetup(false) {
   if (EnableIntelPtPass) {
     cerr << "Intel PT instrumentation enabled " << endl;
     cerr << "StartFileName: " << StartFileName << endl;
@@ -119,6 +119,7 @@ void IntelPTInstrumentor::printDebugInfo(Instruction& instr) {
 }
 
 void IntelPTInstrumentor::setUpInstrumentation(Module& m) {
+  cerr << "setting up instrumentation" << endl;
   // Type Definitions
   PointerType* PointerTy_0 = PointerType::get(IntegerType::get(m.getContext(), 8), 0);
   ArrayType* ArrayTy_1 = ArrayType::get(IntegerType::get(m.getContext(), 8), 15);
@@ -305,8 +306,6 @@ bool IntelPTInstrumentor::runOnModule(Module& m) {
   if (!EnableIntelPtPass)
     return false;
 
-  setUpInstrumentation(m);
-
   unsigned startIndex = 1;
   unsigned stopIndex = 1;
 
@@ -322,6 +321,8 @@ bool IntelPTInstrumentor::runOnModule(Module& m) {
               if ((fileName.find(StringRef(StartFileName))) != StringRef::npos) {
                 if(startIndex == StartIndex) {
                   cerr << "match start " << endl;
+                  if(!instrSetup)
+                    setUpInstrumentation(m);
                   // We need a start at each predecessor of the basic block that contains this instruction
                   BasicBlock* parent = ii->getParent();
                   pred_iterator it;
