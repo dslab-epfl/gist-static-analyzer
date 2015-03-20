@@ -17,6 +17,8 @@ namespace llvm{
     Function* func_startPt;
     Function* func_stopPt;
     bool instrSetup;
+    bool startHandled;
+    bool stopHandled;
     static char ID;
   };
 }

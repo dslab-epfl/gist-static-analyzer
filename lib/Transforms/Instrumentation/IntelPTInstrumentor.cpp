@@ -75,7 +75,7 @@ ModulePass* llvm::createIntelPTInstrumentorPass() {
 }
 
 
-IntelPTInstrumentor::IntelPTInstrumentor() : ModulePass(ID),  func_startPt(NULL), func_stopPt(NULL), instrSetup(false) {
+IntelPTInstrumentor::IntelPTInstrumentor() : ModulePass(ID),  func_startPt(NULL), func_stopPt(NULL), instrSetup(false), startHandled(false), stopHandled(false) {
   if (EnableIntelPtPass) {
     cerr << "Intel PT instrumentation enabled " << endl;
     cerr << "StartFileName: " << StartFileName << endl;
@@ -419,50 +419,56 @@ bool IntelPTInstrumentor::runOnModule(Module& m) {
     for (Function::iterator bi = fi->begin(), be = fi->end(); bi != be; ++bi) {
       if(fi->getName().find(StringRef(StartFunction)) != StringRef::npos) {
         for (BasicBlock::iterator ii = bi->begin(), ie = bi->end(); ii != ie; ++ii) { 
-          if (MDNode *N = ii->getMetadata("dbg")) {
-            DILocation Loc(N);
-            unsigned lineNumber = Loc.getLineNumber();
-            if(lineNumber == StartLineNumber) {
-              StringRef fileName = Loc.getFilename();
-              if ((fileName.find(StringRef(StartFileName))) != StringRef::npos) {
-                if(startIndex == StartIndex) {
-                  cerr << "match start " << endl;
-                  if(!instrSetup)
-                    setUpInstrumentation(m);
-                  // We need a start at each predecessor of the basic block that contains this instruction
-                  BasicBlock* parent = ii->getParent();
-                  pred_iterator it;
-                  pred_iterator et;
-                  int predCount = 0;
-                  for (it = pred_begin(parent), et = pred_end(parent); it != et; ++it, ++predCount) {
-                    CallInst::Create(func_startPt, "", (*it)->getFirstInsertionPt());
+          if(!startHandled) {
+            if (MDNode *N = ii->getMetadata("dbg")) {
+              DILocation Loc(N);
+              unsigned lineNumber = Loc.getLineNumber();
+              if(lineNumber == StartLineNumber) {
+                StringRef fileName = Loc.getFilename();
+                if ((fileName.find(StringRef(StartFileName))) != StringRef::npos) {
+                  if(startIndex == StartIndex) {
+                    cerr << "match start " << endl;
+                    startHandled = true;
+                    if(!instrSetup)
+                      setUpInstrumentation(m);
+                    // We need a start at each predecessor of the basic block that contains this instruction
+                    BasicBlock* parent = ii->getParent();
+                    pred_iterator it;
+                    pred_iterator et;
+                    int predCount = 0;
+                    for (it = pred_begin(parent), et = pred_end(parent); it != et; ++it, ++predCount) {
+                      CallInst::Create(func_startPt, "", (*it)->getFirstInsertionPt());
+                    }
+                    // If there are no predecessors, insert the instrumentation to this block
+                    if (predCount == 0) {
+                      cerr << "No predecessors" << endl;
+                      CallInst::Create(func_startPt, "", ii);
+                    }
+                    startIndex = 1;
                   }
-                  // If there are no predecessors, insert the instrumentation to this block
-                  if (predCount == 0) {
-                    cerr << "No predecessors" << endl;
-                    CallInst::Create(func_startPt, "", ii);
-                  }
-                  startIndex = 1;
                 }
-              }
-            }             
+              }             
+            }
           }
         }
       }
       if(fi->getName().find(StringRef(StopFunction)) != StringRef::npos) {
         for (BasicBlock::iterator ii = bi->begin(), ie = bi->end(); ii != ie; ++ii) {
-          if (MDNode *N = ii->getMetadata("dbg")) {
-            DILocation Loc(N);
-            unsigned lineNumber = Loc.getLineNumber();            
-            if(lineNumber == StopLineNumber) {
-              StringRef fileName = Loc.getFilename();
-              if ((fileName.find(StringRef(StopFileName))) != StringRef::npos) {
-                if(stopIndex == StopIndex) {
-                  cerr << "match stop " << endl;
-                  stopIndex = 1;
-                  CallInst::Create(func_stopPt, "", ii);
-                }            
-              }              
+          if(stopHandled) {
+            if (MDNode *N = ii->getMetadata("dbg")) {
+              DILocation Loc(N);
+              unsigned lineNumber = Loc.getLineNumber();            
+              if(lineNumber == StopLineNumber) {
+                StringRef fileName = Loc.getFilename();
+                if ((fileName.find(StringRef(StopFileName))) != StringRef::npos) {
+                  if(stopIndex == StopIndex) {
+                    cerr << "match stop " << endl;
+                    stopHandled = true;
+                    stopIndex = 1;
+                    CallInst::Create(func_stopPt, "", ii);
+                  }            
+                }              
+              }
             }
           }
         }
