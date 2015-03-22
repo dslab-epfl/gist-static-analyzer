@@ -8,7 +8,7 @@ namespace llvm{
     virtual void getAnalysisUsage(AnalysisUsage& au) const;
     void printDebugInfo(Instruction& instr);
     virtual bool runOnModule(Module& m);
-    void setUpInstrumentation(Module& m);
+    void setUpInstrumentation(Module* mod);
 
     std::vector<Value*> targetOperands;
     std::vector<Instruction*> targetInstructions;
