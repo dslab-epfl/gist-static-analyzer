@@ -9,6 +9,8 @@ namespace llvm{
     void printDebugInfo(Instruction& instr);
     virtual bool runOnModule(Module& m);
     void setUpInstrumentation(Module* mod);
+    void justPrint(Module* mod);    
+    void justPT(Module* mod);
 
     std::vector<Value*> targetOperands;
     std::vector<Instruction*> targetInstructions;
