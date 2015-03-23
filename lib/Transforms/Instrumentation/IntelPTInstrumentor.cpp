@@ -292,13 +292,13 @@ void IntelPTInstrumentor::justPT(Module* mod) {
  ConstantInt* const_int32_12 = ConstantInt::get(mod->getContext(), APInt(32, StringRef("0"), 10));
  Constant *const_array_13 = ConstantDataArray::getString(mod->getContext(), "/dev/simple-pt", true);
  ConstantInt* const_int8_14 = ConstantInt::get(mod->getContext(), APInt(8, StringRef("1"), 10));
- ConstantInt* const_int32_15 = ConstantInt::get(mod->getContext(), APInt(32, StringRef("1"), 10));
- std::vector<Constant*> const_ptr_16_indices;
- const_ptr_16_indices.push_back(const_int32_12);
- const_ptr_16_indices.push_back(const_int32_12);
- Constant* const_ptr_16 = ConstantExpr::getGetElementPtr(gvar_array__str, const_ptr_16_indices);
- ConstantInt* const_int32_17 = ConstantInt::get(mod->getContext(), APInt(32, StringRef("524288"), 10));
- ConstantInt* const_int64_18 = ConstantInt::get(mod->getContext(), APInt(64, StringRef("9904"), 10));
+ std::vector<Constant*> const_ptr_15_indices;
+ const_ptr_15_indices.push_back(const_int32_12);
+ const_ptr_15_indices.push_back(const_int32_12);
+ Constant* const_ptr_15 = ConstantExpr::getGetElementPtr(gvar_array__str, const_ptr_15_indices);
+ ConstantInt* const_int32_16 = ConstantInt::get(mod->getContext(), APInt(32, StringRef("524288"), 10));
+ ConstantInt* const_int64_17 = ConstantInt::get(mod->getContext(), APInt(64, StringRef("9904"), 10));
+ ConstantInt* const_int32_18 = ConstantInt::get(mod->getContext(), APInt(32, StringRef("1"), 10));
  ConstantInt* const_int8_19 = ConstantInt::get(mod->getContext(), APInt(8, StringRef("2"), 10));
  ConstantInt* const_int64_20 = ConstantInt::get(mod->getContext(), APInt(64, StringRef("9905"), 10));
  
@@ -334,17 +334,17 @@ void IntelPTInstrumentor::justPT(Module* mod) {
   BranchInst::Create(label_if_end, label_if_then2, int1_tobool, label_if_then);
   
   // Block if.then2 (label_if_then2)
-  StoreInst* void_26 = new StoreInst(const_int32_15, gvar_int32_fd, false, label_if_then2);
-  void_26->setAlignment(4);
   std::vector<Value*> int32_call_params;
-  int32_call_params.push_back(const_ptr_16);
-  int32_call_params.push_back(const_int32_17);
+  int32_call_params.push_back(const_ptr_15);
+  int32_call_params.push_back(const_int32_16);
   CallInst* int32_call = CallInst::Create(func_open, int32_call_params, "call", label_if_then2);
   int32_call->setCallingConv(CallingConv::C);
   int32_call->setTailCall(false);
   AttrListPtr int32_call_PAL;
   int32_call->setAttributes(int32_call_PAL);
   
+  StoreInst* void_26 = new StoreInst(int32_call, gvar_int32_fd, false, label_if_then2);
+  void_26->setAlignment(4);
   BranchInst::Create(label_if_end, label_if_then2);
   
   // Block if.end (label_if_end)
@@ -352,7 +352,7 @@ void IntelPTInstrumentor::justPT(Module* mod) {
   int32_28->setAlignment(4);
   std::vector<Value*> int32_call3_params;
   int32_call3_params.push_back(int32_28);
-  int32_call3_params.push_back(const_int64_18);
+  int32_call3_params.push_back(const_int64_17);
   CallInst* int32_call3 = CallInst::Create(func_ioctl, int32_call3_params, "call3", label_if_end);
   int32_call3->setCallingConv(CallingConv::C);
   int32_call3->setTailCall(false);
@@ -390,7 +390,7 @@ void IntelPTInstrumentor::justPT(Module* mod) {
   LoadInst* int8_34 = new LoadInst(gvar_int8_mode, "", false, label_entry_31);
   int8_34->setAlignment(1);
   CastInst* int32_conv_35 = new SExtInst(int8_34, IntegerType::get(mod->getContext(), 32), "conv", label_entry_31);
-  ICmpInst* int1_cmp_36 = new ICmpInst(*label_entry_31, ICmpInst::ICMP_EQ, int32_conv_35, const_int32_15, "cmp");
+  ICmpInst* int1_cmp_36 = new ICmpInst(*label_entry_31, ICmpInst::ICMP_EQ, int32_conv_35, const_int32_18, "cmp");
   BranchInst::Create(label_if_then_32, label_if_end_33, int1_cmp_36, label_entry_31);
   
   // Block if.then (label_if_then_32)
@@ -433,7 +433,7 @@ void IntelPTInstrumentor::justPT(Module* mod) {
   // Block if.end (label_if_end_33)
   ReturnInst::Create(mod->getContext(), label_if_end_33);
   
- }
+ } 
 }
 
 void IntelPTInstrumentor::justPrint(Module* mod) {
