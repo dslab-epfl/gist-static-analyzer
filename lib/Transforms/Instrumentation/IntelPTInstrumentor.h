@@ -11,6 +11,7 @@ namespace llvm{
     void setUpInstrumentation(Module* mod);
     void justPrint(Module* mod);    
     void justPT(Module* mod);
+    void justExternal(Module* mod);
 
     std::vector<Value*> targetOperands;
     std::vector<Instruction*> targetInstructions;

@@ -26,41 +26,42 @@
 #include <algorithm>
 #include <sstream>
 #include <iostream>
+#include <fstream>
+#include <stdio.h>
 
 using namespace llvm;
 using namespace std;
 
-namespace llvm{
-    cl::opt<bool> EnableIntelPtPass("enable-intelpt",
-                                    cl::desc("File name to start PT tracing"),
-                                    cl::init(false));
-}
 
-static cl::opt<string> StartFileName("start-file-name",
-                                     cl::desc("File name to start PT tracing"),
-                                     cl::init(""));
-static cl::opt<string> StartFunction("start-function",
-                                     cl::desc("Function to Start PT tracing"),
-                                     cl::init(""));
-static cl::opt<unsigned> StartLineNumber("start-line-number",
-                                         cl::desc("Line number to start PT tracing"),
-                                         cl::init(0));
-static cl::opt<unsigned> StartIndex("start-index",
-                                    cl::desc("Index of the starting instruction with the matching file name and line number"),
-                                    cl::init(1));
-
-static cl::opt<string> StopFileName("stop-file-name",
-                                    cl::desc("File name to stop PT tracing"),
-                                    cl::init(""));
-static cl::opt<string> StopFunction("stop-function",
-                                    cl::desc("Function to Stop PT tracing"),
-                                    cl::init(""));
-static cl::opt<unsigned> StopLineNumber("stop-line-number",
-                                        cl::desc("Line number to stop PT tracing"),
-                                        cl::init(0));
-static cl::opt<unsigned> StopIndex("stop-index",
-                                   cl::desc("Index of the stopping instruction with the matching file name and line number"),
-                                   cl::init(1));
+  cl::opt<bool> EnableIntelPtPass("enable-intelpt",
+				  cl::desc("File name to start PT tracing"),
+				  cl::init(false));
+  
+ cl::opt<string> StartFileName("start-file-name",
+			       cl::desc("File name to start PT tracing"),
+			       cl::init(""));
+  cl::opt<string> StartFunction("start-function",
+				cl::desc("Function to Start PT tracing"),
+				cl::init(""));
+  cl::opt<unsigned> StartLineNumber("start-line-number",
+				    cl::desc("Line number to start PT tracing"),
+				    cl::init(0));
+  cl::opt<unsigned> StartIndex("start-index",
+			       cl::desc("Index of the starting instruction with the matching file name and line number"),
+			       cl::init(1));
+  
+  cl::opt<string> StopFileName("stop-file-name",
+			       cl::desc("File name to stop PT tracing"),
+			       cl::init(""));
+  cl::opt<string> StopFunction("stop-function",
+			       cl::desc("Function to Stop PT tracing"),
+			       cl::init(""));
+  cl::opt<unsigned> StopLineNumber("stop-line-number",
+				   cl::desc("Line number to stop PT tracing"),
+				   cl::init(0));
+  cl::opt<unsigned> StopIndex("stop-index",
+			      cl::desc("Index of the stopping instruction with the matching file name and line number"),
+			      cl::init(1));
 
 
 char IntelPTInstrumentor::ID = 0;
@@ -76,15 +77,17 @@ ModulePass* llvm::createIntelPTInstrumentorPass() {
 }
 
 
-IntelPTInstrumentor::IntelPTInstrumentor() : ModulePass(ID),  func_startPt(NULL), func_stopPt(NULL), startHandled(false), stopHandled(false) {
+IntelPTInstrumentor::IntelPTInstrumentor() : ModulePass(ID),  func_startPt(NULL), func_stopPt(NULL), startHandled(false), stopHandled(false), instrSetup(false) {
   if (EnableIntelPtPass) {
+    /*
     cerr << "Intel PT instrumentation enabled " << endl;
     cerr << "StartFileName: " << StartFileName << endl;
     cerr << "StartFunction: " << StartFunction << endl;
     cerr << "StartLineNumber: " << StopLineNumber << endl;
     cerr << "StopFileName: " << StopFileName << endl;
     cerr << "StopFunction: " << StopFunction << endl;
-    cerr << "StopLineNumber: " << StopLineNumber << endl;
+    cerr << "StopLineNumber: " << StartLineNumber << endl;
+    */
     if (StartFileName == "" || StartFunction == "" || StartLineNumber == 0 ||
         StopFileName == "" || StopFunction == "" || StopLineNumber == 0) {
       errs() << "\nYou need to provide the start/stop file name, function name, and "
@@ -118,12 +121,9 @@ void IntelPTInstrumentor::printDebugInfo(Instruction& instr) {
 void IntelPTInstrumentor::justPT(Module* mod) {
 
  // Type Definitions
- PointerType* PointerTy_0 = PointerType::get(IntegerType::get(mod->getContext(), 8), 0);
- 
+ PointerType* PointerTy_0 = PointerType::get(IntegerType::get(mod->getContext(), 8), 0); 
  PointerType* PointerTy_1 = PointerType::get(IntegerType::get(mod->getContext(), 32), 0);
- 
  ArrayType* ArrayTy_2 = ArrayType::get(IntegerType::get(mod->getContext(), 8), 15);
- 
  PointerType* PointerTy_3 = PointerType::get(ArrayTy_2, 0);
  
  std::vector<Type*>FuncTy_4_args;
@@ -164,12 +164,12 @@ void IntelPTInstrumentor::justPT(Module* mod) {
  
  // Function Declarations
  
- func_startPt = mod->getFunction("startPt");
+ func_startPt = mod->getFunction("_Z7startPtv");
  if (!func_startPt) {
  func_startPt = Function::Create(
   /*Type=*/FuncTy_4,
   /*Linkage=*/GlobalValue::ExternalLinkage,
-  /*Name=*/"startPt", mod); 
+  /*Name=*/"_Z7startPtv", mod); 
  func_startPt->setCallingConv(CallingConv::C);
  }
  AttrListPtr func_startPt_PAL;
@@ -224,12 +224,12 @@ void IntelPTInstrumentor::justPT(Module* mod) {
  }
  func_ioctl->setAttributes(func_ioctl_PAL);
  
- func_stopPt = mod->getFunction("stopPt");
+ func_stopPt = mod->getFunction("_Z6stopPtv");
  if (!func_stopPt) {
  func_stopPt = Function::Create(
   /*Type=*/FuncTy_4,
   /*Linkage=*/GlobalValue::ExternalLinkage,
-  /*Name=*/"stopPt", mod); 
+  /*Name=*/"_Z6stopPtv", mod); 
  func_stopPt->setCallingConv(CallingConv::C);
  }
  AttrListPtr func_stopPt_PAL;
@@ -469,12 +469,12 @@ void IntelPTInstrumentor::justPrint(Module* mod) {
  PointerType* PointerTy_10 = PointerType::get(FuncTy_6, 0);
  
  // Function Declarations
- func_startPt = mod->getFunction("startPt");
+ func_startPt = mod->getFunction("_Z7startPtv");
  if (!func_startPt) {
  func_startPt = Function::Create(
   FuncTy_6,
   GlobalValue::ExternalLinkage,
-  "startPt", mod); 
+  "_Z7startPtv", mod); 
  func_startPt->setCallingConv(CallingConv::C);
  }
  AttrListPtr func_startPt_PAL;
@@ -505,12 +505,12 @@ void IntelPTInstrumentor::justPrint(Module* mod) {
  AttrListPtr func_printf_PAL;
  func_printf->setAttributes(func_printf_PAL);
  
- func_stopPt = mod->getFunction("stopPt");
+ func_stopPt = mod->getFunction("_Z6stopPtv");
  if (!func_stopPt) {
  func_stopPt = Function::Create(
   FuncTy_6,
   GlobalValue::ExternalLinkage,
-  "stopPt", mod); 
+  "_Z6stopPtv", mod); 
  func_stopPt->setCallingConv(CallingConv::C);
  }
  AttrListPtr func_stopPt_PAL;
@@ -664,9 +664,48 @@ void IntelPTInstrumentor::justPrint(Module* mod) {
 }
 
 
+void IntelPTInstrumentor::justExternal(Module* mod) { 
+  
+ // Type Definitions
+ std::vector<Type*>FuncTy_0_args;
+ FunctionType* FuncTy_0 = FunctionType::get(
+  /*Result=*/IntegerType::get(mod->getContext(), 32),
+  /*Params=*/FuncTy_0_args,
+  /*isVarArg=*/false);
+ 
+ std::vector<Type*>FuncTy_2_args;
+ FunctionType* FuncTy_2 = FunctionType::get(
+  /*Result=*/Type::getVoidTy(mod->getContext()),
+  /*Params=*/FuncTy_2_args,
+  /*isVarArg=*/true);
+ 
+ PointerType*  PointerTy_1 = PointerType::get(FuncTy_2, 0);
+  
+ func_startPt = mod->getFunction("_Z7startPtv");
+ if (!func_startPt) {
+ func_startPt = Function::Create(
+  /*Type=*/FuncTy_2,
+  /*Linkage=*/GlobalValue::ExternalLinkage,
+  /*Name=*/"_Z7startPtv", mod); // (external, no body)
+ func_startPt->setCallingConv(CallingConv::C);
+ }
+ AttrListPtr func_startPt_PAL;
+ func_startPt->setAttributes(func_startPt_PAL);
+ 
+ func_stopPt = mod->getFunction("_Z6stopPtv");
+ if (!func_stopPt) {
+ func_stopPt = Function::Create(
+  /*Type=*/FuncTy_2,
+  /*Linkage=*/GlobalValue::ExternalLinkage,
+  /*Name=*/"_Z6stopPtv", mod); // (external, no body)
+ func_stopPt->setCallingConv(CallingConv::C);
+ }
+ AttrListPtr func_stopPt_PAL;
+ func_stopPt->setAttributes(func_stopPt_PAL);
+}
+
 void IntelPTInstrumentor::setUpInstrumentation(Module* mod) {
-  //justPrint(mod);
-  justPT(mod);
+  justExternal(mod); 
 }
 
 bool IntelPTInstrumentor::runOnModule(Module& m) {
@@ -679,10 +718,14 @@ bool IntelPTInstrumentor::runOnModule(Module& m) {
   unsigned stopIndex = 1;
 
   for (Module::iterator fi = m.begin(), fe = m.end(); fi != fe; ++fi) {    
+    
+    //cerr << "F:F " << fi->getName().str() << endl;
+
     for (Function::iterator bi = fi->begin(), be = fi->end(); bi != be; ++bi) {
       startHandled = false;
       stopHandled = false;
       if(fi->getName().find(StringRef(StartFunction)) != StringRef::npos) {
+	//cerr << "match func " << endl;
         for (BasicBlock::iterator ii = bi->begin(), ie = bi->end(); ii != ie; ++ii) { 
           if(!startHandled) {
             if (MDNode *N = ii->getMetadata("dbg")) {
@@ -691,6 +734,7 @@ bool IntelPTInstrumentor::runOnModule(Module& m) {
               if(lineNumber == StartLineNumber) {
                 StringRef fileName = Loc.getFilename();
                 if ((fileName.find(StringRef(StartFileName))) != StringRef::npos) {
+		  //cerr << "match file " << endl;
                   if(startIndex == StartIndex) {
                     cerr << "match start " << endl;
                     startHandled = true;
