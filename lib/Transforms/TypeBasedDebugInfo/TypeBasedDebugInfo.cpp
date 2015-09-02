@@ -40,35 +40,6 @@ void TypeBasedDebugInfo::getAnalysisUsage(AnalysisUsage &au) const {
 }
 
 
-void TypeBasedDebugInfo::printDebugInfo(Instruction& instr) {
-  /*  
-  MDNode *N = instr.getMetadata("dbg");
-  DILocation Loc(N);
-  unsigned lineNumber = Loc.getLineNumber();
-  StringRef fileName = Loc.getFilename();
-  StringRef directory = Loc.getDirectory();
-  errs() << "\t\t" << directory << "/" << fileName<< " : " << lineNumber << "\n ";
-  */
-}
-
-set<string>& TypeBasedDebugInfo::split(const string &s, char delim, 
-                                        set<string> &elems) {
-  stringstream ss(s);
-  string item;
-  while (getline(ss, item, delim)) {
-    elems.insert(item);
-  }
-  return elems;
-}
-
-
-set<string> TypeBasedDebugInfo::split(const string &s, char delim) {
-  set<string> elems;
-  split(s, delim, elems);
-  return elems;
-}
-
-
 bool TypeBasedDebugInfo::runOnModule(Module& m) {
   for(Module::iterator fi = m.begin(), fe = m.end(); fi != fe; ++fi) {
     if(Debug)
@@ -80,7 +51,6 @@ bool TypeBasedDebugInfo::runOnModule(Module& m) {
           for(unsigned i = 0; i < ii->getNumOperands() ; ++i){  
             Value* v = ii->getOperand(i);
             Type* t = v->getType();
-            errs() << TypeStrings[t->getTypeID()];
             
             MDNode *N = ii->getMetadata("dbg");
             if(N){
@@ -88,9 +58,11 @@ bool TypeBasedDebugInfo::runOnModule(Module& m) {
               unsigned lineNumber = Loc.getLineNumber();
               StringRef fileName = Loc.getFilename();
               StringRef directory = Loc.getDirectory();
-              errs() << "\t\t" << directory << "/" << fileName<< " : " << lineNumber << "\n ";
+	      errs() << "Type: ";
+	      t->dump();
+	      //errs() << "\n\t\tInst: "<< *ii << "\n";
+              errs() << "\tLoc: " << directory << "/" << fileName<< " : " << lineNumber << "\n ";
             }
-            
          }
         }
       } 
