@@ -1,15 +1,23 @@
-//===- StaticSlicer.cpp - Find information flows within a program ------------ --//
+//===- StaticSlicer.cpp - Compute a static slice starting from a failing instruction --- --//
 // 
 //                          Static Slice Computation Pass
 //
 // This file was developed by the LLVM research group and is distributed under
 // the University of Illinois Open Source License. See LICENSE.TXT for details.
 // 
-//===----------------------------------------------------------------------===//
+//===----------------------------------------------------------------------------------===//
 //
-// This file implements a static slicer pass
-//
-//===----------------------------------------------------------------------===//
+// This file implements a static slicer pass by slightly modifying 
+// John Criswell's static Giri pass (not to be confused with his dynamic slider 
+// which also assumed the name Giri). John's original code is here:
+// http://llvm.org/viewvc/llvm-project/giri/trunk/lib/Static/  
+// Some improvements over the initial Giri code base: 
+// 1) Augmenting the program control flow graph with the thread interprocedural 
+//    control flow graph (see the Failure Sketching paper, SOSP'15)
+// 2) Ported to LLVM 3.2
+// 3) A few bug fixes. Tested the pass on Apache, memcached, SQLite and all the systems
+//    in the Failure Sketching paper.
+//===---------------------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "staticslicer"
 
@@ -46,9 +54,6 @@ MDNode* StaticSlice::extractAllocaDebugMetadata (AllocaInst* allocaInst) {
       Value* value = cast<MDNode>(dbgDeclareInst->getOperand(0))->getOperand(0);
       if(!value)
         return NULL;
-      // TODO: we gotta make sure this is the right llvm.dbg.info, to not have a few lines of inaccuracy check that
-      // TODO: investigate why this assert is busted in MySQL-644
-      // assert(isa<AllocaInst>(value) && "The operand must be an alloca");
       return dbgDeclareInst->getMetadata("dbg");
     }
   }
@@ -309,9 +314,7 @@ bool StaticSlice::isInBBTrace(string file, int line) {
 //
 void StaticSlice::removeIncompatibleTargets (const CallInst* CI,
                                              vector<const Function *> & Targets) {
-  // Remove any function from the set of targets that has the wrong number of
-  // arguments.  Find all the functions to remove first and record them in a
-  // container so that we don't invalidate any iterators.
+  // Remove any function from the set of targets that has the wrong number of arguments.
   std::vector<const Function*>::iterator it = Targets.begin();
   
   while(it != Targets.end()) {
@@ -546,7 +549,7 @@ void StaticSlice::findCallSources (CallInst* CI,
     Targets.pop_back ();
 
     // TODO: This shouldn't happen if we extract the exact target that this call instruction calls
-    // from PT. Right now, we are simply filterin based on which functions are called.
+    // from PT. Right now, we are simply filtering based on which functions are called.
     if(F->getReturnType() == VoidType) {
       return;
     }
@@ -554,9 +557,7 @@ void StaticSlice::findCallSources (CallInst* CI,
     assert ((F->getReturnType() != VoidType) && "Want void function label!\n");
 
     // Add any return values in the called function to the list of return
-    // instructions to process.  Note that we may add them multiple times, but
-    // this is okay since Returns is a set that does not allow duplicate
-    // entries.
+    // instructions to process.
     for (Function::iterator BB = F->begin(); BB != F->end(); ++BB)
       if (ReturnInst* RI = dyn_cast<ReturnInst>(BB->getTerminator())) {
         NewReturns.push_back (RI);
